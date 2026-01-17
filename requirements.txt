@@ -1,2 +1,3 @@
 pywebview
 pyinstaller
+pyi_splash

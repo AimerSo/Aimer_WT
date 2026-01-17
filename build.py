@@ -5,6 +5,7 @@ import hashlib
 import subprocess
 import sys
 from pathlib import Path
+from datetime import datetime
 
 def calculate_checksum(file_path, algorithm='sha256'):
     """计算文件的校验和"""
@@ -107,7 +108,7 @@ def main():
     with open(checksum_file, 'w', encoding='utf-8') as f:
         f.write(f"File: {exe_path.name}\n")
         f.write(f"SHA256: {checksum}\n")
-        f.write(f"Date: {os.popen('date /t').read().strip()} {os.popen('time /t').read().strip()}\n")
+        f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
     print(f"✅ 校验文件已生成: {checksum_file}")
     print(f"   SHA256: {checksum}")

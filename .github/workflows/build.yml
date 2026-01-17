@@ -1,12 +1,18 @@
-name: Build EXE
+name: Build and Release
 
 on:
   push:
     branches: [ "main", "master" ]
+    tags:
+      - 'v*'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
+    name: Build Windows
     runs-on: windows-latest
 
     steps:
@@ -31,7 +37,36 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: WT_Aimer_Voice
-        path: |
-          dist/WT_Aimer_Voice.exe
-          dist/checksum.txt
+        name: build-windows
+        path: dist/*
+
+  release:
+    name: Create Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # Needed for git log history
+
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-windows
+        path: dist
+
+    - name: Generate Release Name
+      id: release_name
+      run: |
+        MSG=$(git log -1 --pretty=%s)
+        echo "title=${{ github.ref_name }} - $MSG" >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: ${{ steps.release_name.outputs.title }}
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        files: dist/*
