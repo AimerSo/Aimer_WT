@@ -3,16 +3,45 @@ name: Build and Release
 on:
   push:
     branches: [ "main", "master" ]
-    tags:
-      - 'v*'
   workflow_dispatch:
+    inputs:
+      manual_bump:
+        description: 'Manual Version Bump'
+        type: choice
+        options:
+          - 'disable'
+          - 'patch'
+          - 'minor'
+          - 'major'
+        default: 'disable'
 
 permissions:
   contents: write
 
 jobs:
+  version_check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semver.outputs.version-string }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        fetch-tags: true
+    
+    - name: Run Semver
+      id: semver
+      uses: bitshifted/git-auto-semver@v2
+      with:
+        main_branch: main
+        initial_version: '1.0.0'
+        create_tag: true
+        tag_prefix: "v"
+        manual_bump: ${{ inputs.manual_bump != 'disable' && inputs.manual_bump || '' }}
+
   build:
     name: Build Windows
+    needs: version_check
     runs-on: windows-latest
 
     steps:
@@ -42,8 +71,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, version_check]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -60,11 +88,13 @@ jobs:
       id: release_name
       run: |
         MSG=$(git log -1 --pretty=%s)
-        echo "title=${{ github.ref_name }} - $MSG" >> $GITHUB_OUTPUT
+        VERSION="v${{ needs.version_check.outputs.version }}"
+        echo "title=$VERSION - $MSG" >> $GITHUB_OUTPUT
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
+        tag_name: v${{ needs.version_check.outputs.version }}
         name: ${{ steps.release_name.outputs.title }}
         draft: false
         prerelease: false
