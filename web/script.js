@@ -2225,7 +2225,20 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
             theme: "Light",
             installed_mods: [],
         };
+        const state = await pywebview.api.init_app_state() || {
+            game_path: "",
+            path_valid: false,
+            active_theme: "default.json",
+            theme: "Light",
+            installed_mods: [],
+        };
         this.updatePathUI(state.game_path, state.path_valid);
+
+        if (state.installed_mods && Array.isArray(state.installed_mods)) {
+            this.installedModIds = state.installed_mods;
+        } else {
+            this.installedModIds = [];
+        }
 
         if (state.installed_mods && Array.isArray(state.installed_mods)) {
             this.installedModIds = state.installed_mods;
