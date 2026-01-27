@@ -19,7 +19,10 @@ const UI_CONFIG = {
         tank: { cls: "tank", text: "陆战" },
         air: { cls: "air", text: "空战" },
         naval: { cls: "naval", text: "海战" },
-        radio: { cls: "radio", text: "无线电" },
-        status: { cls: "status", text: "局势播报" }
+        radio: { cls: "radio", text: "无线电/局势" },
+        missile: { cls: "missile", text: "导弹音效" },
+        music: { cls: "music", text: "音乐包" },
+        noise: { cls: "noise", text: "降噪包" },
+        pilot: { cls: "pilot", text: "飞行员语音" }
     }
 };
