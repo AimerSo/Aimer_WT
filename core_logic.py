@@ -118,7 +118,7 @@ class CoreService:
     def auto_detect_game_path(self):
         import sys
         if sys.platform == "win32":
-            return self.get_windows_game_path()
+            return self.get_windows_game_paths()
         elif sys.platform == "linux":
             return self.get_linux_game_paths()
 
