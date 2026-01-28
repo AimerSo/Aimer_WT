@@ -2042,7 +2042,7 @@ if __name__ == "__main__":
         resizable=True,
         text_select=False,
         frameless=True,
-        easy_drag=True,
+        easy_drag=False,
     )
 
     # 绑定窗口对象到桥接层

@@ -346,19 +346,6 @@ body {
     box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
 }
 
-.app-header .header-nav,
-.card,
-.btn,
-.theme-toggle,
-input,
-select,
-.window-controls,
-.lib-scroll-area,
-.notice-content,
-.log-container {
-    -webkit-app-region: no-drag;
-}
-
 /* 图标基础样式调整 */
 i[class^="ri-"] {
     font-size: 1.2em;
@@ -431,8 +418,6 @@ i[class^="ri-"] {
     align-items: center;
     gap: 12px;
     padding-right: 24px;
-    /* 允许拖拽 */
-    -webkit-app-region: drag;
     height: 100%;
     /* 填满高度以方便拖拽 */
 }
@@ -476,8 +461,6 @@ i[class^="ri-"] {
     display: flex;
     align-items: center;
     gap: 8px;
-    -webkit-app-region: no-drag;
-    /* 按钮区域不可拖拽 */
     /* 绝对居中定位 */
     position: absolute;
     left: 50%;

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +9,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="css_fix.css">
 </head>
+
 <body>
     <!--
     功能定位:
@@ -95,7 +97,7 @@
     </header>
 
     <div class="main-container">
-        
+
         <div id="page-home" class="page active">
             <div class="home-grid">
                 <div class="card status-card pywebview-drag-region">
@@ -137,7 +139,8 @@
                             <li>2. <strong>准备文件：</strong> 将下载的语音包 ZIP/RAR 压缩包放入软件目录下的 <code>[待解压区]</code> 文件夹中。</li>
                             <li>3. <strong>导入包体：</strong> 切换到“语音包库”页面，点击“导入压缩包”按钮，软件会自动解压并识别信息，你也可以自己解压放到语音包库中。</li>
                             <li>4. <strong>一键加载：</strong> 在库中找到目标语音包，点击“加载”图标。软件会自动配置 <code>config.blk</code> 并安装。</li>
-                            <li>5. <strong>开启 Mod：</strong> 软件会自动检测并开启游戏内的 Mod 支持。若未生效，请检查 <code>config.blk</code> 中是否有 <code>enable_mod:b=yes</code>，如果有问题先联系语音包制作者。</li>
+                            <li>5. <strong>开启 Mod：</strong> 软件会自动检测并开启游戏内的 Mod 支持。若未生效，请检查 <code>config.blk</code> 中是否有
+                                <code>enable_mod:b=yes</code>，如果有问题先联系语音包制作者。</li>
                         </ul>
                         <p>祝您在战场上一路长虹！(๑•̀ㅂ•́)و✧</p>
                     </div>
@@ -186,9 +189,7 @@
                     <div class="toolbar-v2-right">
                         <div class="search-v2">
                             <i class="ri-search-2-line"></i>
-                            <input type="text" 
-                                   placeholder="搜索作者或标题..." 
-                                   oninput="app.filterLibrary(this.value)">
+                            <input type="text" placeholder="搜索作者或标题..." oninput="app.filterLibrary(this.value)">
                         </div>
                         <button class="btn-v2 icon-only" onclick="app.refreshLibrary({manual:true})" title="刷新">
                             <i class="ri-refresh-line"></i>
@@ -211,7 +212,8 @@
             <div class="resource-master-detail">
                 <!-- 左侧垂直导航 -->
                 <div class="resource-nav">
-                    <button class="resource-nav-item active" data-target="skins" onclick="app.switchResourceView('skins')">
+                    <button class="resource-nav-item active" data-target="skins"
+                        onclick="app.switchResourceView('skins')">
                         <i class="ri-brush-3-line"></i>
                         <span>涂装库</span>
                     </button>
@@ -229,7 +231,8 @@
                             <h2><i class="ri-brush-3-line"></i> 涂装库</h2>
                             <div class="resource-view-header-right">
                                 <div class="col-count" id="skins-count">本地: 0</div>
-                                <button class="btn-v2 icon-only" id="btn-refresh-skins" onclick="app.refreshSkins({manual:true})" title="刷新涂装库">
+                                <button class="btn-v2 icon-only" id="btn-refresh-skins"
+                                    onclick="app.refreshSkins({manual:true})" title="刷新涂装库">
                                     <i class="ri-refresh-line"></i>
                                 </button>
                             </div>
@@ -258,7 +261,8 @@
                                         <p>涂装文件名尽可能使用英文。</p>
                                         <p>
                                             如果你想从 WT LIVE 安装涂装，只需删除文件夹中的所有内容，然后从
-                                            <code>live.warthunder.com</code> 下载涂装（信息库中有直达链接），并将压缩包的内容（其中包含几个文件）以及迷彩配置文件复制到文件
+                                            <code>live.warthunder.com</code>
+                                            下载涂装（信息库中有直达链接），并将压缩包的内容（其中包含几个文件）以及迷彩配置文件复制到文件
                                             <code>.dds</code> 夹 <code>.tga</code> 中 <code>*vehicle_name*.blk</code> 。
                                         </p>
                                     </div>
@@ -284,7 +288,8 @@
                             <h2><i class="ri-crosshair-line"></i> 炮镜库</h2>
                             <div class="resource-view-header-right">
                                 <div class="col-count" id="sights-count">本地: 0</div>
-                                <button class="btn-v2 icon-only" id="btn-refresh-sights" onclick="app.refreshSights({manual:true})" title="刷新炮镜库">
+                                <button class="btn-v2 icon-only" id="btn-refresh-sights"
+                                    onclick="app.refreshSights({manual:true})" title="刷新炮镜库">
                                     <i class="ri-refresh-line"></i>
                                 </button>
                             </div>
@@ -296,11 +301,13 @@
                                 <div class="drop-zone-compact" id="sights-drop-zone">
                                     <div class="drop-zone-inner">
                                         <div class="drop-zone-actions">
-                                            <button class="btn-v2 primary" id="btn-sights-primary" onclick="app.selectSightsPath()">
+                                            <button class="btn-v2 primary" id="btn-sights-primary"
+                                                onclick="app.selectSightsPath()">
                                                 <i class="ri-folder-open-line"></i>
                                                 <span>设置炮镜路径</span>
                                             </button>
-                                            <button class="btn-v2" id="btn-sights-secondary" onclick="app.openSightsFolder()">
+                                            <button class="btn-v2" id="btn-sights-secondary"
+                                                onclick="app.openSightsFolder()">
                                                 <i class="ri-folder-2-line"></i>
                                                 <span>打开 UserSights</span>
                                             </button>
@@ -310,10 +317,14 @@
                                 <div class="drop-tutorial" id="sights-tutorial">
                                     <div class="drop-tutorial-title">炮镜教程</div>
                                     <div class="drop-tutorial-body">
-                                        <p>炮镜模块在 <code>C:\Users\&lt;"user name"&gt;\Documents\My Games\WarThunder\Saves\&lt;"user ID"&gt;\production\UserSights</code></p>
+                                        <p>炮镜模块在
+                                            <code>C:\Users\&lt;"user name"&gt;\Documents\My Games\WarThunder\Saves\&lt;"user ID"&gt;\production\UserSights</code>
+                                        </p>
                                         <p>你可以在商店的个人资料页面找到您的用户 ID 。如果目录中缺少 <code>UserSights</code> 文件夹，请创建它。</p>
-                                        <p>如果你的自定义瞄准镜仅适用于特定车辆，请在 <code>UserSights</code> 文件夹中创建一个以该车辆 ID 命名的子文件夹，例如 <code>&lt;车辆 ID&gt;</code> <code>germ_flakpanzer_IV_Ostwind</code>。</p>
-                                        <p>如果瞄准镜适用于多辆车，请创建一个名为 <code>&lt;车辆 ID&gt;</code> 的子文件夹 <code>all_tanks</code>。</p>
+                                        <p>如果你的自定义瞄准镜仅适用于特定车辆，请在 <code>UserSights</code> 文件夹中创建一个以该车辆 ID 命名的子文件夹，例如
+                                            <code>&lt;车辆 ID&gt;</code> <code>germ_flakpanzer_IV_Ostwind</code>。</p>
+                                        <p>如果瞄准镜适用于多辆车，请创建一个名为 <code>&lt;车辆 ID&gt;</code> 的子文件夹 <code>all_tanks</code>。
+                                        </p>
                                     </div>
                                 </div>
                             </div>
@@ -347,7 +358,8 @@
                             <div class="stat-value">请我喝一杯蜜雪冰城</div>
                         </div>
                     </button>
-                    <button class="stat-card stat-card-action" type="button" onclick="app.openExternal('https://qun.qq.com/universal-share/share?ac=1&authKey=%2FDJOR1E72xAQKvLD%2BNQmaZmD7py%2F5PUY7xHORJX4kmmKdabaRF4%2BwIJkp6s8I10U&busi_data=eyJncm91cENvZGUiOiIxMDc4MzQzNjI5IiwidG9rZW4iOiJmSUNpVXErcnNMMVhlemRNR25EbVF5TWJrbmc5bm02UmRIS0c0WHFxemdWQkRzUlVmSkVZQW11NXFkRXZkMXBDIiwidWluIjoiMTA3OTY0OTM2OSJ9&data=4qfEzEByH95wqWw0I5ButymAfP5Aj5bjksqrXyh3uAoIWg5ChDGQ3w6cocqmRaRaGbDRpFunhEYQYBHwC46GHg&svctype=4&tempid=h5_group_info')">
+                    <button class="stat-card stat-card-action" type="button"
+                        onclick="app.openExternal('https://qun.qq.com/universal-share/share?ac=1&authKey=%2FDJOR1E72xAQKvLD%2BNQmaZmD7py%2F5PUY7xHORJX4kmmKdabaRF4%2BwIJkp6s8I10U&busi_data=eyJncm91cENvZGUiOiIxMDc4MzQzNjI5IiwidG9rZW4iOiJmSUNpVXErcnNMMVhlemRNR25EbVF5TWJrbmc5bm02UmRIS0c0WHFxemdWQkRzUlVmSkVZQW11NXFkRXZkMXBDIiwidWluIjoiMTA3OTY0OTM2OSJ9&data=4qfEzEByH95wqWw0I5ButymAfP5Aj5bjksqrXyh3uAoIWg5ChDGQ3w6cocqmRaRaGbDRpFunhEYQYBHwC46GHg&svctype=4&tempid=h5_group_info')">
                         <div class="stat-icon package">
                             <i class="ri-qq-line"></i>
                         </div>
@@ -356,7 +368,8 @@
                             <div class="stat-value">1078343629</div>
                         </div>
                     </button>
-                    <button class="stat-card stat-card-action" type="button" onclick="app.openExternal('https://hcng65m1o0ph.feishu.cn/docx/SjgSdhEZ4oZDhKxgThdcM8Kon7g?from=from_copylink')">
+                    <button class="stat-card stat-card-action" type="button"
+                        onclick="app.openExternal('https://hcng65m1o0ph.feishu.cn/docx/SjgSdhEZ4oZDhKxgThdcM8Kon7g?from=from_copylink')">
                         <div class="stat-icon code">
                             <i class="ri-file-text-line"></i>
                         </div>
@@ -365,7 +378,8 @@
                             <div class="stat-value">飞书云文档</div>
                         </div>
                     </button>
-                    <button class="stat-card stat-card-action" type="button" onclick="app.openExternal('https://b23.tv/Z0hfm59')">
+                    <button class="stat-card stat-card-action" type="button"
+                        onclick="app.openExternal('https://b23.tv/Z0hfm59')">
                         <div class="stat-icon gamepad">
                             <i class="ri-bilibili-line"></i>
                         </div>
@@ -470,7 +484,8 @@
                         </div>
                         <div class="card-content">
                             <div class="contributors-grid">
-                                <a class="contributor-card" href="https://b23.tv/g5hG7UL" onclick="app.openExternal('https://b23.tv/g5hG7UL'); return false;">
+                                <a class="contributor-card" href="https://b23.tv/g5hG7UL"
+                                    onclick="app.openExternal('https://b23.tv/g5hG7UL'); return false;">
                                     <div class="contributor-avatar">
                                         <img src="assets/Thanks/1.beiku.jpg" alt="beiku">
                                     </div>
@@ -479,7 +494,8 @@
                                         <div class="contributor-role">测试、音效、涂装等技术支持</div>
                                     </div>
                                 </a>
-                                <a class="contributor-card" href="https://b23.tv/NV7ZSAr" onclick="app.openExternal('https://b23.tv/NV7ZSAr'); return false;">
+                                <a class="contributor-card" href="https://b23.tv/NV7ZSAr"
+                                    onclick="app.openExternal('https://b23.tv/NV7ZSAr'); return false;">
                                     <div class="contributor-avatar">
                                         <img src="assets/Thanks/2.ChifengRED.jpg" alt="赤风RED">
                                     </div>
@@ -488,7 +504,8 @@
                                         <div class="contributor-role">音效技术支持</div>
                                     </div>
                                 </a>
-                                <a class="contributor-card" href="https://b23.tv/HoVOnla" onclick="app.openExternal('https://b23.tv/HoVOnla'); return false;">
+                                <a class="contributor-card" href="https://b23.tv/HoVOnla"
+                                    onclick="app.openExternal('https://b23.tv/HoVOnla'); return false;">
                                     <div class="contributor-avatar">
                                         <img src="assets/Thanks/3.LianyingCeciliawillet.jpg" alt="连樱Ceciliawillet">
                                     </div>
@@ -497,7 +514,8 @@
                                         <div class="contributor-role">音效技术支持</div>
                                     </div>
                                 </a>
-                                <a class="contributor-card" href="https://b23.tv/h3rAHbw" onclick="app.openExternal('https://b23.tv/h3rAHbw'); return false;">
+                                <a class="contributor-card" href="https://b23.tv/h3rAHbw"
+                                    onclick="app.openExternal('https://b23.tv/h3rAHbw'); return false;">
                                     <div class="contributor-avatar">
                                         <img src="assets/Thanks/4.Laiyinhansi.jpg" alt="莱茵汉斯喵Channel">
                                     </div>
@@ -506,7 +524,8 @@
                                         <div class="contributor-role">涂装技术支持</div>
                                     </div>
                                 </a>
-                                <a class="contributor-card" href="https://github.com/Findoutsider" onclick="app.openExternal('https://github.com/Findoutsider'); return false;">
+                                <a class="contributor-card" href="https://github.com/Findoutsider"
+                                    onclick="app.openExternal('https://github.com/Findoutsider'); return false;">
                                     <div class="contributor-avatar">
                                         <img src="assets/tanks/5.BiAn.png" alt="BiAn">
                                     </div>
@@ -620,7 +639,7 @@
                         <i class="ri-crosshair-line"></i>
                         打开炮镜库
                     </button>
-                    </div>
+                </div>
             </div>
 
             <div class="settings-split-row">
@@ -633,7 +652,8 @@
                         <label style="font-size: 12px; color: var(--text-sec); display: block; margin-bottom: 8px;">
                             选择界面风格
                         </label>
-                        <select id="theme-select" class="theme-select" onchange="app.onThemeChange(this.value)" style="width: 100%;">
+                        <select id="theme-select" class="theme-select" onchange="app.onThemeChange(this.value)"
+                            style="width: 100%;">
                             <option value="default.json">默认主题 (Default)</option>
                         </select>
                     </div>
@@ -658,9 +678,9 @@
         <div class="modal-content">
             <h2>选择要加载的模块</h2>
             <p class="subtitle" style="margin-bottom: 10px;">已根据文件自动检测可用模块</p>
-            
+
             <div class="toggle-grid" id="install-toggles">
-                </div>
+            </div>
 
             <div class="modal-actions">
                 <button class="btn secondary" onclick="app.closeModal('modal-install')">取消</button>
@@ -674,8 +694,9 @@
     <div class="modal-overlay" id="modal-confirm">
         <div class="modal-content">
             <h2 id="confirm-title" style="margin-top: 0; color: var(--text-main);">操作确认</h2>
-            <p id="confirm-message" style="margin-bottom: 25px; color: var(--text-sec); font-size: 14px; line-height: 1.5;"></p>
-            
+            <p id="confirm-message"
+                style="margin-bottom: 25px; color: var(--text-sec); font-size: 14px; line-height: 1.5;"></p>
+
             <div class="modal-actions">
                 <button class="btn secondary" id="btn-confirm-cancel">取消</button>
                 <button class="btn danger" id="btn-confirm-ok">
@@ -693,7 +714,8 @@
 
             <div class="form-group">
                 <label>密码</label>
-                <input type="password" id="archive-password-input" placeholder="请输入密码" onkeydown="app.onArchivePasswordKeydown(event)">
+                <input type="password" id="archive-password-input" placeholder="请输入密码"
+                    onkeydown="app.onArchivePasswordKeydown(event)">
             </div>
 
             <div class="modal-actions">
@@ -710,7 +732,7 @@
         <div class="modal-content" style="max-width: 500px;">
             <h2>导入语音包</h2>
             <p class="subtitle" style="margin-bottom: 25px;">请选择一种导入方式</p>
-            
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <button class="btn big-btn secondary square-btn" onclick="app.importSelectedZip()">
                     <i class="ri-folder-open-line"></i>
@@ -719,7 +741,7 @@
                         <div class="desc">浏览本地压缩包</div>
                     </div>
                 </button>
-                
+
                 <button class="btn big-btn primary square-btn" onclick="app.importPendingZips()">
                     <i class="ri-file-zip-line"></i>
                     <div class="btn-text">
@@ -767,7 +789,7 @@
         <div class="modal-content" style="max-width: 420px;">
             <h2>编辑涂装</h2>
             <p class="subtitle">修改显示名称与封面</p>
-            
+
             <div class="edit-skin-form">
                 <div class="skin-cover-edit" onclick="app.requestUpdateSkinCover()">
                     <img id="edit-skin-cover" src="" alt="封面预览">
@@ -776,7 +798,7 @@
                         <span>更换封面</span>
                     </div>
                 </div>
-                
+
                 <div class="form-group" style="margin-top: 15px;">
                     <label>文件夹名称 (即显示名称)</label>
                     <input type="text" id="edit-skin-name" placeholder="请输入新的名称">
@@ -800,7 +822,7 @@
         <div class="modal-content" style="max-width: 420px;">
             <h2>编辑炮镜</h2>
             <p class="subtitle">修改显示名称与封面</p>
-            
+
             <div class="edit-skin-form">
                 <div class="skin-cover-edit" onclick="app.requestUpdateSightCover()">
                     <img id="edit-sight-cover" src="" alt="封面预览">
@@ -809,7 +831,7 @@
                         <span>更换封面</span>
                     </div>
                 </div>
-                
+
                 <div class="form-group" style="margin-top: 15px;">
                     <label>文件夹名称 (即显示名称)</label>
                     <input type="text" id="edit-sight-name" placeholder="请输入新的名称">
@@ -893,7 +915,8 @@
             </div>
 
             <div class="modal-actions" style="margin-top: 25px;">
-                <button class="btn secondary" onclick="app.closeModal('modal-workshop')" style="width: 100%;">取消</button>
+                <button class="btn secondary" onclick="app.closeModal('modal-workshop')"
+                    style="width: 100%;">取消</button>
             </div>
         </div>
     </div>
@@ -902,22 +925,25 @@
     <div class="modal-overlay" id="modal-disclaimer" style="z-index: 9999;">
         <div class="modal-content disclaimer-modal">
             <h2 class="disclaimer-title">免责声明</h2>
-            
+
             <div class="disclaimer-divider"></div>
 
             <div id="disclaimer-text" class="disclaimer-content">
                 <p>本人开发这款工具的初衷是希望能让大家更方便的体验个性化语音的乐趣。在开发过程中，我已经倾尽全力去完善每一个功能，并进行了多次测试，力求让它运行得更稳定、更安全。</p>
-                <p>但毕竟我只是一个人在利用业余时间开发。能力也有限，面对千差万别的电脑环境和游戏更新，我没办法保证它在每一个细节上都完美无缺。即便我非常希望它能成为对你有用的工具，也必须说明：由于个人技术和精力的局限性，我无法 100% 保证程序在所有情况下都不出 Bug，也无法预见它是否会与你的系统或其他软件产生冲突（比如极其罕见的蓝屏、文件丢失或损坏）。</p>
+                <p>但毕竟我只是一个人在利用业余时间开发。能力也有限，面对千差万别的电脑环境和游戏更新，我没办法保证它在每一个细节上都完美无缺。即便我非常希望它能成为对你有用的工具，也必须说明：由于个人技术和精力的局限性，我无法
+                    100% 保证程序在所有情况下都不出 Bug，也无法预见它是否会与你的系统或其他软件产生冲突（比如极其罕见的蓝屏、文件丢失或损坏）。</p>
                 <p>所以，请你在使用前务必阅读下方的法律条款，并建议你养成备份原文件的好习惯，感谢。</p>
 
                 <h3>免责声明</h3>
                 <p><strong>重要提示：在使用本软件前，请仔细阅读以下免责声明。使用本软件即表示您已充分理解并同意本声明的所有条款。</strong></p>
 
                 <h4>1. 软件性质</h4>
-                <p>本软件为第三方开发的非官方工具，与《战争雷霆》游戏开发商 Gaijin Entertainment 及其关联公司无任何关联。本软件按 GNU General Public License v3.0 (GPL v3) 协议开源发布，仅作为个人学习交流目的而开发。</p>
+                <p>本软件为第三方开发的非官方工具，与《战争雷霆》游戏开发商 Gaijin Entertainment 及其关联公司无任何关联。本软件按 GNU General Public License v3.0
+                    (GPL v3) 协议开源发布，仅作为个人学习交流目的而开发。</p>
 
                 <h4>2. GPL v3 许可声明</h4>
-                <p>本程序是自由软件：您可以自由地重新分发和/或修改它，依据 GNU 通用公共许可证（GPL v3）的条款，由自由软件基金会发布。本程序发布的目的是希望它有用，但不提供任何担保；甚至没有对适销性或特定用途适用性的暗示担保。有关详细信息，请参阅 GNU 通用公共许可证。</p>
+                <p>本程序是自由软件：您可以自由地重新分发和/或修改它，依据 GNU 通用公共许可证（GPL
+                    v3）的条款，由自由软件基金会发布。本程序发布的目的是希望它有用，但不提供任何担保；甚至没有对适销性或特定用途适用性的暗示担保。有关详细信息，请参阅 GNU 通用公共许可证。</p>
 
                 <h4>3. 使用风险</h4>
                 <ul>
@@ -959,14 +985,15 @@
                 <p>开发者保留随时修改本免责声明的权利，修改后的声明自发布之日起生效。</p>
                 <p class="text-muted" style="margin-top: 20px; text-align: right;">最后更新日期：2026年1月10日</p>
             </div>
-            
+
             <div class="disclaimer-divider"></div>
 
             <div class="disclaimer-footer">
                 <div id="disclaimer-timer-hint"></div>
                 <div class="disclaimer-actions-row">
                     <button class="btn-disclaimer reject" onclick="app.disclaimerReject()">拒绝</button>
-                    <button class="btn-disclaimer agree" id="btn-disclaimer-agree" disabled onclick="app.disclaimerAgree()">同意</button>
+                    <button class="btn-disclaimer agree" id="btn-disclaimer-agree" disabled
+                        onclick="app.disclaimerAgree()">同意</button>
                 </div>
             </div>
         </div>
@@ -1018,8 +1045,9 @@
                 <i class="ri-information-line" style="font-size: 48px; color: var(--primary);"></i>
             </div>
             <h2 id="alert-title" style="margin: 0 0 12px 0; color: var(--text-main);">提示</h2>
-            <p id="alert-message" style="margin-bottom: 24px; color: var(--text-sec); font-size: 14px; line-height: 1.6;"></p>
-            
+            <p id="alert-message"
+                style="margin-bottom: 24px; color: var(--text-sec); font-size: 14px; line-height: 1.6;"></p>
+
             <div class="modal-actions" style="justify-content: center;">
                 <button class="btn primary" onclick="app.closeModal('modal-alert')" style="min-width: 120px;">
                     <i class="ri-check-line"></i> 知道了
@@ -1033,4 +1061,5 @@
     <script src="loading_voice_package.js"></script>
     <script src="script.js"></script>
 </body>
+
 </html>
