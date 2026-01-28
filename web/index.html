@@ -34,9 +34,9 @@
     - 下游: 前端通过 pywebview.api 调用后端，完成导入、安装、还原、扫描等实际文件操作。
     -->
     <!-- 一体化头部 Header -->
-    <header class="app-header">
+    <header class="app-header pywebview-drag-region">
         <!-- 1. 左侧 Logo 区域 (可拖拽) -->
-        <div class="header-left drag-region">
+        <div class="header-left">
             <img src="assets/logo.ico" class="app-logo" alt="Logo">
             <div class="app-brand-wrapper">
                 <span class="app-brand-text">Aimer WT</span>
@@ -45,7 +45,7 @@
         </div>
 
         <!-- 2. 中间导航菜单 (不可拖拽) -->
-        <nav class="header-nav no-drag">
+        <nav class="header-nav">
             <button class="nav-btn active" id="btn-home" onclick="app.switchTab('home')">
                 <i class="ri-home-4-line"></i> 主页
             </button>
@@ -98,7 +98,7 @@
         
         <div id="page-home" class="page active">
             <div class="home-grid">
-                <div class="card status-card">
+                <div class="card status-card pywebview-drag-region">
                     <div class="status-icon" id="status-icon">
                         <i class="ri-wifi-off-line"></i>
                     </div>
@@ -107,7 +107,7 @@
                 </div>
 
                 <div class="card path-card">
-                    <div class="card-header no-border">
+                    <div class="card-header no-border pywebview-drag-region">
                         <h2>游戏路径</h2>
                         <span class="subtitle">Game Path Directory</span>
                     </div>
@@ -122,7 +122,7 @@
                     </div>
                 </div>
 
-                <div class="card notice-card">
+                <div class="card notice-card pywebview-drag-region">
                     <div class="card-header no-border">
                         <h3 style="display:flex; align-items:center; gap:8px;">
                             <i class="ri-megaphone-line" style="color:var(--primary)"></i>
@@ -144,7 +144,7 @@
                 </div>
 
                 <div class="card log-card">
-                    <div class="card-header no-border">
+                    <div class="card-header no-border pywebview-drag-region">
                         <h3>运行日志</h3>
                         <span class="subtitle">System Log</span>
                         <div style="flex:1"></div>
@@ -152,7 +152,7 @@
                             <i class="ri-delete-bin-line"></i> 清空
                         </button>
                     </div>
-                    <div class="log-container" id="log-container">
+                    <div class="log-container pywebview-drag-region" id="log-container">
                         <div class="log-line info">[System] 界面 UI 引擎加载完毕...</div>
                         <div class="log-line sys">[System] 等待用户指令...</div>
                     </div>

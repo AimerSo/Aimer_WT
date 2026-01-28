@@ -31,9 +31,12 @@ import re
 import stat
 from pathlib import Path
 from datetime import datetime
+from typing import List
+import json
 
 # 引入安装清单管理器
 from manifest_manager import ManifestManager
+
 
 class CoreService:
     """
@@ -162,6 +165,7 @@ class CoreService:
         def run():
             path = self.auto_detect_game_path()
             if callback: callback(path)
+
         t = threading.Thread(target=run)
         t.daemon = True
         t.start()
@@ -271,7 +275,7 @@ class CoreService:
             return os.path.commonpath([str(tp), str(mod_dir)]) == str(mod_dir) and str(tp) != str(mod_dir)
         except Exception:
             return False
-    
+
     def _remove_path(self, path_obj):
         """
         功能定位:
@@ -312,10 +316,27 @@ class CoreService:
                     except Exception:
                         pass
                     func(path)
+
                 shutil.rmtree(p, onerror=_onerror)
         except Exception as e:
             raise e
 
+    def get_installed_mods(self) -> List[str]:
+        try:
+            with open(self.manifest_mgr.manifest_file, "r", encoding="utf-8") as f:
+                _mods = json.loads(f.read())
+                _installed_mods = _mods.get("installed_mods", {})
+                if not _installed_mods:
+                    return []
+                else:
+                    self.log(f"已读取 {len(_installed_mods)} 个mods", "INFO")
+                    return [mod_id for mod_id in _installed_mods.keys()]
+        except FileNotFoundError:
+            self.log(f"读取已安装mods失败，文件不存在：{self.manifest_mgr.manifest_file}", "ERROR")
+        except json.decoder.JSONDecodeError:
+            self.log(f"读取已安装mods失败，文件解析错误：{self.manifest_mgr.manifest_file}", "ERROR")
+
+    # --- 核心：安装逻辑 (V2.2 - 文件夹直拷) ---
     def install_from_library(self, source_mod_path, install_list=None, progress_callback=None):
         """
         功能定位:
@@ -346,10 +367,10 @@ class CoreService:
         import time
         try:
             self.log(f"准备安装: {source_mod_path.name}", "INSTALL")
-            
+
             if progress_callback:
                 progress_callback(5, f"准备安装: {source_mod_path.name}")
-            
+
             if not self.game_root:
                 raise Exception("未设置游戏路径")
 
@@ -368,7 +389,7 @@ class CoreService:
 
             # 2. 复制文件
             self.log("正在复制选中文件夹的内容...", "COPY")
-            
+
             if not install_list or len(install_list) == 0:
                 self.log("未选择任何文件夹，跳过安装。", "WARN")
                 if progress_callback:
@@ -378,18 +399,18 @@ class CoreService:
             # 首先统计总文件数，用于计算真实进度
             total_files_to_copy = 0
             files_info = []  # [(src_file, dest_file, folder_rel_path), ...]
-            
+
             for folder_rel_path in install_list:
                 src_dir = None
                 if folder_rel_path == "根目录":
                     src_dir = source_mod_path
                 else:
                     src_dir = source_mod_path / folder_rel_path
-                
+
                 if not src_dir.exists():
                     self.log(f"[WARN] 找不到源文件夹: {folder_rel_path}", "WARN")
                     continue
-                    
+
                 for root, dirs, files in os.walk(src_dir):
                     for file in files:
                         src_file = Path(root) / file
@@ -410,34 +431,35 @@ class CoreService:
             # 收集本次安装的目标文件名，用于写入安装清单
             installed_files_record = []
             folder_files_count = {}  # 用于统计每个文件夹的文件数
-            
+
             # 进度计算：10% 预检，15-95% 复制文件，95-100% 更新配置
             copy_progress_start = 15
             copy_progress_end = 95
             last_progress_update = time.monotonic()
-            
+
             for idx, (src_file, dest_file, folder_rel_path) in enumerate(files_info):
                 try:
                     shutil.copy2(src_file, dest_file)
                     total_files += 1
                     installed_files_record.append(dest_file.name)
-                    
+
                     # 统计每个文件夹的文件数
                     if folder_rel_path not in folder_files_count:
                         folder_files_count[folder_rel_path] = 0
                     folder_files_count[folder_rel_path] += 1
-                    
+
                     # 更新进度 (限制更新频率，避免 UI 卡顿)
                     now = time.monotonic()
                     if progress_callback and (now - last_progress_update >= 0.1 or idx == len(files_info) - 1):
-                        progress = copy_progress_start + (idx + 1) / total_files_to_copy * (copy_progress_end - copy_progress_start)
+                        progress = copy_progress_start + (idx + 1) / total_files_to_copy * (
+                                copy_progress_end - copy_progress_start)
                         # 文件名截断显示
                         fname = src_file.name
                         if len(fname) > 20:
                             fname = fname[:17] + "..."
                         progress_callback(int(progress), f"复制: {fname}")
                         last_progress_update = now
-                        
+
                 except Exception as e:
                     self.log(f"  复制文件 {src_file.name} 失败: {e}", "WARN")
 
@@ -458,10 +480,10 @@ class CoreService:
 
             # 3. 更新配置
             self._update_config_blk()
-            
+
             if progress_callback:
                 progress_callback(100, "安装完成")
-                
+
             self.log(f"[DONE] 安装完成！本次覆盖/新增 {total_files} 个文件。", "SUCCESS")
 
         except Exception as e:
@@ -495,7 +517,7 @@ class CoreService:
         try:
             self.log("正在还原纯净模式...", "RESTORE")
             if not self.game_root: raise Exception("未设置游戏路径")
-            
+
             mod_dir = self.game_root / "sound" / "mod"
             if mod_dir.exists():
                 self.log("正在清空 mod 文件夹内容...", "CLEAN")
@@ -514,7 +536,7 @@ class CoreService:
             # 清空安装清单记录
             if self.manifest_mgr:
                 self.manifest_mgr.clear_manifest()
-                
+
             self._disable_config_mod()
             self.log("还原成功！所有 Mod 已清空，配置文件已重置。", "SUCCESS")
         except Exception as e:
@@ -602,7 +624,7 @@ class CoreService:
                             self.log("已自动回滚配置文件", "WARN")
                         except Exception as restore_error:
                             self.log(f"回滚失败: {restore_error}", "ERROR")
-                    
+
             except Exception as e:
                 self.log(f"写入配置文件失败: {e}", "ERROR")
                 self.log("提示：请检查 config.blk 是否被设置为[只读]，或者游戏是否正在运行导致文件被占用。", "WARN")

@@ -587,7 +587,6 @@ i[class^="ri-"] {
     display: flex;
     align-items: center;
     gap: 12px;
-    -webkit-app-region: no-drag;
     margin-left: auto;
     /* 确保右侧靠右 */
 }
@@ -1470,7 +1469,6 @@ i[class^="ri-"] {
     font-weight: 500;
     cursor: pointer;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    -webkit-app-region: no-drag;
     font-family: inherit;
     position: relative;
     overflow: hidden;
@@ -2016,7 +2014,6 @@ i[class^="ri-"] {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     /* 更丝滑的贝塞尔曲线 */
     overflow: hidden;
-    -webkit-app-region: no-drag;
     translate: 0 0;
     will-change: translate, box-shadow;
     position: relative;
@@ -3209,12 +3206,6 @@ i[class^="ri-"] {
     }
 }
 
-/* 当鼠标悬停在特定卡片上时，禁用全局拖拽 */
-body.drag-disabled,
-body.drag-disabled * {
-    -webkit-app-region: no-drag !important;
-}
-
 /* --- Theme Select --- */
 .theme-select {
     width: 100%;
@@ -4261,6 +4252,7 @@ body.drag-disabled * {
         opacity: 0;
         transform: translateX(100%);
     }
+
     to {
         opacity: 1;
         transform: translateX(0);
@@ -4272,6 +4264,7 @@ body.drag-disabled * {
         opacity: 1;
         transform: translateX(0);
     }
+
     to {
         opacity: 0;
         transform: translateX(100%);
@@ -4477,15 +4470,15 @@ body.drag-disabled * {
     top: 20px;
 }
 
-.toast-error.show ~ .toast-warn.show,
-.toast-error.show ~ .toast-info.show {
+.toast-error.show~.toast-warn.show,
+.toast-error.show~.toast-info.show {
     top: 100px;
 }
 
-.toast-warn.show ~ .toast-info.show {
+.toast-warn.show~.toast-info.show {
     top: 100px;
 }
 
-.toast-error.show ~ .toast-warn.show ~ .toast-info.show {
+.toast-error.show~.toast-warn.show~.toast-info.show {
     top: 180px;
 }

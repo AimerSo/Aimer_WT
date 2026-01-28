@@ -619,7 +619,7 @@ const app = {
                 const s = this._cropCoverState;
                 if (!s) return;
                 s.dragging = false;
-                try { canvas.releasePointerCapture(e.pointerId); } catch {}
+                try { canvas.releasePointerCapture(e.pointerId); } catch { }
             };
 
             canvas.onpointerdown = onPointerDown;
@@ -1602,7 +1602,7 @@ const app = {
         const noteText = mod.note || '暂无留言';
 
         // 判断该语音包是否为当前已生效项
-        const isInstalled = (mod.id === app.installedModId);
+        const isInstalled = app.installedModIds && app.installedModIds.includes(mod.id);
 
         // 根据状态决定按钮样式和图标
         // 已安装: active 样式, check 图标, title="当前已加载"
@@ -1889,13 +1889,18 @@ const app = {
     // 安装/还原成功回调
     onInstallSuccess(modName) {
         console.log("Install Success:", modName);
-        this.installedModId = modName;
+        if (!this.installedModIds) {
+            this.installedModIds = [];
+        }
+        if (!this.installedModIds.includes(modName)) {
+            this.installedModIds.push(modName);
+        }
         if (this.modCache) this.renderList(this.modCache);
     },
 
     onRestoreSuccess() {
         console.log("Restore Success");
-        this.installedModId = null;
+        this.installedModIds = [];
         if (this.modCache) this.renderList(this.modCache);
     }
 };
@@ -2213,8 +2218,33 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
         await app.checkDisclaimer();
 
         // 2. 获取初始状态
-        const state = await pywebview.api.init_app_state();
+        const state = await pywebview.api.init_app_state() || {
+            game_path: "",
+            path_valid: false,
+            active_theme: "default.json",
+            theme: "Light",
+            installed_mods: [],
+        };
+        const state = await pywebview.api.init_app_state() || {
+            game_path: "",
+            path_valid: false,
+            active_theme: "default.json",
+            theme: "Light",
+            installed_mods: [],
+        };
         this.updatePathUI(state.game_path, state.path_valid);
+
+        if (state.installed_mods && Array.isArray(state.installed_mods)) {
+            this.installedModIds = state.installed_mods;
+        } else {
+            this.installedModIds = [];
+        }
+
+        if (state.installed_mods && Array.isArray(state.installed_mods)) {
+            this.installedModIds = state.installed_mods;
+        } else {
+            this.installedModIds = [];
+        }
         this.sightsPath = state.sights_path || null;
         this._sightsLoaded = false;
         this.loadSightsView();

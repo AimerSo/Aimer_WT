@@ -428,7 +428,7 @@ class AppApi:
             "path_valid": is_valid,
             "theme": theme,
             "active_theme": self._cfg_mgr.get_active_theme(),
-            "current_mod": self._cfg_mgr.get_current_mod(),
+            "installed_mods": self._logic.get_installed_mods(),
             "sights_path": sights_path
         }
 
