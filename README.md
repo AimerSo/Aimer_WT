@@ -19,9 +19,16 @@
 
 ## 环境要求
 
-- Windows
+- Windows/Linux
 - Python（建议 3.10+，以你本地可运行版本为准）
 - 依赖：pywebview
+## 🐧 Linux / Steam Deck 支持
+本项目已适配 Linux (Arch/Debian) 及 Wayland 环境：
+- ✅ 支持全盘 Steam 库自动检索
+- ✅ 解决 Wayland 环境下渲染黑屏问题
+- ✅ 支持手动选择路径与语音包管理
+
+> **注意**：Linux 用户请务必查看 [Linux 使用指南](LINUX.md) 以安装必要依赖和配置环境变量。
 
 ## 快速开始（源码运行）
 
