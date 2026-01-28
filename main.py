@@ -932,7 +932,13 @@ class AppApi:
             return
 
         # 打开文件选择对话框（返回列表，即使为单选）
-        file_types = ("Zip Files (*.zip)", "Rar Files (*.rar)", "All files (*.*)")
+        file_types = (
+            "Archive Files (*.zip;*.rar;*.7z;*.tar;*.gz;*.bz2;*.xz;*.tgz;*.tbz2)",
+            "Zip Files (*.zip)",
+            "Rar Files (*.rar)",
+            "7zip Files (*.7z)",
+            "All files (*.*)"
+        )
 
         # 使用 OPEN 对话框模式进行单文件选择
         result = self._window.create_file_dialog(
