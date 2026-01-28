@@ -1,26 +1,53 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aimer WT</title>
     <link rel="stylesheet" href="assets/remixicon/remixicon.css">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css_fix.css">
 </head>
+
 <body>
+    <!--
+    功能定位:
+    - 应用前端页面结构与交互入口，包含导航、语音包库、涂装/炮镜库、设置与各类模态框容器。
+
+    输入输出:
+    - 输入:
+      - 用户交互：按钮点击、文本输入、文件拖拽、模态框确认/取消
+      - 后端推送：main.py 通过 evaluate_js 调用 window.app 与 window.MinimalistLoading
+    - 输出:
+      - 触发前端方法：onclick 调用 app.*（在 web/script.js 中定义）
+      - 触发后端接口：app.* 内部调用 pywebview.api.*（在 main.py 的 AppApi 中实现）
+    - 依赖:
+      - 样式：style.css、css_fix.css
+      - 图标：remixicon
+      - 脚本：loading_voice_package.js（加载组件）、script.js（业务交互）
+
+    实现逻辑:
+    - 页面以多个 .page 容器组织功能区，通过 app.switchTab 控制显隐与懒加载。
+    - 模态框通过添加/移除 .show 控制显示，具体行为由 app.closeModal 等方法管理。
+
+    业务关联:
+    - 上游: 用户在本页面操作触发前端逻辑。
+    - 下游: 前端通过 pywebview.api 调用后端，完成导入、安装、还原、扫描等实际文件操作。
+    -->
     <!-- 一体化头部 Header -->
-    <header class="app-header">
+    <header class="app-header pywebview-drag-region">
         <!-- 1. 左侧 Logo 区域 (可拖拽) -->
-        <div class="header-left drag-region">
+        <div class="header-left">
             <img src="assets/logo.ico" class="app-logo" alt="Logo">
             <div class="app-brand-wrapper">
                 <span class="app-brand-text">Aimer WT</span>
-                <span class="app-version-text">v1 Beta</span>
+                <span class="app-version-text" style="color: #9b146e;">v2 Beta</span>
             </div>
         </div>
 
         <!-- 2. 中间导航菜单 (不可拖拽) -->
-        <nav class="header-nav no-drag">
+        <nav class="header-nav">
             <button class="nav-btn active" id="btn-home" onclick="app.switchTab('home')">
                 <i class="ri-home-4-line"></i> 主页
             </button>
@@ -28,10 +55,10 @@
                 <i class="ri-archive-line"></i> 语音包库
             </button>
             <button class="nav-btn" id="btn-camo" onclick="app.switchTab('camo')">
-                <i class="ri-brush-3-line"></i> 涂装库
+                <i class="ri-brush-3-line"></i> 涂装/炮镜库
             </button>
             <button class="nav-btn" id="btn-sight" onclick="app.switchTab('sight')">
-                <i class="ri-crosshair-line"></i> 炮镜库
+                <i class="ri-crosshair-line"></i> 信息库
             </button>
             <button class="nav-btn" id="btn-settings" onclick="app.switchTab('settings')">
                 <i class="ri-settings-3-line"></i> 设置
@@ -70,10 +97,10 @@
     </header>
 
     <div class="main-container">
-        
+
         <div id="page-home" class="page active">
             <div class="home-grid">
-                <div class="card status-card">
+                <div class="card status-card pywebview-drag-region">
                     <div class="status-icon" id="status-icon">
                         <i class="ri-wifi-off-line"></i>
                     </div>
@@ -82,7 +109,7 @@
                 </div>
 
                 <div class="card path-card">
-                    <div class="card-header no-border">
+                    <div class="card-header no-border pywebview-drag-region">
                         <h2>游戏路径</h2>
                         <span class="subtitle">Game Path Directory</span>
                     </div>
@@ -97,7 +124,7 @@
                     </div>
                 </div>
 
-                <div class="card notice-card">
+                <div class="card notice-card pywebview-drag-region">
                     <div class="card-header no-border">
                         <h3 style="display:flex; align-items:center; gap:8px;">
                             <i class="ri-megaphone-line" style="color:var(--primary)"></i>
@@ -109,17 +136,18 @@
                         <p>📌 <strong>使用步骤教程：</strong></p>
                         <ul>
                             <li>1. <strong>定位游戏：</strong> 在首页点击“自动搜索”或手动“浏览”定位到《战争雷霆》安装目录。</li>
-                            <li>2. <strong>准备文件：</strong> 将下载的语音包 ZIP 压缩包放入软件目录下的 <code>[待解压区]</code> 文件夹中。</li>
-                            <li>3. <strong>导入包体：</strong> 切换到“语音包库”页面，点击“导入 ZIP”按钮，软件会自动解压并识别信息，你也可以自己解压放到语音包库中。</li>
+                            <li>2. <strong>准备文件：</strong> 将下载的语音包 ZIP/RAR 压缩包放入软件目录下的 <code>[待解压区]</code> 文件夹中。</li>
+                            <li>3. <strong>导入包体：</strong> 切换到“语音包库”页面，点击“导入压缩包”按钮，软件会自动解压并识别信息，你也可以自己解压放到语音包库中。</li>
                             <li>4. <strong>一键加载：</strong> 在库中找到目标语音包，点击“加载”图标。软件会自动配置 <code>config.blk</code> 并安装。</li>
-                            <li>5. <strong>开启 Mod：</strong> 软件会自动检测并开启游戏内的 Mod 支持。若未生效，请检查 <code>config.blk</code> 中是否有 <code>enable_mod:b=yes</code>，如果有问题先联系语音包制作者。</li>
+                            <li>5. <strong>开启 Mod：</strong> 软件会自动检测并开启游戏内的 Mod 支持。若未生效，请检查 <code>config.blk</code> 中是否有
+                                <code>enable_mod:b=yes</code>，如果有问题先联系语音包制作者。</li>
                         </ul>
                         <p>祝您在战场上一路长虹！(๑•̀ㅂ•́)و✧</p>
                     </div>
                 </div>
 
                 <div class="card log-card">
-                    <div class="card-header no-border">
+                    <div class="card-header no-border pywebview-drag-region">
                         <h3>运行日志</h3>
                         <span class="subtitle">System Log</span>
                         <div style="flex:1"></div>
@@ -127,7 +155,7 @@
                             <i class="ri-delete-bin-line"></i> 清空
                         </button>
                     </div>
-                    <div class="log-container" id="log-container">
+                    <div class="log-container pywebview-drag-region" id="log-container">
                         <div class="log-line info">[System] 界面 UI 引擎加载完毕...</div>
                         <div class="log-line sys">[System] 等待用户指令...</div>
                     </div>
@@ -141,7 +169,7 @@
                     <div class="toolbar-v2-left">
                         <button class="btn-v2 primary" onclick="app.openImportModal()">
                             <i class="ri-file-zip-line"></i>
-                            <span>导入 ZIP</span>
+                            <span>导入压缩包</span>
                         </button>
                         <div class="btn-v2-group">
                             <button class="btn-v2" onclick="app.openFolder('library')" title="打开库目录">
@@ -161,11 +189,9 @@
                     <div class="toolbar-v2-right">
                         <div class="search-v2">
                             <i class="ri-search-2-line"></i>
-                            <input type="text" 
-                                   placeholder="搜索作者或标题..." 
-                                   oninput="app.filterLibrary(this.value)">
+                            <input type="text" placeholder="搜索作者或标题..." oninput="app.filterLibrary(this.value)">
                         </div>
-                        <button class="btn-v2 icon-only" onclick="app.refreshLibrary()" title="刷新">
+                        <button class="btn-v2 icon-only" onclick="app.refreshLibrary({manual:true})" title="刷新">
                             <i class="ri-refresh-line"></i>
                         </button>
                     </div>
@@ -176,22 +202,418 @@
                 <div class="empty-state">
                     <i class="ri-inbox-archive-line"></i>
                     <h3>这里空空如也</h3>
-                    <p>请将 ZIP 包放入 [待解压区] 并点击左上角导入</p>
+                    <p>请将 ZIP/RAR 包放入 [待解压区] 并点击左上角导入</p>
                 </div>
             </div>
         </div>
 
         <div id="page-camo" class="page">
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; animation: fadeIn 0.4s ease-out;">
-                <img src="assets/coming_soon_img.png" alt="Coming Soon" style="width: 320px; height: auto; object-fit: contain; margin-bottom: 20px;">
-                <p style="margin-top: 12px; color: var(--text-sec); font-size: 20px;">这个区域以后再来探索吧~</p>
+            <!-- Master-Detail 布局 -->
+            <div class="resource-master-detail">
+                <!-- 左侧垂直导航 -->
+                <div class="resource-nav">
+                    <button class="resource-nav-item active" data-target="skins"
+                        onclick="app.switchResourceView('skins')">
+                        <i class="ri-brush-3-line"></i>
+                        <span>涂装库</span>
+                    </button>
+                    <button class="resource-nav-item" data-target="sights" onclick="app.switchResourceView('sights')">
+                        <i class="ri-crosshair-line"></i>
+                        <span>炮镜库</span>
+                    </button>
+                </div>
+
+                <!-- 右侧堆栈容器 -->
+                <div class="resource-content">
+                    <!-- 涂装视图 -->
+                    <div class="resource-view active" id="view-skins">
+                        <div class="resource-view-header">
+                            <h2><i class="ri-brush-3-line"></i> 涂装库</h2>
+                            <div class="resource-view-header-right">
+                                <div class="col-count" id="skins-count">本地: 0</div>
+                                <button class="btn-v2 icon-only" id="btn-refresh-skins"
+                                    onclick="app.refreshSkins({manual:true})" title="刷新涂装库">
+                                    <i class="ri-refresh-line"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- 新布局：左右分栏 -->
+                        <div class="skins-new-layout">
+                            <!-- 左侧：解压模块 -->
+                            <div class="skins-left-panel">
+                                <div class="drop-zone-compact" id="skins-drop-zone">
+                                    <div class="drop-zone-inner">
+                                        <div class="drop-zone-actions">
+                                            <button class="btn-v2 primary" onclick="app.importSkinZipDialog()">
+                                                <i class="ri-upload-2-line"></i>
+                                                <span>选择 ZIP 解压</span>
+                                            </button>
+                                            <button class="btn-v2" onclick="app.openFolder('userskins')">
+                                                <i class="ri-folder-2-line"></i>
+                                                <span>打开 UserSkins</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="drop-tutorial" id="skins-tutorial">
+                                    <div class="drop-tutorial-title">涂装教程</div>
+                                    <div class="drop-tutorial-body">
+                                        <p>涂装文件名尽可能使用英文。</p>
+                                        <p>
+                                            如果你想从 WT LIVE 安装涂装，只需删除文件夹中的所有内容，然后从
+                                            <code>live.warthunder.com</code>
+                                            下载涂装（信息库中有直达链接），并将压缩包的内容（其中包含几个文件）以及迷彩配置文件复制到文件
+                                            <code>.dds</code> 夹 <code>.tga</code> 中 <code>*vehicle_name*.blk</code> 。
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 右侧：预览图网格 -->
+                            <div class="skins-right-panel">
+                                <div class="small-card-grid" id="skins-list">
+                                    <div class="empty-state" style="grid-column: 1 / -1;">
+                                        <i class="ri-brush-3-line"></i>
+                                        <h3>还没有涂装</h3>
+                                        <p>拖入 ZIP 或点击"选择 ZIP 解压"，导入后会自动出现在这里</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 炮镜视图 -->
+                    <div class="resource-view" id="view-sights">
+                        <div class="resource-view-header">
+                            <h2><i class="ri-crosshair-line"></i> 炮镜库</h2>
+                            <div class="resource-view-header-right">
+                                <div class="col-count" id="sights-count">本地: 0</div>
+                                <button class="btn-v2 icon-only" id="btn-refresh-sights"
+                                    onclick="app.refreshSights({manual:true})" title="刷新炮镜库">
+                                    <i class="ri-refresh-line"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- 新布局：左右分栏 -->
+                        <div class="skins-new-layout">
+                            <!-- 左侧：路径设置模块 -->
+                            <div class="skins-left-panel">
+                                <div class="drop-zone-compact" id="sights-drop-zone">
+                                    <div class="drop-zone-inner">
+                                        <div class="drop-zone-actions">
+                                            <button class="btn-v2 primary" id="btn-sights-primary"
+                                                onclick="app.selectSightsPath()">
+                                                <i class="ri-folder-open-line"></i>
+                                                <span>设置炮镜路径</span>
+                                            </button>
+                                            <button class="btn-v2" id="btn-sights-secondary"
+                                                onclick="app.openSightsFolder()">
+                                                <i class="ri-folder-2-line"></i>
+                                                <span>打开 UserSights</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="drop-tutorial" id="sights-tutorial">
+                                    <div class="drop-tutorial-title">炮镜教程</div>
+                                    <div class="drop-tutorial-body">
+                                        <p>炮镜模块在
+                                            <code>C:\Users\&lt;"user name"&gt;\Documents\My Games\WarThunder\Saves\&lt;"user ID"&gt;\production\UserSights</code>
+                                        </p>
+                                        <p>你可以在商店的个人资料页面找到您的用户 ID 。如果目录中缺少 <code>UserSights</code> 文件夹，请创建它。</p>
+                                        <p>如果你的自定义瞄准镜仅适用于特定车辆，请在 <code>UserSights</code> 文件夹中创建一个以该车辆 ID 命名的子文件夹，例如
+                                            <code>&lt;车辆 ID&gt;</code> <code>germ_flakpanzer_IV_Ostwind</code>。</p>
+                                        <p>如果瞄准镜适用于多辆车，请创建一个名为 <code>&lt;车辆 ID&gt;</code> 的子文件夹 <code>all_tanks</code>。
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 右侧：预览图网格 -->
+                            <div class="skins-right-panel">
+                                <div class="sights-list-container small-card-grid" id="sights-list">
+                                    <div class="empty-state">
+                                        <i class="ri-crosshair-line"></i>
+                                        <h3>还没有炮镜</h3>
+                                        <p>请先设置 UserSights 路径</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <div id="page-sight" class="page">
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; animation: fadeIn 0.4s ease-out;">
-                <img src="assets/coming_soon_img.png" alt="Coming Soon" style="width: 320px; height: auto; object-fit: contain; margin-bottom: 20px;">
-                <p style="margin-top: 12px; color: var(--text-sec); font-size: 20px;">这个区域以后再来探索吧~</p>
+            <div class="info-hub-container">
+                <!-- 顶部统计卡片组 -->
+                <div class="info-stats-grid">
+                    <button class="stat-card stat-card-action" type="button" onclick="app.openSupportMe()">
+                        <div class="stat-icon heart">
+                            <i class="ri-heart-3-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">支持我</div>
+                            <div class="stat-value">请我喝一杯蜜雪冰城</div>
+                        </div>
+                    </button>
+                    <button class="stat-card stat-card-action" type="button"
+                        onclick="app.openExternal('https://qun.qq.com/universal-share/share?ac=1&authKey=%2FDJOR1E72xAQKvLD%2BNQmaZmD7py%2F5PUY7xHORJX4kmmKdabaRF4%2BwIJkp6s8I10U&busi_data=eyJncm91cENvZGUiOiIxMDc4MzQzNjI5IiwidG9rZW4iOiJmSUNpVXErcnNMMVhlemRNR25EbVF5TWJrbmc5bm02UmRIS0c0WHFxemdWQkRzUlVmSkVZQW11NXFkRXZkMXBDIiwidWluIjoiMTA3OTY0OTM2OSJ9&data=4qfEzEByH95wqWw0I5ButymAfP5Aj5bjksqrXyh3uAoIWg5ChDGQ3w6cocqmRaRaGbDRpFunhEYQYBHwC46GHg&svctype=4&tempid=h5_group_info')">
+                        <div class="stat-icon package">
+                            <i class="ri-qq-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">加入群(讨论、反馈BUG)</div>
+                            <div class="stat-value">1078343629</div>
+                        </div>
+                    </button>
+                    <button class="stat-card stat-card-action" type="button"
+                        onclick="app.openExternal('https://hcng65m1o0ph.feishu.cn/docx/SjgSdhEZ4oZDhKxgThdcM8Kon7g?from=from_copylink')">
+                        <div class="stat-icon code">
+                            <i class="ri-file-text-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">使用文档</div>
+                            <div class="stat-value">飞书云文档</div>
+                        </div>
+                    </button>
+                    <button class="stat-card stat-card-action" type="button"
+                        onclick="app.openExternal('https://b23.tv/Z0hfm59')">
+                        <div class="stat-icon gamepad">
+                            <i class="ri-bilibili-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">我的B站主页</div>
+                            <div class="stat-value">AimerSo</div>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- 快速链接区域 -->
+                <div class="quick-links-section">
+                    <div class="section-header">
+                        <h2><i class="ri-links-line"></i> 快速链接</h2>
+                        <span class="section-subtitle">Quick Access</span>
+                    </div>
+                    <div class="links-grid">
+                        <a href="https://warthunder.com/zh" target="_blank" class="link-card game">
+                            <div class="link-card-bg">
+                                <i class="ri-gamepad-line"></i>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-icon">
+                                    <i class="ri-gamepad-line"></i>
+                                </div>
+                                <div class="link-info">
+                                    <div class="link-title">战争雷霆官网</div>
+                                    <div class="link-desc">游戏官方网站</div>
+                                    <div class="link-url">https://warthunder.com/zh/</div>
+                                </div>
+                                <div class="link-arrow">
+                                    <i class="ri-arrow-right-line"></i>
+                                </div>
+                            </div>
+                        </a>
+
+                        <a href="#" class="link-card wtlive" onclick="app.openWorkshopChooser(); return false;">
+                            <div class="link-card-bg">
+                                <i class="ri-live-line"></i>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-icon">
+                                    <i class="ri-live-line"></i>
+                                </div>
+                                <div class="link-info">
+                                    <div class="link-title">WTLive/WTLiker</div>
+                                    <div class="link-desc">MOD 创意工坊</div>
+                                    <div class="link-url">点击选择：WTLive(国际) / WTLiker(国内)</div>
+                                </div>
+                                <div class="link-arrow">
+                                    <i class="ri-arrow-right-line"></i>
+                                </div>
+                            </div>
+                        </a>
+
+                        <a href="https://b23.tv/Z7Hg9md" target="_blank" class="link-card bili">
+                            <div class="link-card-bg">
+                                <i class="ri-bilibili-line"></i>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-icon">
+                                    <i class="ri-bilibili-line"></i>
+                                </div>
+                                <div class="link-info">
+                                    <div class="link-title">哔哩哔哩</div>
+                                    <div class="link-desc">战争雷霆官方账号</div>
+                                    <div class="link-url">https://b23.tv/Z7Hg9md</div>
+                                </div>
+                                <div class="link-arrow">
+                                    <i class="ri-arrow-right-line"></i>
+                                </div>
+                            </div>
+                        </a>
+
+                        <a href="https://github.com/AimerSo/Aimer_WT" target="_blank" class="link-card github">
+                            <div class="link-card-bg">
+                                <i class="ri-github-line"></i>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-icon">
+                                    <i class="ri-github-line"></i>
+                                </div>
+                                <div class="link-info">
+                                    <div class="link-title">GitHub</div>
+                                    <div class="link-desc">本项目的开源代码托管地址</div>
+                                    <div class="link-url">https://github.com/AimerSo/Aimer_WT</div>
+                                </div>
+                                <div class="link-arrow">
+                                    <i class="ri-arrow-right-line"></i>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 鸣谢与关于 -->
+                <div class="about-section">
+                    <div class="card about-card">
+                        <div class="card-header">
+                            <h2><i class="ri-heart-line"></i> 鸣谢名单</h2>
+                            <span class="subtitle">排名不分先后</span>
+                        </div>
+                        <div class="card-content">
+                            <div class="contributors-grid">
+                                <a class="contributor-card" href="https://b23.tv/g5hG7UL"
+                                    onclick="app.openExternal('https://b23.tv/g5hG7UL'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/Thanks/1.beiku.jpg" alt="beiku">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">beiku贝库</div>
+                                        <div class="contributor-role">测试、音效、涂装等技术支持</div>
+                                    </div>
+                                </a>
+                                <a class="contributor-card" href="https://b23.tv/NV7ZSAr"
+                                    onclick="app.openExternal('https://b23.tv/NV7ZSAr'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/Thanks/2.ChifengRED.jpg" alt="赤风RED">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">赤风RED</div>
+                                        <div class="contributor-role">音效技术支持</div>
+                                    </div>
+                                </a>
+                                <a class="contributor-card" href="https://b23.tv/HoVOnla"
+                                    onclick="app.openExternal('https://b23.tv/HoVOnla'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/Thanks/3.LianyingCeciliawillet.jpg" alt="连樱Ceciliawillet">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">连樱Ceciliawillet</div>
+                                        <div class="contributor-role">音效技术支持</div>
+                                    </div>
+                                </a>
+                                <a class="contributor-card" href="https://b23.tv/h3rAHbw"
+                                    onclick="app.openExternal('https://b23.tv/h3rAHbw'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/Thanks/4.Laiyinhansi.jpg" alt="莱茵汉斯喵Channel">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">莱茵汉斯喵Channel</div>
+                                        <div class="contributor-role">涂装技术支持</div>
+                                    </div>
+                                </a>
+                                <a class="contributor-card" href="https://github.com/Findoutsider"
+                                    onclick="app.openExternal('https://github.com/Findoutsider'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/tanks/5.BiAn.png" alt="BiAn">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">彼岸</div>
+                                        <div class="contributor-role">软件技术支持</div>
+                                    </div>
+                                </a>
+                                <div class="contributor-card is-hidden-slot">
+                                    <div class="contributor-avatar">
+                                        <i class="ri-team-line"></i>
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">社区成员</div>
+                                        <div class="contributor-role">技术支持</div>
+                                    </div>
+                                </div>
+                                <div class="contributor-card is-hidden-slot">
+                                    <div class="contributor-avatar">
+                                        <i class="ri-user-settings-line"></i>
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">贡献者 07</div>
+                                        <div class="contributor-role">技术支持</div>
+                                    </div>
+                                </div>
+                                <div class="contributor-card is-hidden-slot">
+                                    <div class="contributor-avatar">
+                                        <i class="ri-user-add-line"></i>
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">贡献者 08</div>
+                                        <div class="contributor-role">技术支持</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card project-card">
+                        <div class="card-header">
+                            <h2><i class="ri-information-line"></i> 项目信息</h2>
+                            <span class="subtitle">Project Information</span>
+                        </div>
+                        <div class="card-content">
+                            <div class="project-info-list">
+                                <div class="project-info-item">
+                                    <div class="info-icon">
+                                        <i class="ri-code-box-line"></i>
+                                    </div>
+                                    <div class="info-details">
+                                        <div class="info-title">开源协议</div>
+                                        <div class="info-value">GNU General Public License v3.0</div>
+                                    </div>
+                                </div>
+                                <div class="project-info-item">
+                                    <div class="info-icon">
+                                        <i class="ri-terminal-box-line"></i>
+                                    </div>
+                                    <div class="info-details">
+                                        <div class="info-title">技术栈</div>
+                                        <div class="info-value">Python 3.11 + Flask + HTML/CSS/JS</div>
+                                    </div>
+                                </div>
+                                <div class="project-info-item">
+                                    <div class="info-icon">
+                                        <i class="ri-calendar-line"></i>
+                                    </div>
+                                    <div class="info-details">
+                                        <div class="info-title">最后更新</div>
+                                        <div class="info-value">2026 年 1 月</div>
+                                    </div>
+                                </div>
+                                <div class="project-info-item">
+                                    <div class="info-icon">
+                                        <i class="ri-shield-check-line"></i>
+                                    </div>
+                                    <div class="info-details">
+                                        <div class="info-title">状态</div>
+                                        <div class="info-value">
+                                            <span class="status-badge active">活跃开发中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -209,15 +631,15 @@
                         <i class="ri-folder-2-line"></i>
                         打开语音包库
                     </button>
-                    <button class="btn big-btn secondary placeholder" onclick="void(0)" style="opacity: 0.6; cursor: default;">
+                    <button class="btn big-btn secondary" onclick="app.openFolder('userskins')">
                         <i class="ri-brush-3-line"></i>
                         打开涂装库
                     </button>
-                    <button class="btn big-btn secondary placeholder" onclick="void(0)" style="opacity: 0.6; cursor: default;">
+                    <button class="btn big-btn secondary" onclick="app.openSightsFolder()">
                         <i class="ri-crosshair-line"></i>
                         打开炮镜库
                     </button>
-                    </div>
+                </div>
             </div>
 
             <div class="settings-split-row">
@@ -230,7 +652,8 @@
                         <label style="font-size: 12px; color: var(--text-sec); display: block; margin-bottom: 8px;">
                             选择界面风格
                         </label>
-                        <select id="theme-select" class="theme-select" onchange="app.onThemeChange(this.value)" style="width: 100%;">
+                        <select id="theme-select" class="theme-select" onchange="app.onThemeChange(this.value)"
+                            style="width: 100%;">
                             <option value="default.json">默认主题 (Default)</option>
                         </select>
                     </div>
@@ -255,9 +678,9 @@
         <div class="modal-content">
             <h2>选择要加载的模块</h2>
             <p class="subtitle" style="margin-bottom: 10px;">已根据文件自动检测可用模块</p>
-            
+
             <div class="toggle-grid" id="install-toggles">
-                </div>
+            </div>
 
             <div class="modal-actions">
                 <button class="btn secondary" onclick="app.closeModal('modal-install')">取消</button>
@@ -271,12 +694,34 @@
     <div class="modal-overlay" id="modal-confirm">
         <div class="modal-content">
             <h2 id="confirm-title" style="margin-top: 0; color: var(--text-main);">操作确认</h2>
-            <p id="confirm-message" style="margin-bottom: 25px; color: var(--text-sec); font-size: 14px; line-height: 1.5;"></p>
-            
+            <p id="confirm-message"
+                style="margin-bottom: 25px; color: var(--text-sec); font-size: 14px; line-height: 1.5;"></p>
+
             <div class="modal-actions">
                 <button class="btn secondary" id="btn-confirm-cancel">取消</button>
                 <button class="btn danger" id="btn-confirm-ok">
                     <i class="ri-delete-bin-line"></i> 确认删除
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-archive-password">
+        <div class="modal-content" style="max-width: 420px;">
+            <h2 id="archive-password-title" style="margin-top: 0; color: var(--text-main);">请输入解压密码</h2>
+            <p id="archive-password-file" style="margin-bottom: 8px; color: var(--text-sec); font-size: 13px;"></p>
+            <p id="archive-password-hint" style="margin-bottom: 16px; color: var(--status-error); font-size: 12px;"></p>
+
+            <div class="form-group">
+                <label>密码</label>
+                <input type="password" id="archive-password-input" placeholder="请输入密码"
+                    onkeydown="app.onArchivePasswordKeydown(event)">
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn secondary" onclick="app.cancelArchivePassword()">取消</button>
+                <button class="btn primary" onclick="app.submitArchivePassword()">
+                    <i class="ri-lock-unlock-line"></i> 解压
                 </button>
             </div>
         </div>
@@ -287,16 +732,16 @@
         <div class="modal-content" style="max-width: 500px;">
             <h2>导入语音包</h2>
             <p class="subtitle" style="margin-bottom: 25px;">请选择一种导入方式</p>
-            
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <button class="btn big-btn secondary square-btn" onclick="app.importSelectedZip()">
                     <i class="ri-folder-open-line"></i>
                     <div class="btn-text">
                         <div class="title">选择文件导入</div>
-                        <div class="desc">浏览本地 ZIP 文件</div>
+                        <div class="desc">浏览本地压缩包</div>
                     </div>
                 </button>
-                
+
                 <button class="btn big-btn primary square-btn" onclick="app.importPendingZips()">
                     <i class="ri-file-zip-line"></i>
                     <div class="btn-text">
@@ -312,26 +757,193 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="modal-copy-country">
+        <div class="modal-content" style="max-width: 440px;">
+            <h2 id="copy-country-title">复制国籍文件</h2>
+            <p class="subtitle">输入国家缩写，新增对应国籍文件</p>
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label>国家缩写</label>
+                <input type="text" id="copy-country-code" placeholder="例如 jp / us">
+                <p class="input-hint">
+                    <i class="ri-information-line"></i> 仅支持 2-10 位英文字母
+                </p>
+            </div>
+
+            <div class="modal-actions" style="justify-content: space-between;">
+                <button class="btn secondary" onclick="app.closeModal('modal-copy-country')">取消</button>
+                <div style="display:flex; gap:12px;">
+                    <button class="btn primary" onclick="app.confirmCopyCountryFiles('ground')">
+                        <i class="ri-file-copy-line"></i> 复制陆战车组
+                    </button>
+                    <button class="btn primary" onclick="app.confirmCopyCountryFiles('radio')">
+                        <i class="ri-file-copy-line"></i> 复制无线电
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 涂装编辑模态框 -->
+    <div class="modal-overlay" id="modal-edit-skin">
+        <div class="modal-content" style="max-width: 420px;">
+            <h2>编辑涂装</h2>
+            <p class="subtitle">修改显示名称与封面</p>
+
+            <div class="edit-skin-form">
+                <div class="skin-cover-edit" onclick="app.requestUpdateSkinCover()">
+                    <img id="edit-skin-cover" src="" alt="封面预览">
+                    <div class="cover-overlay">
+                        <i class="ri-camera-line"></i>
+                        <span>更换封面</span>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label>文件夹名称 (即显示名称)</label>
+                    <input type="text" id="edit-skin-name" placeholder="请输入新的名称">
+                    <p class="input-hint">
+                        <i class="ri-information-line"></i> 请勿包含特殊字符 \ / : * ? " &lt; &gt; | <br>
+                        修改名称会同步修改本地文件夹名。
+                    </p>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn secondary" onclick="app.closeModal('modal-edit-skin')">取消</button>
+                <button class="btn primary" onclick="app.saveSkinEdit()">
+                    <i class="ri-save-line"></i> 保存修改
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-edit-sight">
+        <div class="modal-content" style="max-width: 420px;">
+            <h2>编辑炮镜</h2>
+            <p class="subtitle">修改显示名称与封面</p>
+
+            <div class="edit-skin-form">
+                <div class="skin-cover-edit" onclick="app.requestUpdateSightCover()">
+                    <img id="edit-sight-cover" src="" alt="封面预览">
+                    <div class="cover-overlay">
+                        <i class="ri-camera-line"></i>
+                        <span>更换封面</span>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label>文件夹名称 (即显示名称)</label>
+                    <input type="text" id="edit-sight-name" placeholder="请输入新的名称">
+                    <p class="input-hint">
+                        <i class="ri-information-line"></i> 请勿包含特殊字符 \ / : * ? " &lt; &gt; | <br>
+                        修改名称会同步修改本地文件夹名。
+                    </p>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn secondary" onclick="app.closeModal('modal-edit-sight')">取消</button>
+                <button class="btn primary" onclick="app.saveSightEdit()">
+                    <i class="ri-save-line"></i> 保存修改
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-crop-cover">
+        <div class="modal-content crop-modal">
+            <h2>裁剪封面</h2>
+            <p class="subtitle">拖动图片调整位置，使用滚轮/滑块缩放</p>
+
+            <div class="crop-stage" id="crop-stage">
+                <canvas id="crop-canvas" width="640" height="360"></canvas>
+                <div class="crop-frame"></div>
+            </div>
+
+            <div class="crop-controls">
+                <label class="crop-zoom">
+                    <span>缩放</span>
+                    <input id="crop-zoom" type="range" min="0.2" max="3" step="0.01" value="1">
+                </label>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn secondary" onclick="app.closeModal('modal-crop-cover')">取消</button>
+                <button class="btn primary" onclick="app.applyCroppedCover()">
+                    <i class="ri-check-line"></i> 使用此封面
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-support-me">
+        <div class="modal-content qr-modal">
+            <h2>支持一下我</h2>
+            <p class="subtitle">谢谢你给我钱！</p>
+            <div class="qr-wrap">
+                <img src="assets/laomi.png" alt="微信收款码">
+            </div>
+            <div class="modal-actions">
+                <button class="btn primary" onclick="app.closeModal('modal-support-me')">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WTLive / WTLiker 站点选择模态框 -->
+    <div class="modal-overlay" id="modal-workshop">
+        <div class="modal-content" style="max-width: 500px;">
+            <h2>选择创意工坊站点</h2>
+            <p class="subtitle" style="margin-bottom: 25px;">请选择要打开的站点</p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <button class="btn big-btn secondary square-btn" onclick="app.openWorkshop('live')">
+                    <i class="ri-global-line"></i>
+                    <div class="btn-text">
+                        <div class="title">WTLive (国际)</div>
+                        <div class="desc">live.warthunder.com</div>
+                    </div>
+                </button>
+
+                <button class="btn big-btn primary square-btn" onclick="app.openWorkshop('liker')">
+                    <i class="ri-home-5-line"></i>
+                    <div class="btn-text">
+                        <div class="title">WTLiker (国内)</div>
+                        <div class="desc">wtliker.com</div>
+                    </div>
+                </button>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 25px;">
+                <button class="btn secondary" onclick="app.closeModal('modal-workshop')"
+                    style="width: 100%;">取消</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 用户协议模态框 -->
     <div class="modal-overlay" id="modal-disclaimer" style="z-index: 9999;">
         <div class="modal-content disclaimer-modal">
             <h2 class="disclaimer-title">免责声明</h2>
-            
+
             <div class="disclaimer-divider"></div>
 
             <div id="disclaimer-text" class="disclaimer-content">
                 <p>本人开发这款工具的初衷是希望能让大家更方便的体验个性化语音的乐趣。在开发过程中，我已经倾尽全力去完善每一个功能，并进行了多次测试，力求让它运行得更稳定、更安全。</p>
-                <p>但毕竟我只是一个人在利用业余时间开发。能力也有限，面对千差万别的电脑环境和游戏更新，我没办法保证它在每一个细节上都完美无缺。即便我非常希望它能成为对你有用的工具，也必须说明：由于个人技术和精力的局限性，我无法 100% 保证程序在所有情况下都不出 Bug，也无法预见它是否会与你的系统或其他软件产生冲突（比如极其罕见的蓝屏、文件丢失或损坏）。</p>
+                <p>但毕竟我只是一个人在利用业余时间开发。能力也有限，面对千差万别的电脑环境和游戏更新，我没办法保证它在每一个细节上都完美无缺。即便我非常希望它能成为对你有用的工具，也必须说明：由于个人技术和精力的局限性，我无法
+                    100% 保证程序在所有情况下都不出 Bug，也无法预见它是否会与你的系统或其他软件产生冲突（比如极其罕见的蓝屏、文件丢失或损坏）。</p>
                 <p>所以，请你在使用前务必阅读下方的法律条款，并建议你养成备份原文件的好习惯，感谢。</p>
 
                 <h3>免责声明</h3>
                 <p><strong>重要提示：在使用本软件前，请仔细阅读以下免责声明。使用本软件即表示您已充分理解并同意本声明的所有条款。</strong></p>
 
                 <h4>1. 软件性质</h4>
-                <p>本软件为第三方开发的非官方工具，与《战争雷霆》游戏开发商 Gaijin Entertainment 及其关联公司无任何关联。本软件按 GNU General Public License v3.0 (GPL v3) 协议开源发布，仅作为个人学习交流目的而开发。</p>
+                <p>本软件为第三方开发的非官方工具，与《战争雷霆》游戏开发商 Gaijin Entertainment 及其关联公司无任何关联。本软件按 GNU General Public License v3.0
+                    (GPL v3) 协议开源发布，仅作为个人学习交流目的而开发。</p>
 
                 <h4>2. GPL v3 许可声明</h4>
-                <p>本程序是自由软件：您可以自由地重新分发和/或修改它，依据 GNU 通用公共许可证（GPL v3）的条款，由自由软件基金会发布。本程序发布的目的是希望它有用，但不提供任何担保；甚至没有对适销性或特定用途适用性的暗示担保。有关详细信息，请参阅 GNU 通用公共许可证。</p>
+                <p>本程序是自由软件：您可以自由地重新分发和/或修改它，依据 GNU 通用公共许可证（GPL
+                    v3）的条款，由自由软件基金会发布。本程序发布的目的是希望它有用，但不提供任何担保；甚至没有对适销性或特定用途适用性的暗示担保。有关详细信息，请参阅 GNU 通用公共许可证。</p>
 
                 <h4>3. 使用风险</h4>
                 <ul>
@@ -373,16 +985,56 @@
                 <p>开发者保留随时修改本免责声明的权利，修改后的声明自发布之日起生效。</p>
                 <p class="text-muted" style="margin-top: 20px; text-align: right;">最后更新日期：2026年1月10日</p>
             </div>
-            
+
             <div class="disclaimer-divider"></div>
 
             <div class="disclaimer-footer">
                 <div id="disclaimer-timer-hint"></div>
                 <div class="disclaimer-actions-row">
                     <button class="btn-disclaimer reject" onclick="app.disclaimerReject()">拒绝</button>
-                    <button class="btn-disclaimer agree" id="btn-disclaimer-agree" disabled onclick="app.disclaimerAgree()">同意</button>
+                    <button class="btn-disclaimer agree" id="btn-disclaimer-agree" disabled
+                        onclick="app.disclaimerAgree()">同意</button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="toast-error" class="toast-error">
+        <div class="toast-error-content">
+            <i class="ri-error-warning-line toast-error-icon"></i>
+            <div class="toast-error-text">
+                <div class="toast-error-title">错误</div>
+                <div class="toast-error-message"></div>
+            </div>
+            <button class="toast-error-close" id="toast-error-close">
+                <i class="ri-close-line"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="toast-warn" class="toast-warn">
+        <div class="toast-warn-content">
+            <i class="ri-alert-line toast-warn-icon"></i>
+            <div class="toast-warn-text">
+                <div class="toast-warn-title">警告</div>
+                <div class="toast-warn-message"></div>
+            </div>
+            <button class="toast-warn-close" id="toast-warn-close">
+                <i class="ri-close-line"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="toast-info" class="toast-info">
+        <div class="toast-info-content">
+            <i class="ri-information-line toast-info-icon"></i>
+            <div class="toast-info-text">
+                <div class="toast-info-title">提示</div>
+                <div class="toast-info-message"></div>
+            </div>
+            <button class="toast-info-close" id="toast-info-close">
+                <i class="ri-close-line"></i>
+            </button>
         </div>
     </div>
 
@@ -393,8 +1045,9 @@
                 <i class="ri-information-line" style="font-size: 48px; color: var(--primary);"></i>
             </div>
             <h2 id="alert-title" style="margin: 0 0 12px 0; color: var(--text-main);">提示</h2>
-            <p id="alert-message" style="margin-bottom: 24px; color: var(--text-sec); font-size: 14px; line-height: 1.6;"></p>
-            
+            <p id="alert-message"
+                style="margin-bottom: 24px; color: var(--text-sec); font-size: 14px; line-height: 1.6;"></p>
+
             <div class="modal-actions" style="justify-content: center;">
                 <button class="btn primary" onclick="app.closeModal('modal-alert')" style="min-width: 120px;">
                     <i class="ri-check-line"></i> 知道了
@@ -407,13 +1060,6 @@
 
     <script src="loading_voice_package.js"></script>
     <script src="script.js"></script>
-    <script>
-        // 补充一点点 JS 逻辑：需要更新 script.js 里的图标生成部分
-        // 因为 script.js 还是用的 Emoji，我们需要微调 createModCard 函数
-        // 但为了保持文件独立性，我在 script.js 底部覆盖它
-        
-        // 注意：你需要手动更新 script.js 的 createModCard 和 installModal 逻辑
-        // 或者直接用我下面提供的 script.js 更新片段
-    </script>
 </body>
+
 </html>
