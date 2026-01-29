@@ -66,7 +66,7 @@
         </nav>
 
         <!-- 3. 右侧工具栏 (主题切换 + 窗口控制) -->
-        <div class="header-right no-drag">
+        <div class="header-right">
             <!-- 主题切换 (月亮) -->
             <button class="icon-btn theme-toggle" id="btn-theme" onclick="app.toggleTheme()" title="切换主题">
                 <i class="ri-moon-line"></i>
@@ -100,7 +100,7 @@
 
         <div id="page-home" class="page active">
             <div class="home-grid">
-                <div class="card status-card pywebview-drag-region">
+                <div class="card status-card">
                     <div class="status-icon" id="status-icon">
                         <i class="ri-wifi-off-line"></i>
                     </div>
@@ -109,7 +109,7 @@
                 </div>
 
                 <div class="card path-card">
-                    <div class="card-header no-border pywebview-drag-region">
+                    <div class="card-header no-border">
                         <h2>游戏路径</h2>
                         <span class="subtitle">Game Path Directory</span>
                     </div>
@@ -124,7 +124,7 @@
                     </div>
                 </div>
 
-                <div class="card notice-card pywebview-drag-region">
+                <div class="card notice-card">
                     <div class="card-header no-border">
                         <h3 style="display:flex; align-items:center; gap:8px;">
                             <i class="ri-megaphone-line" style="color:var(--primary)"></i>
@@ -140,14 +140,15 @@
                             <li>3. <strong>导入包体：</strong> 切换到“语音包库”页面，点击“导入压缩包”按钮，软件会自动解压并识别信息，你也可以自己解压放到语音包库中。</li>
                             <li>4. <strong>一键加载：</strong> 在库中找到目标语音包，点击“加载”图标。软件会自动配置 <code>config.blk</code> 并安装。</li>
                             <li>5. <strong>开启 Mod：</strong> 软件会自动检测并开启游戏内的 Mod 支持。若未生效，请检查 <code>config.blk</code> 中是否有
-                                <code>enable_mod:b=yes</code>，如果有问题先联系语音包制作者。</li>
+                                <code>enable_mod:b=yes</code>，如果有问题先联系语音包制作者。
+                            </li>
                         </ul>
                         <p>祝您在战场上一路长虹！(๑•̀ㅂ•́)و✧</p>
                     </div>
                 </div>
 
                 <div class="card log-card">
-                    <div class="card-header no-border pywebview-drag-region">
+                    <div class="card-header no-border">
                         <h3>运行日志</h3>
                         <span class="subtitle">System Log</span>
                         <div style="flex:1"></div>
@@ -155,7 +156,7 @@
                             <i class="ri-delete-bin-line"></i> 清空
                         </button>
                     </div>
-                    <div class="log-container pywebview-drag-region" id="log-container">
+                    <div class="log-container" id="log-container">
                         <div class="log-line info">[System] 界面 UI 引擎加载完毕...</div>
                         <div class="log-line sys">[System] 等待用户指令...</div>
                     </div>
@@ -322,7 +323,8 @@
                                         </p>
                                         <p>你可以在商店的个人资料页面找到您的用户 ID 。如果目录中缺少 <code>UserSights</code> 文件夹，请创建它。</p>
                                         <p>如果你的自定义瞄准镜仅适用于特定车辆，请在 <code>UserSights</code> 文件夹中创建一个以该车辆 ID 命名的子文件夹，例如
-                                            <code>&lt;车辆 ID&gt;</code> <code>germ_flakpanzer_IV_Ostwind</code>。</p>
+                                            <code>&lt;车辆 ID&gt;</code> <code>germ_flakpanzer_IV_Ostwind</code>。
+                                        </p>
                                         <p>如果瞄准镜适用于多辆车，请创建一个名为 <code>&lt;车辆 ID&gt;</code> 的子文件夹 <code>all_tanks</code>。
                                         </p>
                                     </div>
