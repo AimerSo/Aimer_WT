@@ -36,6 +36,10 @@
 
 ```bash
 pip install pywebview
+```  
+或  
+```bash
+pip install -r requirements.txt
 ```
 
 2. 启动：
