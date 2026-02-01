@@ -37,10 +37,12 @@ const DEFAULT_THEME = {
     "--tag-naval-text": "#0284C7",
     "--tag-radio-bg": "#FEF9C3",
     "--tag-radio-text": "#CA8A04",
-    "--tag-status-bg": "#E0F2FE",
-    "--tag-status-text": "#0EA5E9",
+    "--tag-missile-bg": "#FFE4E8",
+    "--tag-missile-text": "#DC2626",
+    "--tag-music-bg": "#F3E8FF",
+    "--tag-music-text": "#9333EA",
 
-    // [Fix] 新增变量默认值 (Sync with style.css)
+    // 默认主题变量（与样式表中使用的 CSS 变量保持一致）
     "--bg-log": "#FFFFFF",
     "--text-log": "#374151",
     "--border-log": "#f0f0f0",
@@ -57,11 +59,40 @@ const DEFAULT_THEME = {
     "--scrollbar-track-hover": "#ccc"
 };
 
-// 全局状态
+/**
+ * 前端主控制对象。
+ *
+ * 功能定位:
+ * - 维护页面状态（当前路径/主题/已加载数据等），并提供 UI 交互与后端 API 调用的统一入口。
+ *
+ * 输入输出:
+ * - 输入:
+ *   - 用户交互（点击/输入/拖拽等）
+ *   - 后端返回的数据（pywebview.api.*）
+ * - 输出:
+ *   - DOM 更新（列表渲染、弹窗、提示、日志面板）
+ *   - 调用后端接口（安装/还原/导入/扫描/配置保存）
+ * - 外部资源/依赖:
+ *   - pywebview.api（后端桥接 API）
+ *   - 页面 DOM（按 id/class 组织）
+ *   - MinimalistLoading（加载组件）
+ *
+ * 实现逻辑:
+ * - 按“初始化 → 页面切换 → 数据加载/刷新 → 用户操作回调”的流程组织方法。
+ *
+ * 业务关联:
+ * - 上游: index.html 的按钮/输入与浏览器事件。
+ * - 下游: main.py 的 AppApi 接口，负责实际文件系统读写与业务执行。
+ */
 const app = {
     currentGamePath: "",
     currentModId: null, // 当前正在操作的 mod
     currentTheme: null, // 当前主题对象
+    currentThemeData: null, // 当前主题原始数据
+    _libraryLoaded: false,
+    _libraryRefreshing: false,
+    _skinsLoaded: false,
+    _sightsLoaded: false,
 
     // 应用主题的函数
     applyTheme(themeObj) {
@@ -72,6 +103,20 @@ const app = {
             }
         }
         this.currentTheme = { ...DEFAULT_THEME, ...themeObj };
+    },
+
+    resolveThemeColors(themeData) {
+        const mode = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        const base = themeData?.colors || {};
+        const overrides = mode === 'dark' ? themeData?.dark : themeData?.light;
+        return { ...base, ...(overrides || {}) };
+    },
+
+    applyThemeData(themeData) {
+        if (!themeData) return;
+        const themeColors = this.resolveThemeColors(themeData);
+        this.applyTheme(themeColors);
+        this.currentThemeData = themeData;
     },
 
     // 恢复默认主题（清除内联样式，交给 CSS 处理）
@@ -85,6 +130,7 @@ const app = {
             }
         }
         this.currentTheme = DEFAULT_THEME;
+        this.currentThemeData = null;
     },
 
     // --- Theme Logic ---
@@ -114,8 +160,8 @@ const app = {
             return;
         }
         const themeData = await pywebview.api.load_theme_content(filename);
-        if (themeData && themeData.colors) {
-            this.applyTheme(themeData.colors);
+        if (themeData && (themeData.colors || themeData.light || themeData.dark)) {
+            this.applyThemeData(themeData);
             pywebview.api.save_theme_selection(filename);
         } else {
             app.showAlert("错误", "主题文件损坏或格式错误！");
@@ -176,9 +222,6 @@ const app = {
             // 绑定快捷键
             document.addEventListener('keydown', this.handleShortcuts.bind(this));
 
-            // 初始刷新库
-            this.refreshLibrary();
-
             // --- 新增：设置页面卡片悬停时禁用全局拖拽，防止干扰交互 ---
             document.querySelectorAll('#page-settings .card').forEach(card => {
                 card.addEventListener('mouseenter', () => {
@@ -193,6 +236,13 @@ const app = {
 
     // --- 页面切换 ---
     switchTab(tabId) {
+        const current = document.querySelector('.page.active');
+        if (current && current.id === `page-${tabId}`) return;
+
+        const now = (window.performance && performance.now) ? performance.now() : Date.now();
+        if (this._lastTabSwitchAt && (now - this._lastTabSwitchAt) < 120) return;
+        this._lastTabSwitchAt = now;
+
         // 更新按钮状态
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
         document.getElementById(`btn-${tabId}`).classList.add('active');
@@ -200,6 +250,659 @@ const app = {
         // 更新页面显隐
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.getElementById(`page-${tabId}`).classList.add('active');
+
+        if (tabId === 'camo') {
+            setTimeout(() => {
+                const camoPage = document.getElementById('page-camo');
+                const skinsView = document.getElementById('view-skins');
+                const sightsView = document.getElementById('view-sights');
+                if (!camoPage || !skinsView) return;
+                if (!camoPage.classList.contains('active')) return;
+                if (skinsView.classList.contains('active')) {
+                    if (!this._skinsLoaded) this.refreshSkins();
+                    return;
+                }
+                if (sightsView && sightsView.classList.contains('active')) {
+                    if (!this._sightsLoaded) this.loadSightsView();
+                }
+            }, 80);
+        } else if (tabId === 'lib') {
+            if (!this._libraryLoaded) this.refreshLibrary();
+        }
+    },
+
+    async refreshSkins(opts) {
+        const listEl = document.getElementById('skins-list');
+        const countEl = document.getElementById('skins-count');
+        if (!listEl || !countEl || !window.pywebview?.api?.get_skins_list) return;
+
+        const refreshBtn = document.getElementById('btn-refresh-skins');
+        if (this._skinsRefreshing) return;
+        this._skinsRefreshing = true;
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('is-loading');
+        }
+        countEl.textContent = '刷新中...';
+        await new Promise(requestAnimationFrame);
+
+        const camoPage = document.getElementById('page-camo');
+        const skinsView = document.getElementById('view-skins');
+        if (!camoPage || !skinsView) {
+            this._skinsRefreshing = false;
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.classList.remove('is-loading');
+            }
+            return;
+        }
+        if (!camoPage.classList.contains('active') || !skinsView.classList.contains('active')) {
+            this._skinsRefreshing = false;
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.classList.remove('is-loading');
+            }
+            return;
+        }
+
+        this._skinsRefreshSeq = (this._skinsRefreshSeq || 0) + 1;
+        const seq = this._skinsRefreshSeq;
+
+        try {
+            const forceRefresh = !!(opts && opts.manual);
+            const res = await pywebview.api.get_skins_list({ force_refresh: forceRefresh });
+            if (seq !== this._skinsRefreshSeq) return;
+            if (!camoPage.classList.contains('active')) return;
+            if (!skinsView.classList.contains('active')) return;
+
+            if (!res || !res.valid) {
+                this._skinsLoaded = false;
+                countEl.textContent = '本地: 0';
+                listEl.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1 / -1;">
+                        <i class="ri-error-warning-line"></i>
+                        <h3>未设置有效游戏路径</h3>
+                        <p>请先在主页定位《战争雷霆》安装目录</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const items = res.items || [];
+            countEl.textContent = `本地: ${items.length}`;
+
+            if (items.length === 0) {
+                this._skinsLoaded = true;
+                listEl.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1 / -1;">
+                        <i class="ri-brush-3-line"></i>
+                        <h3>还没有涂装</h3>
+                        <p>拖入 ZIP 或点击“选择 ZIP 解压”，导入后会自动出现在这里</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const placeholder = 'assets/card_image_small.png';
+            listEl.innerHTML = items.map(it => {
+                const cover = it.cover_url || placeholder;
+                const isDefaultCover = !!it.cover_is_default;
+                const sizeText = app._formatBytes(it.size_bytes || 0);
+
+                // Add edit button to the card
+                return `
+                    <div class="small-card" title="${app._escapeHtml(it.path || '')}">
+                        <div class="small-card-img-wrapper" style="position:relative;">
+                             <img class="small-card-img${isDefaultCover ? ' is-default-cover' : ''}" src="${cover}" alt="">
+                             <div class="skin-edit-overlay">
+                                 <button class="btn-v2 icon-only small secondary skin-edit-btn"
+                                         onclick="app.openEditSkinModal('${app._escapeHtml(it.name)}', '${cover.replace(/'/g, "\\'")}')">
+                                     <i class="ri-edit-line"></i>
+                                 </button>
+                             </div>
+                        </div>
+                        <div class="small-card-body">
+                            <div class="skin-card-footer">
+                                <div class="skin-card-name" title="${app._escapeHtml(it.name || '')}">${app._escapeHtml(it.name || '')}</div>
+                                <div class="skin-card-size">${sizeText}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            this._skinsLoaded = true;
+        } catch (e) {
+            console.error(e);
+        } finally {
+            this._skinsRefreshing = false;
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.classList.remove('is-loading');
+            }
+        }
+    },
+
+    // --- Skin Editing Logic (New) ---
+    currentEditSkin: null,
+    currentEditSight: null,
+    _cropCoverTarget: "skin",
+
+    openEditSkinModal(skinName, coverUrl) {
+        this.currentEditSkin = skinName;
+        this._cropCoverTarget = "skin";
+        const modal = document.getElementById('modal-edit-skin');
+        const nameInput = document.getElementById('edit-skin-name');
+        const coverImg = document.getElementById('edit-skin-cover');
+
+        if (!modal || !nameInput || !coverImg) return;
+
+        nameInput.value = skinName;
+        coverImg.src = coverUrl || 'assets/coming_soon_img.png';
+
+        modal.classList.remove('hiding');
+        modal.classList.add('show');
+    },
+
+    async saveSkinEdit() {
+        if (!this.currentEditSkin) return;
+
+        const newName = document.getElementById('edit-skin-name').value.trim();
+        if (!newName) {
+            app.showAlert("错误", "名称不能为空！", "error");
+            return;
+        }
+
+        if (newName !== this.currentEditSkin) {
+            // Rename logic
+            try {
+                const res = await pywebview.api.rename_skin(this.currentEditSkin, newName);
+                if (res.success) {
+                    app.showAlert("成功", "重命名成功！", "success");
+                    this.currentEditSkin = newName; // Update local ref
+                    this.refreshSkins(); // Reload list
+                } else {
+                    app.showAlert("失败", "重命名失败: " + res.msg, "error");
+                    return; // Stop if rename failed
+                }
+            } catch (e) {
+                app.showAlert("错误", "调用失败: " + e, "error");
+                return;
+            }
+        }
+
+        app.closeModal('modal-edit-skin');
+        // Refresh to reflect changes (especially if cover was updated separately)
+        this.refreshSkins();
+    },
+
+    async requestUpdateSkinCover() {
+        if (!this.currentEditSkin) return;
+        this._cropCoverTarget = "skin";
+
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async () => {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            try {
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onerror = () => reject(new Error('读取图片失败'));
+                    reader.onload = () => resolve(String(reader.result || ''));
+                    reader.readAsDataURL(file);
+                });
+                this.openCropCoverModal(dataUrl);
+            } catch (e) {
+                console.error(e);
+                this.showAlert("错误", "读取图片失败", "error");
+            }
+        };
+        input.click();
+    },
+
+    _cropCoverState: null,
+
+    openEditSightModal(sightName, coverUrl) {
+        this.currentEditSight = sightName;
+        this._cropCoverTarget = "sight";
+        const modal = document.getElementById('modal-edit-sight');
+        const nameInput = document.getElementById('edit-sight-name');
+        const coverImg = document.getElementById('edit-sight-cover');
+
+        if (!modal || !nameInput || !coverImg) return;
+
+        nameInput.value = sightName;
+        coverImg.src = coverUrl || 'assets/coming_soon_img.png';
+
+        modal.classList.remove('hiding');
+        modal.classList.add('show');
+    },
+
+    async saveSightEdit() {
+        if (!this.currentEditSight) return;
+
+        const newName = document.getElementById('edit-sight-name').value.trim();
+        if (!newName) {
+            app.showAlert("错误", "名称不能为空！", "error");
+            return;
+        }
+
+        if (newName !== this.currentEditSight) {
+            try {
+                const res = await pywebview.api.rename_sight(this.currentEditSight, newName);
+                if (res.success) {
+                    app.showAlert("成功", "重命名成功！", "success");
+                    this.currentEditSight = newName;
+                    this.refreshSights({ manual: true });
+                } else {
+                    app.showAlert("失败", "重命名失败: " + res.msg, "error");
+                    return;
+                }
+            } catch (e) {
+                app.showAlert("错误", "调用失败: " + e, "error");
+                return;
+            }
+        }
+
+        app.closeModal('modal-edit-sight');
+        this.refreshSights({ manual: true });
+    },
+
+    async requestUpdateSightCover() {
+        if (!this.currentEditSight) return;
+        this._cropCoverTarget = "sight";
+
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async () => {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            try {
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onerror = () => reject(new Error('读取图片失败'));
+                    reader.onload = () => resolve(String(reader.result || ''));
+                    reader.readAsDataURL(file);
+                });
+                this.openCropCoverModal(dataUrl);
+            } catch (e) {
+                console.error(e);
+                this.showAlert("错误", "读取图片失败", "error");
+            }
+        };
+        input.click();
+    },
+
+    openCropCoverModal(dataUrl) {
+        const modal = document.getElementById('modal-crop-cover');
+        const canvas = document.getElementById('crop-canvas');
+        const zoomEl = document.getElementById('crop-zoom');
+        if (!modal || !canvas || !zoomEl) return;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const img = new Image();
+        img.onload = () => {
+            const cw = canvas.width;
+            const ch = canvas.height;
+
+            const scaleX = cw / img.width;
+            const scaleY = ch / img.height;
+            const baseScale = Math.max(scaleX, scaleY);
+
+            const state = {
+                img,
+                baseScale,
+                scale: 1,
+                offsetX: (cw - img.width * baseScale) / 2,
+                offsetY: (ch - img.height * baseScale) / 2,
+                dragging: false,
+                lastX: 0,
+                lastY: 0,
+                cw,
+                ch,
+            };
+
+            this._cropCoverState = state;
+            zoomEl.value = '1';
+
+            const draw = () => {
+                const s = this._cropCoverState;
+                if (!s) return;
+                ctx.clearRect(0, 0, cw, ch);
+                const drawScale = s.baseScale * s.scale;
+                const dw = s.img.width * drawScale;
+                const dh = s.img.height * drawScale;
+                ctx.drawImage(s.img, s.offsetX, s.offsetY, dw, dh);
+            };
+
+            const clamp = () => {
+                const s = this._cropCoverState;
+                if (!s) return;
+                const drawScale = s.baseScale * s.scale;
+                const dw = s.img.width * drawScale;
+                const dh = s.img.height * drawScale;
+
+                const minX = Math.min(0, s.cw - dw);
+                const maxX = Math.max(0, s.cw - dw);
+                const minY = Math.min(0, s.ch - dh);
+                const maxY = Math.max(0, s.ch - dh);
+
+                s.offsetX = Math.min(Math.max(s.offsetX, minX), maxX);
+                s.offsetY = Math.min(Math.max(s.offsetY, minY), maxY);
+            };
+
+            const onPointerDown = (e) => {
+                const s = this._cropCoverState;
+                if (!s) return;
+                s.dragging = true;
+                s.lastX = e.clientX;
+                s.lastY = e.clientY;
+                canvas.setPointerCapture(e.pointerId);
+            };
+            const onPointerMove = (e) => {
+                const s = this._cropCoverState;
+                if (!s || !s.dragging) return;
+                const dx = e.clientX - s.lastX;
+                const dy = e.clientY - s.lastY;
+                s.lastX = e.clientX;
+                s.lastY = e.clientY;
+                s.offsetX += dx;
+                s.offsetY += dy;
+                clamp();
+                draw();
+            };
+            const onPointerUp = (e) => {
+                const s = this._cropCoverState;
+                if (!s) return;
+                s.dragging = false;
+                try { canvas.releasePointerCapture(e.pointerId); } catch { }
+            };
+
+            canvas.onpointerdown = onPointerDown;
+            canvas.onpointermove = onPointerMove;
+            canvas.onpointerup = onPointerUp;
+            canvas.onpointercancel = onPointerUp;
+
+            canvas.onwheel = (e) => {
+                e.preventDefault();
+                const s = this._cropCoverState;
+                if (!s) return;
+                const delta = e.deltaY > 0 ? -0.06 : 0.06;
+                s.scale = Math.min(3, Math.max(0.2, s.scale + delta));
+                zoomEl.value = String(s.scale);
+                clamp();
+                draw();
+            };
+
+            zoomEl.oninput = () => {
+                const s = this._cropCoverState;
+                if (!s) return;
+                s.scale = Math.min(3, Math.max(0.2, Number(zoomEl.value || 1)));
+                clamp();
+                draw();
+            };
+
+            draw();
+            modal.classList.remove('hiding');
+            modal.classList.add('show');
+        };
+        img.src = dataUrl;
+    },
+
+    async applyCroppedCover() {
+        if (!this.currentEditSkin && !this.currentEditSight) return;
+        const canvas = document.getElementById('crop-canvas');
+        const state = this._cropCoverState;
+        if (!canvas || !state) return;
+
+        const out = document.createElement('canvas');
+        out.width = 1280;
+        out.height = 720;
+        const octx = out.getContext('2d');
+        if (!octx) return;
+
+        const drawScale = state.baseScale * state.scale;
+        const srcScale = drawScale * (out.width / state.cw);
+
+        const sx = (-state.offsetX) / drawScale;
+        const sy = (-state.offsetY) / drawScale;
+        const sw = state.cw / drawScale;
+        const sh = state.ch / drawScale;
+
+        octx.clearRect(0, 0, out.width, out.height);
+        octx.drawImage(state.img, sx, sy, sw, sh, 0, 0, out.width, out.height);
+
+        const dataUrl = out.toDataURL('image/png');
+        try {
+            if (this._cropCoverTarget === "sight") {
+                if (!window.pywebview?.api?.update_sight_cover_data) {
+                    this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
+                    return;
+                }
+                const res = await pywebview.api.update_sight_cover_data(this.currentEditSight, dataUrl);
+                if (res && res.success) {
+                    const coverImg = document.getElementById('edit-sight-cover');
+                    if (coverImg) coverImg.src = dataUrl;
+                    this.showAlert("成功", "封面已更新！", "success");
+                    this.refreshSights({ manual: true });
+                    this.closeModal('modal-crop-cover');
+                } else {
+                    this.showAlert("错误", (res && res.msg) ? res.msg : "封面更新失败", "error");
+                }
+                return;
+            }
+
+            if (!window.pywebview?.api?.update_skin_cover_data) {
+                this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
+                return;
+            }
+
+            const res = await pywebview.api.update_skin_cover_data(this.currentEditSkin, dataUrl);
+            if (res && res.success) {
+                const coverImg = document.getElementById('edit-skin-cover');
+                if (coverImg) coverImg.src = dataUrl;
+                this.showAlert("成功", "封面已更新！", "success");
+                this.refreshSkins({ manual: true });
+                this.closeModal('modal-crop-cover');
+            } else {
+                this.showAlert("错误", (res && res.msg) ? res.msg : "封面更新失败", "error");
+            }
+        } catch (e) {
+            console.error(e);
+            this.showAlert("错误", "封面更新失败", "error");
+        }
+    },
+
+
+    importSkinZipDialog() {
+        if (!this.currentGamePath) {
+            app.showAlert("提示", "请先在主页设置游戏路径！");
+            this.switchTab('home');
+            return;
+        }
+        if (!window.pywebview?.api?.import_skin_zip_dialog) return;
+        pywebview.api.import_skin_zip_dialog();
+    },
+
+    importSightsZipDialog() {
+        if (!this.sightsPath) {
+            app.showAlert("提示", "请先设置 UserSights 路径！");
+            return;
+        }
+        if (!window.pywebview?.api?.import_sights_zip_dialog) return;
+        pywebview.api.import_sights_zip_dialog();
+    },
+
+    setupSkinsDropZone() {
+        const zone = document.getElementById('skins-drop-zone');
+        if (!zone) return;
+
+        const canHighlight = () => {
+            const activeId = (document.querySelector('.page.active') || {}).id || '';
+            return activeId === 'page-camo';
+        };
+
+        const onDragOver = (e) => {
+            if (!canHighlight()) return;
+            e.preventDefault();
+            e.stopPropagation();
+            zone.classList.add('drag-over');
+        };
+
+        const clear = () => zone.classList.remove('drag-over');
+
+        zone.addEventListener('dragenter', onDragOver);
+        zone.addEventListener('dragover', onDragOver);
+        zone.addEventListener('dragleave', clear);
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            clear();
+
+            if (!this.currentGamePath) {
+                this.showAlert("提示", "请先在主页设置游戏路径！", "warn");
+                this.switchTab('home');
+                return;
+            }
+
+            const files = Array.from((e.dataTransfer && e.dataTransfer.files) ? e.dataTransfer.files : []);
+            const zipFile = files.find(f => String(f.path || f.name || '').toLowerCase().endsWith('.zip'));
+            if (!zipFile) {
+                this.showAlert("提示", "请拖入 .zip 压缩包", "warn");
+                return;
+            }
+
+            const zipPath = zipFile.path;
+            if (!zipPath) {
+                this.showAlert("提示", "当前环境无法获取拖入文件路径，请使用“选择 ZIP 解压”按钮", "warn");
+                return;
+            }
+
+            if (!window.pywebview?.api?.import_skin_zip_from_path) {
+                this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
+                return;
+            }
+
+            pywebview.api.import_skin_zip_from_path(zipPath);
+        });
+
+        document.addEventListener('dragover', (e) => {
+            if (!canHighlight()) return;
+            e.preventDefault();
+        });
+        document.addEventListener('drop', (e) => {
+            if (!canHighlight()) return;
+            e.preventDefault();
+        });
+    },
+
+    setupSightsDropZone() {
+        const zone = document.getElementById('sights-drop-zone');
+        if (!zone) return;
+
+        const canHighlight = () => {
+            const activeId = (document.querySelector('.page.active') || {}).id || '';
+            const sightsView = document.getElementById('view-sights');
+            return activeId === 'page-camo' && !!(sightsView && sightsView.classList.contains('active'));
+        };
+
+        const onDragOver = (e) => {
+            if (!canHighlight()) return;
+            e.preventDefault();
+            e.stopPropagation();
+            zone.classList.add('drag-over');
+        };
+
+        const clear = () => zone.classList.remove('drag-over');
+
+        zone.addEventListener('dragenter', onDragOver);
+        zone.addEventListener('dragover', onDragOver);
+        zone.addEventListener('dragleave', clear);
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            clear();
+
+            const files = Array.from((e.dataTransfer && e.dataTransfer.files) ? e.dataTransfer.files : []);
+            const zipFile = files.find(f => String(f.path || f.name || '').toLowerCase().endsWith('.zip'));
+            if (!zipFile) {
+                this.showAlert("提示", "请拖入 .zip 压缩包", "warn");
+                return;
+            }
+
+            const zipPath = zipFile.path;
+            if (!zipPath) {
+                this.showAlert("提示", "当前环境无法获取拖入文件路径，请使用“选择 ZIP 解压”按钮", "warn");
+                return;
+            }
+
+            if (!window.pywebview?.api?.import_sights_zip_from_path) {
+                this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
+                return;
+            }
+
+            pywebview.api.import_sights_zip_from_path(zipPath);
+        });
+
+        document.addEventListener('dragover', (e) => {
+            if (!canHighlight()) return;
+            e.preventDefault();
+        });
+        document.addEventListener('drop', (e) => {
+            if (!canHighlight()) return;
+            e.preventDefault();
+        });
+    },
+
+    _formatBytes(bytes) {
+        const b = Number(bytes || 0);
+        if (!Number.isFinite(b) || b <= 0) return '0 MB';
+        const mb = b / (1024 * 1024);
+        if (mb < 1) return '<1 MB';
+        if (mb < 1024) return `${mb.toFixed(0)} MB`;
+        return `${(mb / 1024).toFixed(1)} GB`;
+    },
+
+    _escapeHtml(str) {
+        return String(str || '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    },
+
+    async copyText(text) {
+        const value = String(text || '');
+        if (!value) return false;
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            try {
+                await navigator.clipboard.writeText(value);
+                return true;
+            } catch (e) {
+            }
+        }
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.setAttribute('readonly', 'true');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        let ok = false;
+        try {
+            ok = document.execCommand('copy');
+        } catch (e) {
+            ok = false;
+        }
+        document.body.removeChild(textarea);
+        return ok;
     },
 
     closeModal(modalId) {
@@ -210,12 +913,40 @@ const app = {
         el.classList.add('hiding');
 
         const finalize = () => {
+            if (!el.classList.contains('hiding')) return;
             el.classList.remove('show');
             el.classList.remove('hiding');
         };
 
         el.addEventListener('animationend', finalize, { once: true });
         setTimeout(finalize, 250);
+    },
+
+    _setupModalDragLock() {
+        const patchPywebviewMoveWindow = () => {
+            if (this._pywebviewMoveWindowPatched) return;
+            if (!window.pywebview || typeof window.pywebview._jsApiCallback !== 'function') return;
+
+            const original = window.pywebview._jsApiCallback.bind(window.pywebview);
+            window.pywebview._jsApiCallback = (funcName, params, id) => {
+                const anyOpen = !!document.querySelector('.modal-overlay.show');
+                if (anyOpen && funcName === 'pywebviewMoveWindow') return;
+                return original(funcName, params, id);
+            };
+            this._pywebviewMoveWindowPatched = true;
+        };
+
+        const update = () => {
+            patchPywebviewMoveWindow();
+        };
+
+        update();
+
+        const modals = Array.from(document.querySelectorAll('.modal-overlay'));
+        if (modals.length === 0) return;
+
+        const observer = new MutationObserver(update);
+        modals.forEach(m => observer.observe(m, { attributes: true, attributeFilter: ['class'] }));
     },
 
     confirm(title, messageHtml, isDanger = false, okText = null) {
@@ -299,11 +1030,247 @@ const app = {
         });
     },
 
+    openArchivePasswordModal(archiveName, errorHint = '') {
+        const modal = document.getElementById('modal-archive-password');
+        const titleEl = document.getElementById('archive-password-title');
+        const fileEl = document.getElementById('archive-password-file');
+        const hintEl = document.getElementById('archive-password-hint');
+        const input = document.getElementById('archive-password-input');
+        if (!modal || !input) return;
+
+        if (typeof this._archivePasswordCleanup === 'function') {
+            try { this._archivePasswordCleanup(); } catch (e) { }
+        }
+
+        if (titleEl) titleEl.textContent = '请输入解压密码';
+        if (fileEl) fileEl.textContent = archiveName ? `文件: ${archiveName}` : '';
+        if (hintEl) hintEl.textContent = errorHint || '';
+        input.value = '';
+
+        modal.classList.remove('hiding');
+        modal.classList.add('show');
+
+        const onOverlay = (e) => {
+            if (e.target === modal) this.cancelArchivePassword();
+        };
+        const onKeydown = (e) => {
+            if (e.key === 'Escape') this.cancelArchivePassword();
+        };
+        modal.addEventListener('click', onOverlay);
+        document.addEventListener('keydown', onKeydown, true);
+
+        this._archivePasswordCleanup = () => {
+            modal.removeEventListener('click', onOverlay);
+            document.removeEventListener('keydown', onKeydown, true);
+            this._archivePasswordCleanup = null;
+        };
+
+        setTimeout(() => {
+            try { input.focus(); } catch (e) { }
+        }, 0);
+    },
+
+    onArchivePasswordKeydown(e) {
+        if (!e) return;
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            this.submitArchivePassword();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            this.cancelArchivePassword();
+        }
+    },
+
+    submitArchivePassword() {
+        const input = document.getElementById('archive-password-input');
+        const value = String(input?.value || '');
+        if (!value) {
+            this.showAlert('提示', '请输入密码', 'warn');
+            return;
+        }
+        if (typeof this._archivePasswordCleanup === 'function') {
+            try { this._archivePasswordCleanup(); } catch (e) { }
+        }
+        this.closeModal('modal-archive-password');
+        pywebview.api.submit_archive_password(value);
+    },
+
+    cancelArchivePassword() {
+        if (typeof this._archivePasswordCleanup === 'function') {
+            try { this._archivePasswordCleanup(); } catch (e) { }
+        }
+        this.closeModal('modal-archive-password');
+        pywebview.api.cancel_archive_password();
+    },
+
     forceHideAllModals() {
         document.querySelectorAll('.modal-overlay').forEach(el => {
             el.classList.remove('show');
             el.classList.remove('hiding');
         });
+    },
+
+    initToasts() {
+        if (this._toastInited) return;
+        this._toastInited = true;
+
+        const errorClose = document.getElementById('toast-error-close');
+        if (errorClose) errorClose.addEventListener('click', () => this.hideErrorToast());
+
+        const warnClose = document.getElementById('toast-warn-close');
+        if (warnClose) warnClose.addEventListener('click', () => this.hideWarnToast());
+
+        const infoClose = document.getElementById('toast-info-close');
+        if (infoClose) infoClose.addEventListener('click', () => this.hideInfoToast());
+    },
+
+    formatToastMessage(message) {
+        const text = String(message || '')
+            .replace(/<br\s*\/?>/gi, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        return text.replace(/^\[[^\]]+\]\s*\[[A-Z]+\]\s*/i, '');
+    },
+
+    notifyToast(level, message) {
+        const content = this.formatToastMessage(message);
+        if (!content) return;
+        if (level === 'ERROR') {
+            this.showErrorToast('错误', content);
+            return;
+        }
+        if (level === 'WARN') {
+            this.showWarnToast('警告', content);
+            return;
+        }
+        if (level === 'SUCCESS') {
+            this.showInfoToast('成功', content);
+            return;
+        }
+        this.showInfoToast('提示', content);
+    },
+
+    showErrorToast(title, message, duration = 5000) {
+        const toast = document.getElementById('toast-error');
+        if (!toast) {
+            this.showAlert(title || '错误', message, 'error');
+            return;
+        }
+
+        const titleEl = toast.querySelector('.toast-error-title');
+        const messageEl = toast.querySelector('.toast-error-message');
+
+        if (titleEl) titleEl.textContent = title || '错误';
+        if (messageEl) messageEl.textContent = message || '';
+
+        toast.classList.remove('hiding');
+        toast.classList.add('show');
+
+        if (this._errorToastTimeout) {
+            clearTimeout(this._errorToastTimeout);
+        }
+
+        this._errorToastTimeout = setTimeout(() => {
+            this.hideErrorToast();
+        }, duration);
+    },
+
+    hideErrorToast() {
+        const toast = document.getElementById('toast-error');
+        if (!toast) return;
+
+        toast.classList.add('hiding');
+
+        setTimeout(() => {
+            toast.classList.remove('hiding', 'show');
+        }, 300);
+
+        if (this._errorToastTimeout) {
+            clearTimeout(this._errorToastTimeout);
+            this._errorToastTimeout = null;
+        }
+    },
+
+    showWarnToast(title, message, duration = 5000) {
+        const toast = document.getElementById('toast-warn');
+        if (!toast) {
+            this.showAlert(title || '警告', message, 'warn');
+            return;
+        }
+
+        const titleEl = toast.querySelector('.toast-warn-title');
+        const messageEl = toast.querySelector('.toast-warn-message');
+
+        if (titleEl) titleEl.textContent = title || '警告';
+        if (messageEl) messageEl.textContent = message || '';
+
+        toast.classList.remove('hiding');
+        toast.classList.add('show');
+
+        if (this._warnToastTimeout) {
+            clearTimeout(this._warnToastTimeout);
+        }
+
+        this._warnToastTimeout = setTimeout(() => {
+            this.hideWarnToast();
+        }, duration);
+    },
+
+    hideWarnToast() {
+        const toast = document.getElementById('toast-warn');
+        if (!toast) return;
+
+        toast.classList.add('hiding');
+
+        setTimeout(() => {
+            toast.classList.remove('hiding', 'show');
+        }, 300);
+
+        if (this._warnToastTimeout) {
+            clearTimeout(this._warnToastTimeout);
+            this._warnToastTimeout = null;
+        }
+    },
+
+    showInfoToast(title, message, duration = 5000) {
+        const toast = document.getElementById('toast-info');
+        if (!toast) {
+            this.showAlert(title || '提示', message, 'info');
+            return;
+        }
+
+        const titleEl = toast.querySelector('.toast-info-title');
+        const messageEl = toast.querySelector('.toast-info-message');
+
+        if (titleEl) titleEl.textContent = title || '提示';
+        if (messageEl) messageEl.textContent = message || '';
+
+        toast.classList.remove('hiding');
+        toast.classList.add('show');
+
+        if (this._infoToastTimeout) {
+            clearTimeout(this._infoToastTimeout);
+        }
+
+        this._infoToastTimeout = setTimeout(() => {
+            this.hideInfoToast();
+        }, duration);
+    },
+
+    hideInfoToast() {
+        const toast = document.getElementById('toast-info');
+        if (!toast) return;
+
+        toast.classList.add('hiding');
+
+        setTimeout(() => {
+            toast.classList.remove('hiding', 'show');
+        }, 300);
+
+        if (this._infoToastTimeout) {
+            clearTimeout(this._infoToastTimeout);
+            this._infoToastTimeout = null;
+        }
     },
 
     // 自定义提示弹窗（替代原生 alert）
@@ -345,6 +1312,10 @@ const app = {
 
     recoverToSafeState(reason) {
         try {
+            const disclaimer = document.getElementById('modal-disclaimer');
+            if (reason === 'backend_start' && disclaimer && disclaimer.classList.contains('show')) {
+                return;
+            }
             this.forceHideAllModals();
             this.switchTab('home');
         } catch (e) {
@@ -368,6 +1339,9 @@ const app = {
             // 换成月亮图标
             btn.innerHTML = '<i class="ri-moon-line"></i>';
             pywebview.api.set_theme('Light');
+        }
+        if (this.currentThemeData) {
+            this.applyThemeData(this.currentThemeData);
         }
     },
 
@@ -485,13 +1459,18 @@ const app = {
     },
 
     // --- 语音包库逻辑 ---
-    async refreshLibrary() {
+    async refreshLibrary(opts) {
         const listContainer = document.getElementById('lib-list');
+        if (!listContainer) return;
+        if (this._libraryRefreshing) return;
+        const isManual = !!(opts && opts.manual);
+        if (!isManual && this._libraryLoaded) return;
+        this._libraryRefreshing = true;
 
         listContainer.classList.add('fade-out');
         await new Promise(r => setTimeout(r, 200));
 
-        const mods = await pywebview.api.get_library_list();
+        const mods = await pywebview.api.get_library_list({ force_refresh: isManual });
         app.modCache = mods;
 
         this.renderList(mods);
@@ -502,11 +1481,14 @@ const app = {
 
         const searchInput = document.querySelector('.search-input');
         if (searchInput) searchInput.value = '';
+        this._libraryLoaded = true;
+        this._libraryRefreshing = false;
     },
 
     renderList(modsToRender) {
         const listContainer = document.getElementById('lib-list');
         listContainer.innerHTML = '';
+        this.bindModNoteTooltip();
 
         if (modsToRender.length === 0) {
             listContainer.innerHTML = `
@@ -520,8 +1502,7 @@ const app = {
 
         modsToRender.forEach((mod, index) => {
             const card = this.createModCard(mod);
-            // 2025 年最优雅的交错入场效果
-            // 限制最大延迟，防止长列表加载太慢
+            // 卡片入场动画延迟：按索引递增并限制最大延迟
             const delay = Math.min(index * 0.05, 0.5);
             card.style.animationDelay = `${delay}s`;
             listContainer.appendChild(card);
@@ -566,7 +1547,7 @@ const app = {
         const imgUrl = mod.cover_url || '';
         let tagsHtml = '';
 
-        // [Fix] 使用 UI_CONFIG 替代硬编码逻辑
+        // 标签映射优先使用 UI_CONFIG；当 UI_CONFIG 不存在时使用内置映射
         if (typeof UI_CONFIG !== 'undefined') {
             for (const [key, conf] of Object.entries(UI_CONFIG.tagMap)) {
                 if (mod.capabilities[key]) {
@@ -577,8 +1558,11 @@ const app = {
             if (mod.capabilities.tank) tagsHtml += `<span class="tag tank">陆战</span>`;
             if (mod.capabilities.air) tagsHtml += `<span class="tag air">空战</span>`;
             if (mod.capabilities.naval) tagsHtml += `<span class="tag naval">海战</span>`;
-            if (mod.capabilities.radio) tagsHtml += `<span class="tag radio">无线电</span>`;
-            if (mod.capabilities.status) tagsHtml += `<span class="tag status">局势播报</span>`;
+            if (mod.capabilities.radio) tagsHtml += `<span class="tag radio">无线电/局势</span>`;
+            if (mod.capabilities.missile) tagsHtml += `<span class="tag missile">导弹音效</span>`;
+            if (mod.capabilities.music) tagsHtml += `<span class="tag music">音乐包</span>`;
+            if (mod.capabilities.noise) tagsHtml += `<span class="tag noise">降噪包</span>`;
+            if (mod.capabilities.pilot) tagsHtml += `<span class="tag pilot">飞行员语音</span>`;
         }
 
         let langList = [];
@@ -597,7 +1581,7 @@ const app = {
         }
 
         const langHtml = langList.map(lang => {
-            // [Fix] 使用 UI_CONFIG
+            // 语言样式映射优先使用 UI_CONFIG.langMap
             let cls = "";
             if (typeof UI_CONFIG !== 'undefined' && UI_CONFIG.langMap[lang]) {
                 cls = UI_CONFIG.langMap[lang];
@@ -615,10 +1599,10 @@ const app = {
         const actWt = mod.link_wtlive ? `window.open('${mod.link_wtlive}')` : '';
         const actBili = mod.link_bilibili ? `window.open('${mod.link_bilibili}')` : '';
 
-        const safeNote = (mod.note || '暂无介绍').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const noteText = mod.note || '暂无留言';
 
-        // [核心逻辑] 判断是否是当前已加载的语音包
-        const isInstalled = (mod.id === app.installedModId);
+        // 判断该语音包是否为当前已生效项
+        const isInstalled = app.installedModIds && app.installedModIds.includes(mod.id);
 
         // 根据状态决定按钮样式和图标
         // 已安装: active 样式, check 图标, title="当前已加载"
@@ -664,13 +1648,15 @@ const app = {
                     <i class="ri-time-line"></i> 更新于: ${updateDate}
                 </div>
 
-                <div class="mod-note" 
-                     onmouseenter="app.showTooltip(this, '${safeNote}')" 
-                     onmouseleave="app.hideTooltip()">
+                <div class="mod-note">
                     <i class="ri-chat-1-line" style="vertical-align:middle; margin-right:4px; opacity:0.7"></i>
-                    ${mod.note || '暂无留言'}
+                    ${noteText}
                 </div>
             </div>
+
+            <button class="mod-copy-action" title="复制国籍文件">
+                <i class="ri-file-copy-line"></i>
+            </button>
 
             <div class="mod-actions-col">
                 <div class="action-icon action-btn-del" onclick="app.deleteMod('${mod.id}')" title="删除语音包">
@@ -698,7 +1684,110 @@ const app = {
         `;
 
         div.dataset.caps = JSON.stringify(mod.capabilities);
+        const copyBtn = div.querySelector('.mod-copy-action');
+        if (copyBtn) {
+            copyBtn.dataset.modId = mod.id || '';
+            copyBtn.dataset.modTitle = mod.title || '';
+            copyBtn.onclick = () => {
+                app.openCopyCountryModal(copyBtn.dataset.modId, copyBtn.dataset.modTitle);
+            };
+        }
+        const noteEl = div.querySelector('.mod-note');
+        if (noteEl) noteEl.dataset.note = noteText;
         return div;
+    },
+
+    bindModNoteTooltip() {
+        const listContainer = document.getElementById('lib-list');
+        if (!listContainer || this._modNoteTooltipBound) return;
+        this._modNoteTooltipBound = true;
+
+        listContainer.addEventListener('mouseover', (e) => {
+            const noteEl = e.target.closest('.mod-note');
+            if (!noteEl || !listContainer.contains(noteEl)) return;
+            if (noteEl.contains(e.relatedTarget)) return;
+            const text = noteEl.dataset.note || '';
+            if (!text) return;
+            app.showTooltip(noteEl, text);
+            this._tooltipTarget = noteEl;
+        });
+
+        listContainer.addEventListener('mouseout', (e) => {
+            const noteEl = e.target.closest('.mod-note');
+            if (!noteEl || !listContainer.contains(noteEl)) return;
+            if (noteEl.contains(e.relatedTarget)) return;
+            if (this._tooltipTarget === noteEl) {
+                app.hideTooltip();
+                this._tooltipTarget = null;
+            }
+        });
+
+        listContainer.addEventListener('click', async (e) => {
+            if (e.button !== 0) return;
+            const noteEl = e.target.closest('.mod-note');
+            if (!noteEl || !listContainer.contains(noteEl)) return;
+            const text = noteEl.dataset.note || '';
+            if (!text) return;
+            e.stopPropagation();
+            await app.copyText(text);
+        });
+    },
+
+    currentCopyModId: null,
+    openCopyCountryModal(modId, modTitle) {
+        this.currentCopyModId = modId || null;
+        const modal = document.getElementById('modal-copy-country');
+        const titleEl = document.getElementById('copy-country-title');
+        const input = document.getElementById('copy-country-code');
+        if (!modal || !input) return;
+        if (titleEl) {
+            titleEl.textContent = modTitle ? `复制国籍文件 - ${modTitle}` : '复制国籍文件';
+        }
+        input.value = '';
+        modal.classList.remove('hiding');
+        modal.classList.add('show');
+    },
+    async confirmCopyCountryFiles(mode) {
+        const modal = document.getElementById('modal-copy-country');
+        const input = document.getElementById('copy-country-code');
+        const code = String(input?.value || '').trim().toLowerCase();
+        if (!this.currentCopyModId) {
+            this.showAlert('错误', '未选中语音包', 'error');
+            return;
+        }
+        if (!code) {
+            this.showAlert('错误', '请输入国家缩写', 'error');
+            return;
+        }
+        if (!/^[a-z]{2,10}$/.test(code)) {
+            this.showAlert('错误', '国家缩写仅支持 2-10 位英文字母', 'error');
+            return;
+        }
+        const includeGround = mode ? mode === 'ground' : true;
+        const includeRadio = mode ? mode === 'radio' : true;
+        if (!includeGround && !includeRadio) {
+            this.showAlert('错误', '至少勾选一种类型', 'error');
+            return;
+        }
+        try {
+            const res = await pywebview.api.copy_country_files(
+                this.currentCopyModId,
+                code,
+                includeGround,
+                includeRadio
+            );
+            if (res && res.success) {
+                const created = (res.created || []).length;
+                const skipped = (res.skipped || []).length;
+                const missing = (res.missing || []).length;
+                this.showAlert('成功', `已复制 ${created} 个文件${skipped ? `，跳过 ${skipped}` : ''}${missing ? `，缺失 ${missing}` : ''}`, 'success');
+                if (modal) this.closeModal('modal-copy-country');
+            } else {
+                this.showAlert('失败', res?.msg || '复制失败', 'error');
+            }
+        } catch (e) {
+            this.showAlert('错误', `调用失败: ${e}`, 'error');
+        }
     },
 
     // --- 导入功能新逻辑 ---
@@ -721,7 +1810,7 @@ const app = {
     },
 
     openFolder(type) {
-        if (type === 'game') {
+        if (type === 'game' || type === 'userskins') {
             if (!this.currentGamePath) {
                 app.showAlert("提示", "请先在主页设置游戏路径！");
                 this.switchTab('home');
@@ -737,6 +1826,41 @@ const app = {
 
     openGitHubRepo() {
         window.open('https://github.com/AimerSo/Aimer_WT');
+    },
+
+    openExternal(url) {
+        const u = String(url || '').trim();
+        if (!u) return;
+        try {
+            window.open(u, '_blank', 'noopener');
+        } catch (e) {
+            console.error(e);
+            this.showAlert('错误', '打开链接失败', 'error');
+        }
+    },
+
+    openSupportMe() {
+        const modal = document.getElementById('modal-support-me');
+        if (!modal) return;
+        modal.classList.remove('hiding');
+        modal.classList.add('show');
+    },
+
+    openWorkshopChooser() {
+        const el = document.getElementById('modal-workshop');
+        if (!el) return;
+        el.classList.remove('hiding');
+        el.classList.add('show');
+    },
+
+    openWorkshop(site) {
+        const key = String(site || '').toLowerCase();
+        const url = key === 'liker'
+            ? 'https://wtliker.com/'
+            : 'https://live.warthunder.com/feed/all/';
+
+        this.closeModal('modal-workshop');
+        window.open(url);
     },
 
     async deleteMod(modId) {
@@ -765,13 +1889,18 @@ const app = {
     // 安装/还原成功回调
     onInstallSuccess(modName) {
         console.log("Install Success:", modName);
-        this.installedModId = modName;
+        if (!this.installedModIds) {
+            this.installedModIds = [];
+        }
+        if (!this.installedModIds.includes(modName)) {
+            this.installedModIds.push(modName);
+        }
         if (this.modCache) this.renderList(this.modCache);
     },
 
     onRestoreSuccess() {
         console.log("Restore Success");
-        this.installedModId = null;
+        this.installedModIds = [];
         if (this.modCache) this.renderList(this.modCache);
     }
 };
@@ -869,14 +1998,14 @@ document.getElementById('btn-confirm-install').onclick = async function () {
         return;
     }
 
-    // [P2 修复] 前端冲突检测逻辑
+    // 安装前执行冲突检查
     const conflictBtn = document.getElementById('btn-confirm-install');
     const originalText = conflictBtn.innerHTML;
     conflictBtn.disabled = true;
     conflictBtn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> 检查中...';
 
     try {
-        // [关键修复] 使用 JSON 字符串传递数组
+        // 将数组参数序列化为 JSON 字符串传递给后端
         const conflicts = await pywebview.api.check_install_conflicts(app.currentModId, JSON.stringify(selection));
 
         if (conflicts && conflicts.length > 0) {
@@ -915,7 +2044,7 @@ document.getElementById('btn-confirm-install').onclick = async function () {
         MinimalistLoading.show(false, "正在准备安装...");
     }
 
-    // [关键修复] 使用 JSON 字符串传递数组，避免 pywebview 打包后序列化问题
+    // 将数组参数序列化为 JSON 字符串传递给后端
     pywebview.api.install_mod(app.currentModId, JSON.stringify(selection));
     app.closeModal('modal-install');
     app.switchTab('home'); // 跳转回主页看日志
@@ -931,7 +2060,7 @@ app.restoreGame = async function () {
         true
     );
     if (yes) {
-        // 同样显示加载动画，增加仪式感
+        // 显示加载组件，等待后端推送进度
         if (typeof MinimalistLoading !== 'undefined') {
             MinimalistLoading.show();
         }
@@ -997,8 +2126,9 @@ app.disclaimerReject = function () {
 // --- Tooltip 智能定位 ---
 app.showTooltip = function (el, text) {
     const tip = document.getElementById('tooltip');
+    if (!tip) return;
 
-    tip.innerHTML = text;
+    tip.textContent = text || '';
     tip.style.display = 'block';
 
     const rect = el.getBoundingClientRect();
@@ -1026,7 +2156,9 @@ app.showTooltip = function (el, text) {
     tip.style.left = left + 'px';
 };
 app.hideTooltip = function () {
-    document.getElementById('tooltip').style.display = 'none';
+    const tip = document.getElementById('tooltip');
+    if (!tip) return;
+    tip.style.display = 'none';
 };
 
 // --- Shortcuts ---
@@ -1059,6 +2191,7 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
     // 复用之前的 init 逻辑，但这里为了方便，我们直接把之前的 init 逻辑 copy 过来并加上 disclaimer
     console.log("App initializing...");
     this.recoverToSafeState('init');
+    this.initToasts();
 
     if (!this._safetyHandlersInstalled) {
         this._safetyHandlersInstalled = true;
@@ -1079,24 +2212,35 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
     window.addEventListener('pywebviewready', async () => {
         console.log("PyWebview ready!");
 
+        this._setupModalDragLock();
+
         // 1. 优先检查免责声明
         await app.checkDisclaimer();
 
         // 2. 获取初始状态
-        const state = await pywebview.api.init_app_state();
+        const state = await pywebview.api.init_app_state() || {
+            game_path: "",
+            path_valid: false,
+            active_theme: "default.json",
+            theme: "Light",
+            installed_mods: [],
+        };
         this.updatePathUI(state.game_path, state.path_valid);
 
-        // 加载主题列表并应用上次的选择
-        await this.loadThemeList();
-        if (state.active_theme && state.active_theme !== 'default.json') {
-            const select = document.getElementById('theme-select');
-            if (select) select.value = state.active_theme;
-
-            const themeData = await pywebview.api.load_theme_content(state.active_theme);
-            if (themeData && themeData.colors) {
-                this.applyTheme(themeData.colors);
-            }
+        if (state.installed_mods && Array.isArray(state.installed_mods)) {
+            this.installedModIds = state.installed_mods;
+        } else {
+            this.installedModIds = [];
         }
+
+        if (state.installed_mods && Array.isArray(state.installed_mods)) {
+            this.installedModIds = state.installed_mods;
+        } else {
+            this.installedModIds = [];
+        }
+        this.sightsPath = state.sights_path || null;
+        this._sightsLoaded = false;
+        this.loadSightsView();
 
         const themeBtn = document.getElementById('btn-theme');
         if (state.theme === 'Light') {
@@ -1105,6 +2249,18 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
         } else {
             document.documentElement.setAttribute('data-theme', 'dark');
             themeBtn.innerHTML = '<i class="ri-sun-line"></i>';
+        }
+
+        // 加载主题列表并应用上次的选择
+        await this.loadThemeList();
+        if (state.active_theme && state.active_theme !== 'default.json') {
+            const select = document.getElementById('theme-select');
+            if (select) select.value = state.active_theme;
+
+            const themeData = await pywebview.api.load_theme_content(state.active_theme);
+            if (themeData && (themeData.colors || themeData.light || themeData.dark)) {
+                this.applyThemeData(themeData);
+            }
         }
 
         // 绑定快捷键
@@ -1126,5 +2282,196 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
 };
 
 app.init();
-// [关键修正] 显式挂载到 window，供后端调用
+// 显式挂载到 window，供后端通过 evaluate_js 访问
 window.app = app;
+
+// ===========================
+// 资源库 Master-Detail 导航
+// ===========================
+
+app.switchResourceView = function (target) {
+    // 更新导航按钮状态
+    document.querySelectorAll('.resource-nav-item').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.target === target);
+    });
+
+    // 切换视图
+    document.querySelectorAll('.resource-view').forEach(view => {
+        view.classList.toggle('active', view.id === `view-${target}`);
+    });
+
+    // 刷新对应内容
+    if (target === 'skins') {
+        if (!this._skinsLoaded) this.refreshSkins();
+    } else if (target === 'sights') {
+        if (!this._sightsLoaded) this.loadSightsView();
+    }
+};
+
+// ===========================
+// 炮镜管理功能
+// ===========================
+
+app.sightsPath = null;
+
+app.loadSightsView = function () {
+    const primaryBtn = document.getElementById('btn-sights-primary');
+    const primaryText = primaryBtn ? primaryBtn.querySelector('span') : null;
+    const primaryIcon = primaryBtn ? primaryBtn.querySelector('i') : null;
+    const secondaryBtn = document.getElementById('btn-sights-secondary');
+    const secondaryText = secondaryBtn ? secondaryBtn.querySelector('span') : null;
+
+    if (this.sightsPath) {
+        if (primaryBtn) primaryBtn.onclick = () => app.selectSightsPath();
+        if (primaryText) primaryText.textContent = '更改炮镜路径';
+        if (primaryIcon) primaryIcon.className = 'ri-folder-open-line';
+
+        if (secondaryBtn) secondaryBtn.disabled = false;
+        if (secondaryText) secondaryText.textContent = '打开 UserSights';
+
+        setTimeout(() => {
+            const camoPage = document.getElementById('page-camo');
+            const sightsView = document.getElementById('view-sights');
+            if (!camoPage || !sightsView) return;
+            if (!camoPage.classList.contains('active')) return;
+            if (!sightsView.classList.contains('active')) return;
+            if (!this._sightsLoaded) this.refreshSights();
+        }, 80);
+        return;
+    }
+
+    this._sightsLoaded = false;
+    if (primaryBtn) primaryBtn.onclick = () => app.selectSightsPath();
+    if (primaryText) primaryText.textContent = '设置炮镜路径';
+    if (primaryIcon) primaryIcon.className = 'ri-folder-open-line';
+
+    if (secondaryBtn) secondaryBtn.disabled = true;
+    if (secondaryText) secondaryText.textContent = '打开 UserSights';
+};
+
+app.selectSightsPath = async function () {
+    if (!window.pywebview?.api?.select_sights_path) {
+        this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
+        return;
+    }
+
+    try {
+        const result = await pywebview.api.select_sights_path();
+        if (result && result.success) {
+            this.sightsPath = result.path;
+            this._sightsLoaded = false;
+            this.loadSightsView();
+            this.showAlert('成功', '炮镜路径设置成功！', 'success');
+        }
+    } catch (e) {
+        console.error(e);
+        this.showAlert('错误', '选择路径失败: ' + e.message, 'error');
+    }
+};
+
+app.changeSightsPath = function () {
+    this.sightsPath = null;
+    this._sightsLoaded = false;
+    this.loadSightsView();
+};
+
+app.openSightsFolder = async function () {
+    if (!this.sightsPath) {
+        this.showAlert('提示', '请先选择炮镜文件夹', 'warn');
+        return;
+    }
+
+    try {
+        await pywebview.api.open_sights_folder();
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+app.refreshSights = async function (opts) {
+    if (!this.sightsPath || !window.pywebview?.api?.get_sights_list) return;
+
+    const camoPage = document.getElementById('page-camo');
+    const sightsView = document.getElementById('view-sights');
+    if (!camoPage || !sightsView) return;
+    if (!camoPage.classList.contains('active')) return;
+    if (!sightsView.classList.contains('active')) return;
+
+    const refreshBtn = document.getElementById('btn-refresh-sights');
+    const isManual = !!(opts && opts.manual);
+    const now = (window.performance && performance.now) ? performance.now() : Date.now();
+    if (this._sightsRefreshing) return;
+    if (!isManual && this._lastSightsRefreshAt && (now - this._lastSightsRefreshAt) < 800) return;
+    this._lastSightsRefreshAt = now;
+    this._sightsRefreshing = true;
+    this._sightsRefreshSeq = (this._sightsRefreshSeq || 0) + 1;
+    const seq = this._sightsRefreshSeq;
+
+    const listEl = document.getElementById('sights-list');
+    const countEl = document.getElementById('sights-count');
+
+    try {
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('is-loading');
+        }
+        if (countEl) countEl.textContent = '刷新中...';
+        await new Promise(requestAnimationFrame);
+
+        const forceRefresh = !!(opts && opts.manual);
+        const result = await pywebview.api.get_sights_list({ force_refresh: forceRefresh });
+        if (seq !== this._sightsRefreshSeq) return;
+        if (!camoPage.classList.contains('active')) return;
+        if (!sightsView.classList.contains('active')) return;
+
+        const items = result.items || [];
+
+        countEl.textContent = `本地: ${items.length}`;
+
+        if (items.length === 0) {
+            this._sightsLoaded = true;
+            listEl.innerHTML = `
+                <div class="empty-state">
+                    <i class="ri-crosshair-line"></i>
+                    <h3>还没有炮镜</h3>
+                    <p>请手动将炮镜文件放入 UserSights 文件夹</p>
+                </div>
+            `;
+            return;
+        }
+
+        const placeholder = 'assets/card_image_small.png';
+        listEl.innerHTML = items.map(item => {
+            const cover = item.cover_url || placeholder;
+            const isDefaultCover = !!item.cover_is_default;
+            return `
+                <div class="small-card">
+                    <div class="small-card-img-wrapper" style="position:relative;">
+                        <img class="small-card-img${isDefaultCover ? ' is-default-cover' : ''}" src="${cover}" alt="">
+                        <div class="skin-edit-overlay">
+                            <button class="btn-v2 icon-only small secondary skin-edit-btn"
+                                    onclick="app.openEditSightModal('${app._escapeHtml(item.name)}', '${cover.replace(/'/g, "\\'")}')">
+                                <i class="ri-edit-line"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="small-card-body">
+                        <div class="small-card-title">${app._escapeHtml(item.name)}</div>
+                        <div class="small-card-meta">
+                            <span><i class="ri-file-list-3-line"></i> ${item.file_count} 文件</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        this._sightsLoaded = true;
+    } catch (e) {
+        console.error(e);
+    } finally {
+        if (seq === this._sightsRefreshSeq) this._sightsRefreshing = false;
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.classList.remove('is-loading');
+        }
+    }
+};

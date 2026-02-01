@@ -1,10 +1,29 @@
 /**
- * 极简加载组件封装 (V3 - 真实进度版)
- * 特性：
- * 1. 支持真实进度回调
- * 2. 平滑线性过渡动画
- * 3. 适配深色/浅色模式
- * 4. 进度条渐变动画效果
+ * 加载组件封装（前端可视化进度）。
+ *
+ * 功能定位:
+ * - 提供覆盖层加载 UI，用于展示后台任务的进度百分比与当前步骤提示。
+ *
+ * 输入输出:
+ * - 输入:
+ *   - show(autoSimulate, initialMessage): 是否启用自动模拟进度、初始提示文本
+ *   - update(progress, message): 后端推送的真实进度与提示文本
+ * - 输出:
+ *   - 在 DOM 中创建/更新 overlay、进度条宽度与文本
+ *   - 在满足条件时自动隐藏 overlay
+ * - 依赖:
+ *   - document.head/style 注入与 document.body DOM 挂载
+ *   - window.MinimalistLoading 暴露给后端通过 evaluate_js 调用
+ *
+ * 实现逻辑:
+ * - 1) _init 创建样式与 DOM 结构并缓存关键节点引用。
+ * - 2) show 初始化状态并按模式启动模拟进度或启动超时提示逻辑。
+ * - 3) update 记录目标进度并通过 requestAnimationFrame 平滑逼近显示值。
+ * - 4) hide 执行渐隐动画并清理定时器/动画帧与状态。
+ *
+ * 业务关联:
+ * - 上游: 后端通过 main.py 的 update_loading_ui 推送进度与提示文本。
+ * - 下游: 用户可通过加载覆盖层理解导入/安装等任务的执行状态。
  */
 const MinimalistLoading = {
     overlay: null,
@@ -191,7 +210,7 @@ const MinimalistLoading = {
             if (this.watchdog) clearInterval(this.watchdog);
             this._simulate();
         } else {
-            // [修复] 重置真实进度状态
+            // 重置真实进度状态
             this.currentProgress = 0;
             this.targetProgress = 0;
             if (this.interval) clearInterval(this.interval);
@@ -323,5 +342,5 @@ const MinimalistLoading = {
     }
 };
 
-// [关键修复] 显式挂载到 window 对象，确保 Python 后端可以通过 window.MinimalistLoading 访问
+// 显式挂载到 window 对象，供后端通过 evaluate_js 调用
 window.MinimalistLoading = MinimalistLoading;

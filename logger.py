@@ -1,7 +1,27 @@
 # -*- coding: utf-8 -*-
 """
-日志管理模块
-用于提供应用程序的持久化日志记录功能
+日志管理模块：为应用提供文件日志与控制台日志输出。
+
+功能定位:
+- 创建并配置统一的 logging.Logger，包括文件轮转写入与控制台输出，供后端各模块复用。
+
+输入输出:
+- 输入: logger 名称（用于 logging.getLogger(name)）。
+- 输出: 返回配置完成的 logging.Logger；并在运行过程中对日志文件写入与控制台输出。
+- 外部资源/依赖:
+  - 目录: <base_dir>/logs（默认日志目录，若不可用则使用系统临时目录）
+  - 文件: app.log（轮转文件日志）
+  - 运行环境: frozen（PyInstaller）与非 frozen 两种 base_dir 选择方式
+
+实现逻辑:
+- 1) 获取同名 logger，若已存在 handlers 则复用并直接返回。
+- 2) 设置 logger 级别为 DEBUG，确保文件日志可记录完整信息。
+- 3) 构造日志目录与格式化器。
+- 4) 添加 RotatingFileHandler（DEBUG 级别）与 StreamHandler（INFO 级别）。
+
+业务关联:
+- 上游: main.py 初始化桥接层时调用，用于将后端日志持久化。
+- 下游: AppApi.log_from_backend 会将业务日志写入该 logger 并同步推送给前端。
 """
 
 from __future__ import annotations
@@ -68,13 +88,27 @@ def _get_log_dir() -> Path:
 
 def setup_logger(name: str = APP_LOGGER_NAME) -> logging.Logger:
     """
-    配置并返回日志记录器
-    
-    Args:
-        name: 日志记录器名称
-        
-    Returns:
-        logging.Logger: 配置好的日志记录器
+    功能定位:
+    - 初始化并返回应用日志记录器，提供文件轮转写入与控制台输出。
+
+    输入输出:
+    - 参数:
+      - name: str，日志记录器名称（同名 logger 全局复用）。
+    - 返回:
+      - logging.Logger，配置完成的 logger 实例。
+    - 外部资源/依赖:
+      - 目录: <base_dir>/logs 或系统临时目录
+      - 文件: app.log（轮转）
+
+    实现逻辑:
+    - 1) 通过 logging.getLogger(name) 获取实例；若已配置 handlers 则直接返回，避免重复添加。
+    - 2) 计算 base_dir（frozen: sys.executable 同级；非 frozen: 源码目录）。
+    - 3) 创建日志目录，失败则降级到系统临时目录。
+    - 4) 添加文件处理器 RotatingFileHandler 与控制台处理器 StreamHandler。
+
+    业务关联:
+    - 上游: 应用启动阶段创建桥接层对象时调用。
+    - 下游: 供后端模块写日志，并被 main.py 转发到前端日志面板。
     """
     logger = logging.getLogger(name)
     
