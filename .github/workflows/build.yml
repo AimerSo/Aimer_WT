@@ -23,14 +23,36 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.semver.outputs.version-string }}
+      should_release: ${{ steps.check_commit.outputs.should_release }}
     steps:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         fetch-tags: true
     
+    - name: Check Commit Message
+      id: check_commit
+      run: |
+        if [ "${{ inputs.manual_bump }}" != "" ] && [ "${{ inputs.manual_bump }}" != "disable" ]; then
+          echo "Manual bump requested: ${{ inputs.manual_bump }}"
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        COMMIT_MSG=$(git log -1 --pretty=%s)
+        echo "Commit message: $COMMIT_MSG"
+        
+        if echo "$COMMIT_MSG" | grep -qE "^(feat|fix|build|chore|ci|docs|perf|refactor|revert|style|test)(\(.+\))?!?:|^BREAKING CHANGE:"; then
+          echo "Valid conventional commit detected"
+          echo "should_release=true" >> $GITHUB_OUTPUT
+        else
+          echo "No conventional commit prefix found, skipping release"
+          echo "should_release=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Run Semver
       id: semver
+      if: steps.check_commit.outputs.should_release == 'true'
       uses: bitshifted/git-auto-semver@v2
       with:
         main_branch: main
@@ -42,6 +64,7 @@ jobs:
   build:
     name: Build on ${{ matrix.os }}
     needs: version_check
+    if: needs.version_check.outputs.should_release == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -107,6 +130,7 @@ jobs:
   release:
     name: Create Release
     needs: [build, version_check]
+    if: needs.version_check.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
