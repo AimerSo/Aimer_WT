@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import argparse
 import base64
 import itertools
 import json
@@ -37,7 +38,7 @@ log = get_logger(__name__)
 
 
 def _show_fatal_error(title: str, message: str) -> None:
-    """顯示致命錯誤（盡量用系統對話框，失敗則退回 stderr）。"""
+    """显示致命错误（尽量用系统对话框，失败则退回 stderr）。"""
     try:
         if sys.platform == "win32":
             import ctypes
@@ -54,7 +55,7 @@ def _show_fatal_error(title: str, message: str) -> None:
 
 
 def _install_global_exception_handlers() -> None:
-    """將未捕捉例外統一寫入 app.log，避免只有 console 報錯。"""
+    """将未捕捉例外统一写入 app.log，避免只有 console 报错。"""
 
     def _excepthook(exc_type, exc, tb):
         if issubclass(exc_type, KeyboardInterrupt):
@@ -68,22 +69,22 @@ def _install_global_exception_handlers() -> None:
             pass
 
         _show_fatal_error(
-            "Aimer WT 發生錯誤",
-            f"程式遇到未處理的錯誤而終止。\n\n"
+            "Aimer WT 发生错误",
+            f"程式遇到未处理的错误而终止。\n\n"
             f"{exc_type.__name__}: {exc}\n\n"
-            f"詳細資訊請查看 logs/app.log",
+            f"详细资讯请查看 logs/app.log",
         )
 
     sys.excepthook = _excepthook
 
-    # Python 3.8+：捕捉 thread 未處理例外
+    # Python 3.8+：捕捉 thread 未处理例外
     if hasattr(threading, "excepthook"):
 
         def _thread_excepthook(args):
             try:
                 th_log = get_logger("thread")
                 th_log.critical(
-                    "背景執行緒未捕捉例外: %s (%s)",
+                    "背景执行绪未捕捉例外: %s (%s)",
                     getattr(args.thread, "name", "<unknown>"),
                     getattr(args.thread, "ident", "?"),
                     exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
@@ -93,16 +94,76 @@ def _install_global_exception_handlers() -> None:
 
         threading.excepthook = _thread_excepthook
 
+
+def _windows_has_webview2_runtime() -> bool:
+    """粗略检查 Windows 是否安装 WebView2 Runtime。
+
+    pywebview 在缺少 WebView2 时可能回退到 MSHTML(IE) 内核，
+    而本专案前端大量使用现代 JS（async/await、const 等），在 MSHTML 会直接失效，
+    造成「按钮没反应 / 输入框无法互动」等现象。
+    """
+    if sys.platform != "win32":
+        return True
+
+    candidates = []
+    pf_x86 = os.environ.get("ProgramFiles(x86)")
+    pf = os.environ.get("ProgramFiles")
+    if pf_x86:
+        candidates.append(Path(pf_x86) / "Microsoft" / "EdgeWebView" / "Application")
+    if pf:
+        candidates.append(Path(pf) / "Microsoft" / "EdgeWebView" / "Application")
+
+    for base in candidates:
+        try:
+            if not base.exists() or not base.is_dir():
+                continue
+            # Application\<version>\msedgewebview2.exe
+            for sub in base.iterdir():
+                exe = sub / "msedgewebview2.exe"
+                if exe.exists():
+                    return True
+        except Exception:
+            continue
+
+    return False
+
+
+def _open_url(url: str) -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        # 使用系统预设浏览器
+        subprocess.Popen(["cmd", "/c", "start", "", url], shell=False)
+    except Exception:
+        pass
+
+
+def _parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """解析启动参数（不使用环境变数）。"""
+    if argv is None:
+        argv = sys.argv[1:]
+
+    # 不要让 argparse 在 GUI 程式中直接 sys.exit()
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--allow-fallback", action="store_true")
+    parser.add_argument("--perf", action="store_true")
+
+    try:
+        args, _unknown = parser.parse_known_args(argv)
+        return args
+    except Exception:
+        return argparse.Namespace(allow_fallback=False, perf=False)
+
 class AppApi:
     # 提供前端可调用的后端 API 集合，并协调配置、库管理、安装与资源管理等模块。
 
-    def __init__(self):
+    def __init__(self, *, perf_enabled: bool = False):
         # 初始化桥接层的状态、各业务管理器与日志系统。
         self._lock = threading.Lock()
 
         self._logger = setup_logger()
 
-        self._perf_enabled = os.environ.get("AIMERWT_PERF", "").strip() == "1"
+        self._perf_enabled = bool(perf_enabled)
 
         # 保存 PyWebview Window 引用（用于调用 evaluate_js 与打开系统对话框）
         
@@ -115,10 +176,10 @@ class AppApi:
         self._window = None
 
         # 管理器实例：配置、语音包库、涂装、炮镜、游戏目录操作
-        # 注意：所有管理器現在統一使用 logger.py 的日誌系統
+        # 注意：所有管理器现在统一使用 logger.py 的日誌系统
         self._cfg_mgr = ConfigManager()
         
-        # 從配置讀取自定義路徑
+        # 从配置读取自定义路径
         custom_pending = self._cfg_mgr.get_pending_dir()
         custom_library = self._cfg_mgr.get_library_dir()
         self._lib_mgr = LibraryManager(
@@ -1013,6 +1074,25 @@ class AppApi:
             return None
 
     # --- 炮镜管理 API ---
+    def discover_usersights_paths(self):
+        """自动搜索系统中所有可能的 War Thunder UserSights 路径"""
+        try:
+            return self._sights_mgr.discover_usersights_paths()
+        except Exception as e:
+            log.error(f"搜索 UserSights 路径失败: {e}")
+            return []
+    
+    def select_uid_sights_path(self, uid):
+        """根据 UID 选择并设置对应的 UserSights 路径"""
+        try:
+            path = self._sights_mgr.select_uid_path(uid)
+            self._cfg_mgr.set_sights_path(path)
+            log.info(f"已选择 UID {uid} 的炮镜路径: {path}")
+            return {"success": True, "path": path}
+        except Exception as e:
+            log.error(f"选择 UID 炮镜路径失败: {e}")
+            return {"success": False, "error": str(e)}
+
     def select_sights_path(self):
         # 打开目录选择对话框设置 UserSights 路径，并写入配置用于下次启动恢复。
         folder = self._window.create_file_dialog(webview.FileDialog.FOLDER)
@@ -1146,45 +1226,9 @@ class AppApi:
         except Exception as e:
             log.error(f"打开炮镜文件夹失败: {e}")
 
-    # --- 配置文件管理 API ---
-    def get_config_path_info(self):
-        current_path = self._cfg_mgr.get_config_dir()
-        custom_path = self._cfg_mgr.get_custom_config_dir()
-        return {
-            "current_path": current_path,
-            "custom_path": custom_path
-        }
-
-    def open_config_folder(self):
-        path = self._cfg_mgr.get_config_dir()
-        if path and os.path.exists(path):
-            try:
-                if platform.system() == "Windows":
-                    os.startfile(path)
-                elif platform.system() == "Darwin":
-                    subprocess.Popen(["open", path])
-                else:
-                    subprocess.Popen(["xdg-open", path])
-            except Exception as e:
-                log.error(f"打开配置文件夹失败: {e}")
-
-    def select_config_path(self):
-        folder = self._window.create_file_dialog(webview.FileDialog.FOLDER)
-        if folder and len(folder) > 0:
-            path = folder[0].replace(os.sep, "/")
-            return {"success": True, "path": path}
-        return {"success": False}
-
-    def save_custom_config_path(self, path):
-        try:
-            self._cfg_mgr.set_custom_config_dir(path)
-            return {"success": True, "need_restart": True}
-        except Exception as e:
-            return {"success": False, "msg": str(e)}
-
-    # --- 語音包庫路徑管理 API ---
+    # --- 语音包库路径管理 API ---
     def get_library_path_info(self):
-        """獲取待解壓區和語音包庫的當前路徑及預設路徑。"""
+        """获取待解压区和语音包库的当前路径及预设路径。"""
         paths = self._lib_mgr.get_current_paths()
         custom_pending = self._cfg_mgr.get_pending_dir()
         custom_library = self._cfg_mgr.get_library_dir()
@@ -1198,7 +1242,7 @@ class AppApi:
         }
 
     def select_pending_dir(self):
-        """打開目錄選擇對話框，選擇待解壓區目錄。"""
+        """打开目录选择对话框，选择待解压区目录。"""
         folder = self._window.create_file_dialog(webview.FileDialog.FOLDER)
         if folder and len(folder) > 0:
             path = folder[0].replace(os.sep, "/")
@@ -1206,7 +1250,7 @@ class AppApi:
         return {"success": False}
 
     def select_library_dir(self):
-        """打開目錄選擇對話框，選擇語音包庫目錄。"""
+        """打开目录选择对话框，选择语音包库目录。"""
         folder = self._window.create_file_dialog(webview.FileDialog.FOLDER)
         if folder and len(folder) > 0:
             path = folder[0].replace(os.sep, "/")
@@ -1215,59 +1259,59 @@ class AppApi:
 
     def save_library_paths(self, pending_dir=None, library_dir=None):
         """
-        保存待解壓區和語音包庫的自定義路徑。
-        參數為空字串則重設為預設路徑。
+        保存待解压区和语音包库的自定义路径。
+        参数为空字串则重设为预设路径。
         """
         try:
-            # 處理待解壓區
+            # 处理待解压区
             if pending_dir is not None:
                 if pending_dir == "":
-                    # 重設為預設
+                    # 重设为预设
                     self._cfg_mgr.set_pending_dir("")
                     default_pending = self._lib_mgr.root_dir / "WT待解压区"
                     self._lib_mgr.update_paths(pending_dir=str(default_pending))
-                    log.info("待解壓區已重設為預設路徑")
+                    log.info("待解压区已重设为预设路径")
                 else:
-                    # 驗證路徑
+                    # 验证路径
                     p = Path(pending_dir)
                     if not p.exists():
                         try:
                             p.mkdir(parents=True, exist_ok=True)
                         except Exception as e:
-                            return {"success": False, "msg": f"無法建立待解壓區目錄: {e}"}
+                            return {"success": False, "msg": f"无法建立待解压区目录: {e}"}
                     self._cfg_mgr.set_pending_dir(pending_dir)
                     self._lib_mgr.update_paths(pending_dir=pending_dir)
             
-            # 處理語音包庫
+            # 处理语音包库
             if library_dir is not None:
                 if library_dir == "":
-                    # 重設為預設
+                    # 重设为预设
                     self._cfg_mgr.set_library_dir("")
                     default_library = self._lib_mgr.root_dir / "WT语音包库"
                     self._lib_mgr.update_paths(library_dir=str(default_library))
-                    log.info("語音包庫已重設為預設路徑")
+                    log.info("语音包库已重设为预设路径")
                 else:
-                    # 驗證路徑
+                    # 验证路径
                     p = Path(library_dir)
                     if not p.exists():
                         try:
                             p.mkdir(parents=True, exist_ok=True)
                         except Exception as e:
-                            return {"success": False, "msg": f"無法建立語音包庫目錄: {e}"}
+                            return {"success": False, "msg": f"无法建立语音包库目录: {e}"}
                     self._cfg_mgr.set_library_dir(library_dir)
                     self._lib_mgr.update_paths(library_dir=library_dir)
             
             return {"success": True}
         except Exception as e:
-            log.error(f"保存語音包庫路徑失敗: {e}")
+            log.error(f"保存语音包库路径失败: {e}")
             return {"success": False, "msg": str(e)}
 
     def open_pending_folder(self):
-        """打開待解壓區目錄。"""
+        """打开待解压区目录。"""
         self._lib_mgr.open_pending_folder()
 
     def open_library_folder(self):
-        """打開語音包庫目錄。"""
+        """打开语音包库目录。"""
         self._lib_mgr.open_library_folder()
 
 
@@ -1298,35 +1342,37 @@ def on_app_started():
                 log.info(f"[UI_STATE] {state}")
                 break
         except Exception:
-            # 啟動初期 UI 尚未就緒很常見：僅在最後一次嘗試記錄詳細原因
+            # 启动初期 UI 尚未就绪很常见：仅在最后一次尝试记录详细原因
             if i == 9:
-                log.debug("on_app_started: UI 尚未就緒", exc_info=True)
+                log.debug("on_app_started: UI 尚未就绪", exc_info=True)
             time.sleep(0.2)
 
 
 def main() -> int:
     _install_global_exception_handlers()
 
+    cli = _parse_cli_args()
+
     if webview is None:
         err = globals().get("_WEBVIEW_IMPORT_ERROR")
-        log.error("pywebview 載入失敗: %s", err)
+        log.error("pywebview 载入失败: %s", err)
         _show_fatal_error(
-            "缺少依賴：pywebview",
-            "無法載入 pywebview，請先安裝依賴：\n\npip install -r requirements.txt\n\n"
-            f"錯誤：{err}",
+            "缺少依赖：pywebview",
+            "无法载入 pywebview，请先安装依赖：\n\npip install -r requirements.txt\n\n"
+            f"错误：{err}",
         )
         return 2
 
-    # 基本資源檢查：避免黑畫面或神祕崩潰
+    # 基本资源检查：避免黑画面或神祕崩溃
     index_html = WEB_DIR / "index.html"
     if not index_html.exists():
-        msg = f"找不到前端入口檔：{index_html}"
+        msg = f"找不到前端入口档：{index_html}"
         log.error(msg)
-        _show_fatal_error("資源缺失", msg)
+        _show_fatal_error("资源缺失", msg)
         return 3
 
     # 创建后端 API 桥接对象
-    api = AppApi()
+    api = AppApi(perf_enabled=bool(getattr(cli, "perf", False)))
 
     if sys.platform == "win32":
         try:
@@ -1334,7 +1380,7 @@ def main() -> int:
 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("AimerWT.v2")
         except Exception:
-            log.debug("設定 AppUserModelID 失敗", exc_info=True)
+            log.debug("设定 AppUserModelID 失败", exc_info=True)
 
     # 窗口尺寸参数
     window_width = 1200
@@ -1387,10 +1433,10 @@ def main() -> int:
             r = mi.rcWork
             return (int(r.left), int(r.top), int(r.right), int(r.bottom))
         except Exception:
-            log.debug("取得 Windows 工作區失敗", exc_info=True)
+            log.debug("取得 Windows 工作区失败", exc_info=True)
             return None
 
-    # 置中策略：優先用 Windows 工作區（避開工作列/多螢幕）；不行再退回 webview.screens
+    # 置中策略：优先用 Windows 工作区（避开工作列/多萤幕）；不行再退回 webview.screens
     try:
         work = _get_windows_work_area()
         if work:
@@ -1427,8 +1473,8 @@ def main() -> int:
             easy_drag=False,
         )
     except Exception as e:
-        log.exception("建立視窗失敗")
-        _show_fatal_error("啟動失敗", f"建立視窗失敗：{e}\n\n詳見 logs/app.log")
+        log.exception("建立视窗失败")
+        _show_fatal_error("启动失败", f"建立视窗失败：{e}\n\n详见 logs/app.log")
         return 4
 
     # 绑定窗口对象到桥接层
@@ -1439,7 +1485,7 @@ def main() -> int:
         try:
             from webview.dom import DOMEventHandler
         except Exception:
-            log.debug("DOMEventHandler 不可用，略過拖放綁定")
+            log.debug("DOMEventHandler 不可用，略过拖放绑定")
             return
 
         def on_drop(e):
@@ -1482,26 +1528,26 @@ def main() -> int:
         try:
             win.dom.document.events.drop += DOMEventHandler(on_drop, True, True)
         except Exception:
-            log.debug("綁定拖放事件失敗", exc_info=True)
+            log.debug("绑定拖放事件失败", exc_info=True)
             return
 
     def _on_start(win):
         try:
             _bind_drag_drop(win)
         except Exception:
-            log.exception("_bind_drag_drop 失敗")
+            log.exception("_bind_drag_drop 失败")
 
-        # 部分 GUI 後端可能忽略 create_window 的 x/y；啟動後補一次置中
+        # 部分 GUI 后端可能忽略 create_window 的 x/y；启动后补一次置中
         try:
             if start_x is not None and start_y is not None and hasattr(win, "move"):
                 win.move(int(start_x), int(start_y))
         except Exception:
-            log.debug("啟動後移動視窗失敗", exc_info=True)
+            log.debug("启动后移动视窗失败", exc_info=True)
 
         try:
             on_app_started()
         except Exception:
-            log.exception("on_app_started 失敗")
+            log.exception("on_app_started 失败")
 
     # 启动
     icon_path = str(WEB_DIR / "assets" / "logo.ico")
@@ -1518,13 +1564,29 @@ def main() -> int:
         return 0
     except Exception as e:
         log.error(f"Edge Chromium 启动失败，尝试默认模式: {e}")
+
+        # 在 Windows 上，若缺少 WebView2 Runtime，pywebview 可能回退到 MSHTML(IE)，
+        # 因此在侦测到 WebView2 不存在时，优先提示使用者安装，而不是静默降级。
+        if sys.platform == "win32" and not _windows_has_webview2_runtime():
+            allow_fallback = bool(getattr(cli, "allow_fallback", False))
+            if not allow_fallback:
+                msg = (
+                    "侦测到系统未安装 Microsoft Edge WebView2 Runtime。\n\n"
+                    "本程式需要 WebView2 才能正常显示与互动（否则会回退到旧版 IE 内核，导致一些意外的错误）。\n\n"
+                    "请安装 WebView2 Evergreen Runtime 后再启动：\n"
+                    "https://developer.microsoft.com/microsoft-edge/webview2/\n\n"
+                    "（如仍想尝试旧模式启动，可使用启动参数 --allow-fallback）"
+                )
+                _show_fatal_error("缺少 WebView2 Runtime", msg)
+                return 6
+
         try:
             # 降级启动
             webview.start(_on_start, window, debug=False, http_server=False, icon=icon_path)
             return 0
         except Exception as e2:
-            log.exception("webview 啟動失敗（含降級）")
-            _show_fatal_error("啟動失敗", f"webview 啟動失敗：{e2}\n\n詳見 logs/app.log")
+            log.exception("webview 启动失败（含降级）")
+            _show_fatal_error("启动失败", f"webview 启动失败：{e2}\n\n详见 logs/app.log")
             return 5
 
 

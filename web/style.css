@@ -1390,6 +1390,31 @@ i[class^="ri-"] {
     font-weight: 600;
 }
 
+/* 深色模式下的日志行颜色 */
+[data-theme="dark"] .log-line.info {
+    color: #38BDF8;
+}
+
+[data-theme="dark"] .log-line.success {
+    color: #34D399;
+}
+
+[data-theme="dark"] .log-line.error {
+    color: #F87171;
+}
+
+[data-theme="dark"] .log-line.warn {
+    color: #FBBF24;
+}
+
+[data-theme="dark"] .log-line.sys {
+    color: #6B7280;
+}
+
+[data-theme="dark"] .log-line:hover {
+    background: rgba(255, 153, 0, 0.08);
+}
+
 /* --- Library Toolbar V2 (简约扁平风格) --- */
 .toolbar-v2 {
     background: var(--bg-card);

@@ -6,6 +6,7 @@
 - 管理用户指定的 UserSights 目录，并扫描其中的炮镜文件夹以生成前端展示数据。
 - 将用户提供的炮镜 ZIP 解压导入到 UserSights，支持覆盖导入与进度回调。
 - 提供炮镜文件夹重命名与封面（preview.png）更新能力。
+- 自动搜索 War Thunder 的 UserSights 路径，支持多 UID 选择。
 
 输入输出:
 - 输入: UserSights 路径、炮镜 ZIP 路径、封面 base64 数据、重命名参数、进度回调。
@@ -19,6 +20,7 @@
 - 1) set_usersights_path 负责校验并持久化当前工作目录（由上层配置管理模块保存）。
 - 2) scan_sights 遍历目录并统计 .blk 文件数量，选择预览图或默认封面生成 data URL。
 - 3) import_sights_zip 解压到临时目录后整理为目标目录结构，并对压缩包成员路径与扩展名做约束校验。
+- 4) discover_usersights_paths 自动搜索系统中所有可能的 UserSights 路径。
 
 业务关联:
 - 上游: main.py 的桥接层 API 暴露该能力给前端页面。
@@ -26,6 +28,7 @@
 """
 import base64
 import os
+import platform
 import shutil
 import zipfile
 from pathlib import Path
@@ -58,6 +61,116 @@ class SightsManager:
         else:
             log.info(msg)
 
+    def discover_usersights_paths(self):
+        """
+        自动搜索系统中所有可能的 War Thunder UserSights 路径。
+        
+        官方路径格式：
+        - Windows: Documents/My Games/WarThunder/Saves/<UID>/production/UserSights
+        - Linux: ~/.config/WarThunder/Saves/<UID>/production/UserSights
+        - macOS: ~/My Games/WarThunder/Saves/<UID>/production/UserSights
+        
+        返回:
+            list[dict]: 包含 uid, path, exists 的列表
+        """
+        results = []
+        system = platform.system()
+        
+        # 根据平台确定基础路径
+        possible_bases = []
+        
+        if system == "Windows":
+            # Windows 官方路径
+            possible_bases.append(Path.home() / "Documents" / "My Games" / "WarThunder" / "Saves")
+        elif system == "Darwin":
+            # macOS 官方路径
+            possible_bases.append(Path.home() / "My Games" / "WarThunder" / "Saves")
+            # 备选：Documents 下
+            possible_bases.append(Path.home() / "Documents" / "My Games" / "WarThunder" / "Saves")
+        else:
+            # Linux 官方原生路径
+            possible_bases.append(Path.home() / ".config" / "WarThunder" / "Saves")
+            # Linux - Wine/Proton 路径（Steam）
+            possible_bases.append(
+                Path.home() / ".local" / "share" / "Steam" / "steamapps" / "compatdata" / "236390" / "pfx" / "drive_c" / "users" / "steamuser" / "Documents" / "My Games" / "WarThunder" / "Saves"
+            )
+            # 备选：Documents 下
+            possible_bases.append(Path.home() / "Documents" / "My Games" / "WarThunder" / "Saves")
+        
+        # 搜索所有可能的基础路径
+        found_uids = set()  # 用于去重
+        
+        for base_path in possible_bases:
+            if not base_path.exists():
+                continue
+            
+            try:
+                # 遍历 Saves 目录下的所有 UID 文件夹
+                for uid_dir in base_path.iterdir():
+                    if not uid_dir.is_dir():
+                        continue
+                    
+                    uid = uid_dir.name
+                    
+                    # 跳过已处理的 UID
+                    if uid in found_uids:
+                        continue
+                    
+                    # 构建 UserSights 路径
+                    usersights_path = uid_dir / "production" / "UserSights"
+                    
+                    results.append({
+                        "uid": uid,
+                        "path": str(usersights_path),
+                        "exists": usersights_path.exists()
+                    })
+                    found_uids.add(uid)
+            except Exception as e:
+                self._log(f"搜索 {base_path} 失败: {e}", "ERROR")
+        
+        if not results:
+            self._log(f"未找到任何 War Thunder Saves 目录", "INFO")
+        
+        # 按 UID 排序
+        results.sort(key=lambda x: x["uid"])
+        return results
+    
+    def select_uid_path(self, uid: str):
+        """
+        根据 UID 选择并设置对应的 UserSights 路径。
+        如果路径不存在，会自动创建。
+        
+        参数:
+            uid: 用户 UID
+            
+        返回:
+            str: 设置后的 UserSights 路径
+        """
+        discovered = self.discover_usersights_paths()
+        
+        # 查找匹配的 UID
+        target = None
+        for item in discovered:
+            if item["uid"] == uid:
+                target = item
+                break
+        
+        if not target:
+            raise ValueError(f"未找到 UID: {uid}")
+        
+        path = Path(target["path"])
+        
+        # 如果路径不存在，创建它
+        if not path.exists():
+            try:
+                path.mkdir(parents=True, exist_ok=True)
+                self._log(f"已创建 UserSights 目录: {path}", "INFO")
+            except Exception as e:
+                raise ValueError(f"无法创建 UserSights 目录: {e}")
+        
+        # 设置路径
+        self.set_usersights_path(path)
+        return str(path)
     
     def set_usersights_path(self, path: str | Path):
         # 设置并校验 UserSights 工作目录路径。

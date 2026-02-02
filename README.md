@@ -20,6 +20,7 @@
 ## 环境要求
 
 - Windows
+- Microsoft Edge WebView2 Runtime（Evergreen，未安装时 UI 可能无法交互）
 - Python（建议 3.10+，以你本地可运行版本为准）
 - 依赖：pywebview
 
@@ -36,6 +37,11 @@ pip install pywebview
 ```bash
 python main.py
 ```
+
+## 启动参数（可选）
+
+- `--allow-fallback`：当 WebView2 不可用且 edgechromium 启动失败时，允许尝试降级启动（可能导致部分界面不可用）。
+- `--perf`：开启部分接口的性能日志输出。
 
 ## 目录结构说明
 

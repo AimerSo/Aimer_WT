@@ -1,48 +1,53 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+import platform
 from pathlib import Path
 import sys
 from logger import get_logger
 
 log = get_logger(__name__)
 
-# 配置文件所在目录逻辑：
-# 1. 优先使用环境变量 AIMER_WT_CONFIG_DIR 指定的目录（用户自定义）
-# 2. 其次检查默认位置的配置文件中是否设置了 custom_config_dir
-# 3. 若都未设置，打包环境使用可执行文件同级目录，开发环境使用源码目录
+# 配置文件固定存放在用户配置目录下的 Aimer_WT 资料夹
 def _get_default_config_dir():
-    """获取默认配置文件目录"""
-    if getattr(sys, 'frozen', False):
-        return Path(sys.executable).parent
+    """
+    获取默认配置文件目录（跨平台支持）
+    - Windows: ~/Documents/Aimer_WT
+    - Linux: ~/.config/Aimer_WT
+    - macOS: ~/Library/Application Support/Aimer_WT
+    """
+    system = platform.system()
+    
+    if system == "Windows":
+        # Windows: 用户文档目录
+        config_base = Path.home() / "Documents" / "Aimer_WT"
+    elif system == "Darwin":
+        # macOS: Application Support 目录
+        config_base = Path.home() / "Library" / "Application Support" / "Aimer_WT"
     else:
-        return Path(__file__).parent
-def _get_config_dir():
-    """获取配置文件目录，支持用户自定义路径"""
-    # 1. 优先检查环境变量
-    custom_dir = os.environ.get('AIMER_WT_CONFIG_DIR')
-    if custom_dir:
-        custom_path = Path(custom_dir)
-        if custom_path.exists() or custom_path.parent.exists():
-            return custom_path
+        # Linux/其他: 使用 XDG_CONFIG_HOME 或 ~/.config
+        xdg_config = os.environ.get("XDG_CONFIG_HOME")
+        if xdg_config:
+            config_base = Path(xdg_config) / "Aimer_WT"
+        else:
+            config_base = Path.home() / ".config" / "Aimer_WT"
     
-    # 2. 检查默认位置的配置文件中是否有自定义路径设置
-    default_dir = _get_default_config_dir()
-    default_config = default_dir / "settings.json"
-    if default_config.exists():
+    # 确保目录存在
+    if not config_base.exists():
         try:
-            with open(default_config, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                saved_custom_dir = data.get('custom_config_dir', '')
-                if saved_custom_dir:
-                    saved_path = Path(saved_custom_dir)
-                    if saved_path.exists() or saved_path.parent.exists():
-                        return saved_path
-        except:
-            pass
-    
-    # 3. 使用默认目录
-    return default_dir
+            config_base.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            log.warning(f"无法创建配置目录，使用程序目录: {e}")
+            # 备用方案：使用程序目录
+            if getattr(sys, 'frozen', False):
+                return Path(sys.executable).parent
+            else:
+                return Path(__file__).parent
+    return config_base
+
+def _get_config_dir():
+    """获取配置文件目录"""
+    return _get_default_config_dir()
 
 DOCS_DIR = _get_config_dir()
 CONFIG_FILE = DOCS_DIR / "settings.json"
@@ -50,6 +55,10 @@ CONFIG_FILE = DOCS_DIR / "settings.json"
 class ConfigManager:
     # 维护应用配置的内存表示，并提供按键读写与落盘保存能力。
     def __init__(self):
+        # 配置文件路径（固定在用户文档/Aimer_WT）
+        self.config_dir = DOCS_DIR
+        self.config_file = CONFIG_FILE
+        
         # 初始化默认配置并尝试从 settings.json 加载覆盖。
         self.config = {
             "game_path": "",
@@ -75,9 +84,9 @@ class ConfigManager:
 
     def load_config(self):
         # 从 settings.json 加载配置并合并到当前配置字典。
-        if os.path.exists(CONFIG_FILE):
+        if os.path.exists(self.config_file):
             try:
-                data = self._load_json_with_fallback(CONFIG_FILE)
+                data = self._load_json_with_fallback(self.config_file)
                 if isinstance(data, dict):
                     self.config.update(data)
             except Exception as e:
@@ -87,10 +96,10 @@ class ConfigManager:
         # 将当前配置字典写入 settings.json。
         try:
             # 确保目录存在
-            if not DOCS_DIR.exists():
-                DOCS_DIR.mkdir(parents=True, exist_ok=True)
+            if not self.config_dir.exists():
+                self.config_dir.mkdir(parents=True, exist_ok=True)
                 
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
         except Exception as e:
             log.error(f"保存配置文件失败: {e}")
@@ -160,17 +169,11 @@ class ConfigManager:
 
     def get_config_dir(self):
         # 读取当前配置文件所在目录路径。
-        return str(DOCS_DIR)
+        return str(self.config_dir)
 
-    def get_custom_config_dir(self):
-        # 读取用户自定义的配置文件目录路径（存储在配置中的值）。
-        return self.config.get("custom_config_dir", "")
-
-    def set_custom_config_dir(self, path):
-        # 更新用户自定义的配置文件目录路径并写入 settings.json。
-        # 注意：此设置需要重启应用后才能生效。
-        self.config["custom_config_dir"] = path
-        self.save_config()
+    def get_config_file_path(self):
+        # 读取当前 settings.json 的完整路径。
+        return str(self.config_file)
 
     def get_pending_dir(self):
         # 讀取自定義的待解壓區目錄路徑。

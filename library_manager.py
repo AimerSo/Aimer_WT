@@ -21,32 +21,31 @@ DIR_PENDING = "WT待解压区"
 DIR_LIBRARY = "WT语音包库"
 
 
-# 定義密碼相關異常類
+# 定义密码相关异常类
 class ArchivePasswordRequired(Exception):
-    """壓縮包需要密碼"""
+    """压缩包需要密码"""
     pass
 
 
 class ArchivePasswordIncorrect(Exception):
-    """密碼錯誤"""
+    """密码错误"""
     pass
 
 
 class ArchivePasswordCanceled(Exception):
-    """用戶取消輸入密碼"""
+    """用户取消输入密码"""
     pass
 
 
 class LibraryManager:
     def __init__(self, log_callback=None, pending_dir=None, library_dir=None):
-        # 保留 log_callback 以維持向後兼容，但內部使用統一 logger
+        # 保留 log_callback 以维持向后兼容，但内部使用统一 logger
         self._log_callback = log_callback
         
-        # 使用 logger.py 中定義的統一資料目錄 (Documents/Aimer_WT)
         self.root_dir = get_app_data_dir()
         
-        # 初始化待解壓區與語音包庫目錄路徑
-        # 支援自定義路徑，若未提供則使用預設值
+        # 初始化待解压区与语音包库目录路径
+        # 支援自定义路径，若未提供则使用预设值
         if pending_dir and Path(pending_dir).exists():
             self.pending_dir = Path(pending_dir)
         else:
@@ -57,47 +56,47 @@ class LibraryManager:
         else:
             self.library_dir = self.root_dir / DIR_LIBRARY
         
-        # 確保目錄存在
+        # 确保目录存在
         self._ensure_dirs()
 
     def update_paths(self, pending_dir=None, library_dir=None):
         """
-        動態更新待解壓區和語音包庫路徑。
-        返回: dict 包含更新結果 { 'pending_updated': bool, 'library_updated': bool }
+        动态更新待解压区和语音包库路径。
+        返回: dict 包含更新结果 { 'pending_updated': bool, 'library_updated': bool }
         """
         result = {'pending_updated': False, 'library_updated': False}
         
         if pending_dir:
             new_path = Path(pending_dir)
-            # 確保目錄存在或可創建
+            # 确保目录存在或可创建
             if not new_path.exists():
                 try:
                     new_path.mkdir(parents=True, exist_ok=True)
                 except Exception as e:
-                    log.error(f"無法創建待解壓區目錄: {e}")
+                    log.error(f"无法创建待解压区目录: {e}")
                     return result
             self.pending_dir = new_path
             result['pending_updated'] = True
-            log.info(f"待解壓區路徑已更新: {new_path}")
+            log.info(f"待解压区路径已更新: {new_path}")
         
         if library_dir:
             new_path = Path(library_dir)
-            # 確保目錄存在或可創建
+            # 确保目录存在或可创建
             if not new_path.exists():
                 try:
                     new_path.mkdir(parents=True, exist_ok=True)
                 except Exception as e:
-                    log.error(f"無法創建語音包庫目錄: {e}")
+                    log.error(f"无法创建语音包库目录: {e}")
                     return result
             self.library_dir = new_path
             result['library_updated'] = True
-            log.info(f"語音包庫路徑已更新: {new_path}")
+            log.info(f"语音包库路径已更新: {new_path}")
         
         return result
 
     def get_current_paths(self):
         """
-        返回當前的待解壓區和語音包庫路徑。
+        返回当前的待解压区和语音包库路径。
         """
         return {
             'pending_dir': str(self.pending_dir),
@@ -128,7 +127,7 @@ class LibraryManager:
         tag = str(level or "INFO").upper()
         msg = str(message)
 
-        # 统一前缀：避免重复叠加
+        # 统一前缀：避免重复迭加
         if tag != "INFO" and not msg.startswith(f"[{tag}]"):
             msg = f"[{tag}] {msg}"
 
@@ -399,7 +398,7 @@ class LibraryManager:
         # 7. 文件夹详情
         details["folders"] = self._detect_mod_folders(mod_dir)
         
-        # 对特定语音包名称提供固定展示字段，用于界面展示数据覆盖
+        # 对特定语音包名称提供固定展示字段，用于界面展示数据复盖
         if mod_name == "Aimer":
             details.update({
                 "author": "Aimer",
