@@ -1391,7 +1391,7 @@ const app = {
     },
 
     // --- 路径搜索逻辑 ---
-    updatePathUI(path, valid) {
+    async updatePathUI(path, valid) {
         const input = document.getElementById('input-game-path');
         const statusIcon = document.getElementById('status-icon');
         const statusText = document.getElementById('status-text');
@@ -1404,16 +1404,33 @@ const app = {
             statusIcon.className = 'status-icon active';
             statusText.textContent = '连接正常';
             statusText.className = 'status-text success';
+
+            // 路径有效，异步更新已安装列表
+            try {
+                if (window.pywebview && pywebview.api && pywebview.api.get_installed_mods) {
+                    this.installedModIds = await pywebview.api.get_installed_mods() || [];
+                }
+            } catch (e) {
+                console.error("Failed to update installed mods:", e);
+                this.installedModIds = [];
+            }
         } else if (!path) {
             statusIcon.innerHTML = '<i class="ri-wifi-off-line"></i>';
             statusIcon.className = 'status-icon';
             statusText.textContent = '未设置路径';
             statusText.className = 'status-text waiting';
+            this.installedModIds = [];
         } else {
             statusIcon.innerHTML = '<i class="ri-error-warning-line"></i>';
             statusIcon.className = 'status-icon';
             statusText.textContent = '路径无效';
             statusText.className = 'status-text error';
+            this.installedModIds = [];
+        }
+
+        // 如果已经加载了库数据，需要重新渲染以更新“已加载”勾选状态
+        if (this.modCache && this.modCache.length > 0) {
+            this.renderList(this.modCache);
         }
     },
 

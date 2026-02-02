@@ -607,6 +607,25 @@ class AppApi:
                 return {"valid": False, "path": path, "msg": msg}
         return None
 
+    def get_installed_mods(self):
+        """
+        功能定位:
+        - 获取当前已安装在游戏目录下的模块 ID 列表。
+
+        输入输出:
+        - 参数: 无
+        - 返回: list[str]，已安装模块的 ID 集合。
+        - 外部资源/依赖: CoreService.get_installed_mods
+
+        实现逻辑:
+        - 调用逻辑层的 get_installed_mods 接口并返回。
+
+        业务关联:
+        - 上游: 前端切换路径或执行安装/还原后，用于同步界面状态。
+        - 下游: 无。
+        """
+        return self._logic.get_installed_mods()
+
     def start_auto_search(self):
         """
         功能定位:
