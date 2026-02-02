@@ -29,7 +29,7 @@
 1. 安装依赖（最小示例）：
 
 ```bash
-pip install pywebview
+pip install -r requirements.txt
 ```
 
 2. 启动：
