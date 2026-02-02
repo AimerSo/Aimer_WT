@@ -161,7 +161,7 @@ const app = {
         } else {
             app.showAlert("错误", "主题文件损坏或格式错误！");
             document.getElementById('theme-select').value = "default.json";
-            // 嘗試載入預設主題
+            // 尝试载入预设主题
             const defaultTheme = await pywebview.api.load_theme_content("default.json");
             if (defaultTheme) {
                 this.applyThemeData(defaultTheme);
@@ -171,70 +171,10 @@ const app = {
         }
     },
 
-    // 初始化
+    // 初始化 - 此函数会被下方的 app.init 复盖，保留此处仅为结构完整性
+    // 实际初始化逻辑请见文件末尾的 app.init = async function() {...}
     async init() {
-        console.log("App initializing...");
-        this.recoverToSafeState('init');
-
-        if (!this._safetyHandlersInstalled) {
-            this._safetyHandlersInstalled = true;
-
-            window.addEventListener('error', () => this.recoverToSafeState('error'));
-            window.addEventListener('unhandledrejection', () => this.recoverToSafeState('unhandledrejection'));
-            document.addEventListener('keydown', (e) => {
-                if (e.key !== 'Escape') return;
-                const openModal = document.querySelector('.modal-overlay.show');
-                if (openModal && openModal.id) app.closeModal(openModal.id);
-            });
-        }
-
-        // 移除开局强制应用默认主题的逻辑，直接使用 CSS 默认值
-        // 这样可以避免内联样式覆盖 CSS 的深色模式定义
-
-        // 监听 pywebview 准备就绪
-        window.addEventListener('pywebviewready', async () => {
-            console.log("PyWebview ready!");
-            // 获取初始状态
-            const state = await pywebview.api.init_app_state();
-            this.updatePathUI(state.game_path, state.path_valid);
-
-            // 加载主题列表并应用上次的选择
-            await this.loadThemeList();
-            const activeTheme = state.active_theme || 'default.json';
-            const select = document.getElementById('theme-select');
-            if (select) select.value = activeTheme;
-
-            // 加载主题内容（包括 default.json）
-            const themeData = await pywebview.api.load_theme_content(activeTheme);
-            if (themeData && (themeData.colors || themeData.light || themeData.dark)) {
-                this.applyThemeData(themeData);
-            }
-
-            const themeBtn = document.getElementById('btn-theme');
-            if (state.theme === 'Light') {
-                document.documentElement.setAttribute('data-theme', 'light');
-                themeBtn.innerHTML = '<i class="ri-moon-line"></i>';
-            } else {
-                document.documentElement.setAttribute('data-theme', 'dark');
-                themeBtn.innerHTML = '<i class="ri-sun-line"></i>';
-            }
-
-            // 加载语音包库路径信息
-            await this.loadLibraryPathInfo();
-
-            // 绑定快捷键
-            document.addEventListener('keydown', this.handleShortcuts.bind(this));
-
-            // --- 新增：设置页面卡片悬停时禁用全局拖拽，防止干扰交互 ---
-            document.querySelectorAll('#page-settings .card').forEach(card => {
-                card.addEventListener('mouseenter', () => {
-                    document.body.classList.add('drag-disabled');
-                });
-                card.addEventListener('mouseleave', () => {
-                    document.body.classList.remove('drag-disabled');
-                });
-            });
-        });
+        // 此方法将被复盖，不需要实现
     },
 
     // --- 页面切换 ---
@@ -1401,17 +1341,38 @@ const app = {
     },
 
     async browsePath() {
-        const res = await pywebview.api.browse_folder();
-        if (res) {
-            this.updatePathUI(res.path, res.valid);
+        if (!window.pywebview?.api?.browse_folder) {
+            console.error('API not ready: browse_folder');
+            this.showAlert('错误', '后端连接未就绪，请稍候再试或重启程序', 'error');
+            return;
+        }
+        try {
+            const res = await pywebview.api.browse_folder();
+            if (res) {
+                this.updatePathUI(res.path, res.valid);
+            }
+        } catch (e) {
+            console.error('browsePath failed:', e);
+            this.showAlert('错误', '选择路径失败: ' + e.message, 'error');
         }
     },
 
     autoSearch() {
+        if (!window.pywebview?.api?.start_auto_search) {
+            console.error('API not ready: start_auto_search');
+            this.showAlert('错误', '后端连接未就绪，请稍候再试或重启程序', 'error');
+            return;
+        }
         document.getElementById('btn-auto-search').disabled = true;
         document.getElementById('status-text').textContent = '搜索中...';
         document.getElementById('status-icon').textContent = '⏳';
-        pywebview.api.start_auto_search();
+        try {
+            pywebview.api.start_auto_search();
+        } catch (e) {
+            console.error('autoSearch failed:', e);
+            document.getElementById('btn-auto-search').disabled = false;
+            this.showAlert('错误', '启动搜索失败: ' + e.message, 'error');
+        }
     },
 
     // 被 Python 调用的回调
@@ -1458,7 +1419,9 @@ const app = {
 
     clearLogs() {
         document.getElementById('log-container').innerHTML = '';
-        pywebview.api.clear_logs();
+        if (window.pywebview?.api?.clear_logs) {
+            pywebview.api.clear_logs();
+        }
     },
 
     // --- 语音包库逻辑 ---
@@ -1468,24 +1431,46 @@ const app = {
         if (this._libraryRefreshing) return;
         const isManual = !!(opts && opts.manual);
         if (!isManual && this._libraryLoaded) return;
+        
+        // 检查 API 是否就绪
+        if (!window.pywebview?.api?.get_library_list) {
+            console.warn('refreshLibrary: API not ready, will retry later');
+            // 短暂延迟后重试
+            setTimeout(() => {
+                this._libraryRefreshing = false;
+                this.refreshLibrary(opts);
+            }, 1000);
+            return;
+        }
+        
         this._libraryRefreshing = true;
 
         listContainer.classList.add('fade-out');
         await new Promise(r => setTimeout(r, 200));
 
-        const mods = await pywebview.api.get_library_list({ force_refresh: isManual });
-        app.modCache = mods;
+        try {
+            const mods = await pywebview.api.get_library_list({ force_refresh: isManual });
+            app.modCache = mods;
+            this.renderList(mods);
+        } catch (e) {
+            console.error('refreshLibrary failed:', e);
+            listContainer.innerHTML = `
+                <div class="empty-state">
+                    <i class="ri-error-warning-line"></i>
+                    <h3>加载失败</h3>
+                    <p>请检查后端连接状态: ${e.message}</p>
+                </div>
+            `;
+        } finally {
+            requestAnimationFrame(() => {
+                listContainer.classList.remove('fade-out');
+            });
 
-        this.renderList(mods);
-
-        requestAnimationFrame(() => {
-            listContainer.classList.remove('fade-out');
-        });
-
-        const searchInput = document.querySelector('.search-input');
-        if (searchInput) searchInput.value = '';
-        this._libraryLoaded = true;
-        this._libraryRefreshing = false;
+            const searchInput = document.querySelector('.search-input');
+            if (searchInput) searchInput.value = '';
+            this._libraryLoaded = true;
+            this._libraryRefreshing = false;
+        }
     },
 
     renderList(modsToRender) {
@@ -2014,7 +1999,7 @@ document.getElementById('btn-confirm-install').onclick = async function () {
         if (conflicts && conflicts.length > 0) {
             // 构建冲突提示信息
             const conflictCount = conflicts.length;
-            let msg = `检测到 <strong>${conflictCount}</strong> 个文件冲突，继续安装将覆盖现有文件。<br><br>`;
+            let msg = `检测到 <strong>${conflictCount}</strong> 个文件冲突，继续安装将复盖现有文件。<br><br>`;
             msg += `<div style="max-height:100px;overflow-y:auto;background:rgba(0,0,0,0.05);padding:8px;border-radius:4px;font-size:12px;">`;
 
             // 只显示前 5 个
@@ -2186,12 +2171,14 @@ app.handleShortcuts = function (e) {
 };
 
 // 启动 (稍作修改: init 里面调用 checkDisclaimer)
-app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisclaimer，或者修改之前的 init
-    // 但由于之前的 init 已经被定义了（虽然是同一个文件里的对象方法，但为了确保正确插入）
-    // 我们这里直接修改原有的 init 函数体比较好。由于工具限制，我们重写一下 init_app_state 之后的回调部分。
-    // 其实更好的办法是在 pywebviewready 监听器里直接调用。
+app.init = async function () {
+    // 防止重複初始化
+    if (this._initStarted) {
+        console.log("App init already started, skipping...");
+        return;
+    }
+    this._initStarted = true;
 
-    // 复用之前的 init 逻辑，但这里为了方便，我们直接把之前的 init 逻辑 copy 过来并加上 disclaimer
     console.log("App initializing...");
     this.recoverToSafeState('init');
     this.initToasts();
@@ -2211,9 +2198,15 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
         });
     }
 
-    // 监听 pywebview 准备就绪
-    window.addEventListener('pywebviewready', async () => {
-        console.log("PyWebview ready!");
+    // 核心初始化逻辑，抽取为独立函数以便重用
+    const doInit = async () => {
+        // 防止重複执行核心初始化
+        if (this._coreInitDone) {
+            console.log("Core init already done, skipping...");
+            return;
+        }
+        this._coreInitDone = true;
+        console.log("PyWebview ready, starting core init...");
 
         this._setupModalDragLock();
 
@@ -2288,7 +2281,32 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
                 document.body.classList.remove('drag-disabled');
             });
         });
-    });
+    };
+
+    // 防止重複註册 pywebviewready 监听器
+    if (!this._pywebviewReadyListenerAdded) {
+        this._pywebviewReadyListenerAdded = true;
+        window.addEventListener('pywebviewready', doInit);
+    }
+
+    // 备用机制：如果 pywebview 已经就绪但事件没有触发（例如快取问题）
+    // 则在短暂延迟后手动检查并初始化
+    setTimeout(() => {
+        if (window.pywebview && window.pywebview.api && !this._coreInitDone) {
+            console.log("PyWebview API detected but event not fired, triggering manual init...");
+            doInit();
+        }
+    }, 500);
+
+    // 额外的备用机制：更长的超时确保初始化
+    setTimeout(() => {
+        if (window.pywebview && window.pywebview.api && !this._coreInitDone) {
+            console.log("PyWebview API detected (late check), triggering manual init...");
+            doInit();
+        } else if (!this._coreInitDone) {
+            console.warn("PyWebview API still not available after timeout, UI may not be fully functional.");
+        }
+    }, 2000);
 };
 
 app.init();
@@ -2549,12 +2567,12 @@ app.refreshSights = async function (opts) {
     }
 };
 
-// --- 語音包庫路徑管理 ---
+// --- 语音包库路径管理 ---
 app.loadLibraryPathInfo = async function () {
     const pendingInput = document.getElementById('pending-dir-input');
     const libraryInput = document.getElementById('library-dir-input');
     
-    // 檢查 API 是否可用
+    // 检查 API 是否可用
     if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_library_path_info !== 'function') {
         console.warn('loadLibraryPathInfo: API not ready');
         if (pendingInput) pendingInput.placeholder = '等待后端连接...';
@@ -2681,9 +2699,9 @@ app.saveLibraryPaths = async function () {
         const result = await pywebview.api.save_library_paths(pendingDir, libraryDir);
         if (result && result.success) {
             this.showAlert('成功', '路径设置已保存', 'success');
-            // 重新加載路徑信息以更新 placeholder
+            // 重新加载路径信息以更新 placeholder
             await this.loadLibraryPathInfo();
-            // 刷新語音包庫列表
+            // 刷新语音包库列表
             if (typeof this.refreshLibrary === 'function') {
                 this.refreshLibrary();
             }
@@ -2702,7 +2720,7 @@ app.resetLibraryPaths = async function () {
         return;
     }
 
-    // 確認重置
+    // 确认重置
     const confirmed = await this.showConfirmDialog(
         '重置路径',
         '确定要将待解压区和语音包库路径重置为默认值吗？'
@@ -2710,19 +2728,19 @@ app.resetLibraryPaths = async function () {
     if (!confirmed) return;
 
     try {
-        // 傳入空字串以重置為預設
+        // 传入空字串以重置为预设
         const result = await pywebview.api.save_library_paths('', '');
         if (result && result.success) {
-            // 清空輸入框
+            // 清空输入框
             const pendingInput = document.getElementById('pending-dir-input');
             const libraryInput = document.getElementById('library-dir-input');
             if (pendingInput) pendingInput.value = '';
             if (libraryInput) libraryInput.value = '';
             
             this.showAlert('成功', '路径已重置为默认值', 'success');
-            // 重新加載以更新 placeholder
+            // 重新加载以更新 placeholder
             await this.loadLibraryPathInfo();
-            // 刷新語音包庫列表
+            // 刷新语音包库列表
             if (typeof this.refreshLibrary === 'function') {
                 this.refreshLibrary();
             }
@@ -2735,7 +2753,7 @@ app.resetLibraryPaths = async function () {
     }
 };
 
-// 複製路徑到剪貼板
+// 複製路径到剪贴板
 app.copyPathToClipboard = async function (inputId) {
     const input = document.getElementById(inputId);
     if (!input) return;
@@ -2749,7 +2767,7 @@ app.copyPathToClipboard = async function (inputId) {
     try {
         await navigator.clipboard.writeText(path);
         
-        // 顯示複製成功的視覺反饋
+        // 显示複製成功的视觉反馈
         const btn = input.parentElement.querySelector('.path-copy-btn');
         if (btn) {
             btn.classList.add('copied');
@@ -2763,7 +2781,7 @@ app.copyPathToClipboard = async function (inputId) {
     }
 };
 
-// 單獨重置待解壓區路徑
+// 单独重置待解压区路径
 app.resetPendingDir = async function () {
     if (!window.pywebview?.api?.save_library_paths) {
         this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
@@ -2771,11 +2789,11 @@ app.resetPendingDir = async function () {
     }
 
     try {
-        // 獲取當前語音包庫路徑（保持不變）
+        // 获取当前语音包库路径（保持不变）
         const libraryInput = document.getElementById('library-dir-input');
         const libraryDir = libraryInput ? libraryInput.value.trim() : null;
 
-        // 將待解壓區路徑設為空（重置為預設）
+        // 将待解压区路径设为空（重置为预设）
         const result = await pywebview.api.save_library_paths('', libraryDir);
         if (result && result.success) {
             const pendingInput = document.getElementById('pending-dir-input');
@@ -2796,7 +2814,7 @@ app.resetPendingDir = async function () {
     }
 };
 
-// 單獨重置語音包庫路徑
+// 单独重置语音包库路径
 app.resetLibraryDir = async function () {
     if (!window.pywebview?.api?.save_library_paths) {
         this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
@@ -2804,11 +2822,11 @@ app.resetLibraryDir = async function () {
     }
 
     try {
-        // 獲取當前待解壓區路徑（保持不變）
+        // 获取当前待解压区路径（保持不变）
         const pendingInput = document.getElementById('pending-dir-input');
         const pendingDir = pendingInput ? pendingInput.value.trim() : null;
 
-        // 將語音包庫路徑設為空（重置為預設）
+        // 将语音包库路径设为空（重置为预设）
         const result = await pywebview.api.save_library_paths(pendingDir, '');
         if (result && result.success) {
             const libraryInput = document.getElementById('library-dir-input');
@@ -2829,7 +2847,7 @@ app.resetLibraryDir = async function () {
     }
 };
 
-// 輔助方法：顯示確認對話框
+// 辅助方法：显示确认对话框
 app.showConfirmDialog = function (title, message) {
     return new Promise((resolve) => {
         const modal = document.getElementById('modal-confirm');

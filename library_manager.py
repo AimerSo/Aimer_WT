@@ -1,5 +1,19 @@
 # -*- coding: utf-8 -*-
-#语音包库管理模块：负责语音包库目录结构、压缩包导入解压、元数据读取与标签推断。
+"""
+语音包库管理模组：负责语音包库目录结构、压缩包导入解压、元数据读取与标籤推断。
+
+功能特性:
+- 语音包库目录管理
+- ZIP/RAR 压缩包导入与解压
+- 语音包元数据读取与智能标籤推断
+- 密码保护压缩包支援
+- 磁盘空间检查
+
+错误处理策略:
+- 压缩包相关使用专门的异常类
+- 文件操作使用具体的异常类型
+- 所有操作记录完整的错误上下文
+"""
 import os
 import sys
 import shutil
@@ -9,10 +23,10 @@ import zipfile
 import json
 import re
 import platform
-import subprocess
 from collections import Counter
 from pathlib import Path
-from logger import get_logger, get_app_data_dir
+from typing import Callable, Any
+from logger import get_logger, get_app_data_dir, log_operation
 
 log = get_logger(__name__)
 
@@ -21,27 +35,56 @@ DIR_PENDING = "WT待解压区"
 DIR_LIBRARY = "WT语音包库"
 
 
-# 定义密码相关异常类
-class ArchivePasswordRequired(Exception):
-    """压缩包需要密码"""
+# 定义压缩包相关异常类
+class ArchiveError(Exception):
+    """压缩包相关错误的基类。"""
     pass
 
 
-class ArchivePasswordIncorrect(Exception):
-    """密码错误"""
+class ArchivePasswordRequired(ArchiveError):
+    """压缩包需要密码。"""
     pass
 
 
-class ArchivePasswordCanceled(Exception):
-    """用户取消输入密码"""
+class ArchivePasswordIncorrect(ArchiveError):
+    """密码错误。"""
+    pass
+
+
+class ArchivePasswordCanceled(ArchiveError):
+    """用户取消输入密码。"""
+    pass
+
+
+class ArchiveExtractionError(ArchiveError):
+    """解压过程错误。"""
+    pass
+
+
+class DiskSpaceError(Exception):
+    """磁盘空间不足。"""
     pass
 
 
 class LibraryManager:
-    def __init__(self, log_callback=None, pending_dir=None, library_dir=None):
-        # 保留 log_callback 以维持向后兼容，但内部使用统一 logger
-        self._log_callback = log_callback
+    """
+    语音包库管理器：管理待解压区与语音包库的文件操作。
+    
+    属性:
+        root_dir: 应用数据根目录
+        pending_dir: 待解压区目录
+        library_dir: 语音包库目录
+    """
+    
+    def __init__(self, pending_dir: str | None = None, 
+                 library_dir: str | None = None):
+        """
+        初始化 LibraryManager。
         
+        Args:
+            pending_dir: 自定义待解压区路径
+            library_dir: 自定义语音包库路径
+        """
         self.root_dir = get_app_data_dir()
         
         # 初始化待解压区与语音包库目录路径
@@ -59,10 +102,17 @@ class LibraryManager:
         # 确保目录存在
         self._ensure_dirs()
 
-    def update_paths(self, pending_dir=None, library_dir=None):
+    def update_paths(self, pending_dir: str | None = None, 
+                     library_dir: str | None = None) -> dict[str, bool]:
         """
         动态更新待解压区和语音包库路径。
-        返回: dict 包含更新结果 { 'pending_updated': bool, 'library_updated': bool }
+        
+        Args:
+            pending_dir: 新的待解压区路径
+            library_dir: 新的语音包库路径
+            
+        Returns:
+            包含更新结果的字典 {'pending_updated': bool, 'library_updated': bool}
         """
         result = {'pending_updated': False, 'library_updated': False}
         
@@ -72,7 +122,11 @@ class LibraryManager:
             if not new_path.exists():
                 try:
                     new_path.mkdir(parents=True, exist_ok=True)
-                except Exception as e:
+                    log.info(f"已创建待解压区目录: {new_path}")
+                except PermissionError as e:
+                    log.error(f"无法创建待解压区目录（权限不足）: {e}")
+                    return result
+                except OSError as e:
                     log.error(f"无法创建待解压区目录: {e}")
                     return result
             self.pending_dir = new_path
@@ -85,7 +139,11 @@ class LibraryManager:
             if not new_path.exists():
                 try:
                     new_path.mkdir(parents=True, exist_ok=True)
-                except Exception as e:
+                    log.info(f"已创建语音包库目录: {new_path}")
+                except PermissionError as e:
+                    log.error(f"无法创建语音包库目录（权限不足）: {e}")
+                    return result
+                except OSError as e:
                     log.error(f"无法创建语音包库目录: {e}")
                     return result
             self.library_dir = new_path
@@ -94,9 +152,12 @@ class LibraryManager:
         
         return result
 
-    def get_current_paths(self):
+    def get_current_paths(self) -> dict[str, str]:
         """
         返回当前的待解压区和语音包库路径。
+        
+        Returns:
+            包含各路径的字典
         """
         return {
             'pending_dir': str(self.pending_dir),
@@ -105,29 +166,61 @@ class LibraryManager:
             'default_library_dir': str(self.root_dir / DIR_LIBRARY)
         }
 
-    def _load_json_with_fallback(self, file_path):
-        # 按编码回退策略读取 JSON 文件并解析为 Python 对象。
+    def _load_json_with_fallback(self, file_path: Path) -> dict | None:
+        """
+        按编码回退策略读取 JSON 文件并解析为 Python 对象。
+        
+        Args:
+            file_path: JSON 文件路径
+            
+        Returns:
+            解析后的字典，失败则返回 None
+        """
         encodings = ["utf-8-sig", "utf-8", "cp950", "big5", "gbk"]
+        last_error = None
+        
         for enc in encodings:
             try:
                 with open(file_path, "r", encoding=enc) as f:
                     return json.load(f)
-            except Exception:
+            except UnicodeDecodeError:
                 continue
+            except json.JSONDecodeError as e:
+                last_error = e
+                log.debug(f"JSON 解析失败 (编码: {enc}): {e}")
+                continue
+            except Exception as e:
+                last_error = e
+                continue
+        
+        if last_error:
+            log.warning(f"无法读取 JSON 文件 {file_path}: {last_error}")
         return None
 
-    def _ensure_dirs(self):
-        # 确保待解压区与语音包库目录存在。
-        if not self.pending_dir.exists():
-            self.pending_dir.mkdir(parents=True)
-        if not self.library_dir.exists():
-            self.library_dir.mkdir(parents=True)
+    def _ensure_dirs(self) -> None:
+        """确保待解压区与语音包库目录存在。"""
+        for dir_path, dir_name in [(self.pending_dir, "待解压区"), (self.library_dir, "语音包库")]:
+            if not dir_path.exists():
+                try:
+                    dir_path.mkdir(parents=True)
+                    log.info(f"已创建{dir_name}目录: {dir_path}")
+                except PermissionError as e:
+                    log.error(f"创建{dir_name}目录失败（权限不足）: {e}")
+                except OSError as e:
+                    log.error(f"创建{dir_name}目录失败: {e}")
 
-    def log(self, message, level="INFO"):
+    def log(self, message: str, level: str = "INFO") -> None:
+        """
+        统一日誌输出方法。
+        
+        Args:
+            message: 日誌讯息
+            level: 日誌级别
+        """
         tag = str(level or "INFO").upper()
         msg = str(message)
 
-        # 统一前缀：避免重复迭加
+        # 统一前缀：避免重複叠加
         if tag != "INFO" and not msg.startswith(f"[{tag}]"):
             msg = f"[{tag}] {msg}"
 
@@ -139,47 +232,85 @@ class LibraryManager:
             # INFO / SUCCESS / UNZIP / ... 都走 INFO
             log.info(msg)
 
-    def _open_folder_cross_platform(self, path):
-        """Cross-platform folder opener"""
+    def _open_folder_cross_platform(self, path: Path) -> None:
+        """
+        跨平台打开文件夹。
+        
+        Args:
+            path: 文件夹路径
+        """
         try:
-            path = str(path)
-            if platform.system() == "Windows":
-                os.startfile(path)
-            elif platform.system() == "Darwin":  # macOS
-                subprocess.Popen(["open", path])
+            path_str = str(path)
+            system = platform.system()
+            
+            if system == "Windows":
+                os.startfile(path_str)
+            elif system == "Darwin":  # macOS
+                subprocess.Popen(["open", path_str])
             else:  # Linux
-                subprocess.Popen(["xdg-open", path])
+                subprocess.Popen(["xdg-open", path_str])
+        except FileNotFoundError as e:
+            self.log(f"无法打开文件夹（路径不存在）: {e}", "ERROR")
+        except PermissionError as e:
+            self.log(f"无法打开文件夹（权限不足）: {e}", "ERROR")
         except Exception as e:
-            self.log(f"无法打开文件夹: {e}", "ERROR")
+            self.log(f"无法打开文件夹: {type(e).__name__}: {e}", "ERROR")
 
-    def open_pending_folder(self):
-        # 打开待解压区目录，供用户手动放入压缩包。
+    def open_pending_folder(self) -> None:
+        """打开待解压区目录，供用户手动放入压缩包。"""
         self._open_folder_cross_platform(self.pending_dir)
 
-    def open_library_folder(self):
-        # 打开语音包库目录，供用户查看已导入的语音包文件夹。
+    def open_library_folder(self) -> None:
+        """打开语音包库目录，供用户查看已导入的语音包文件夹。"""
         self._open_folder_cross_platform(self.library_dir)
 
-    def scan_library(self):
-        # 扫描语音包库目录下的语音包文件夹列表。
+    def scan_library(self) -> list[str]:
+        """
+        扫描语音包库目录下的语音包文件夹列表。
+        
+        Returns:
+            语音包文件夹名称列表
+        """
         mods = []
-        if self.library_dir.exists():
-            for item in self.library_dir.iterdir():
-                if item.is_dir():
-                    mods.append(item.name)
+        try:
+            if self.library_dir.exists():
+                for item in self.library_dir.iterdir():
+                    if item.is_dir():
+                        mods.append(item.name)
+        except PermissionError as e:
+            log.error(f"扫描语音包库失败（权限不足）: {e}")
+        except Exception as e:
+            log.error(f"扫描语音包库失败: {type(e).__name__}: {e}")
         return mods
 
-    def scan_pending(self):
-        # 扫描待解压区中的 ZIP/RAR 文件列表。
+    def scan_pending(self) -> list[Path]:
+        """
+        扫描待解压区中的 ZIP/RAR 文件列表。
+        
+        Returns:
+            压缩包文件路径列表
+        """
         archives = []
-        if self.pending_dir.exists():
-            for item in self.pending_dir.iterdir():
-                if item.suffix.lower() in (".zip", ".rar"):
-                    archives.append(item)
+        try:
+            if self.pending_dir.exists():
+                for item in self.pending_dir.iterdir():
+                    if item.suffix.lower() in (".zip", ".rar"):
+                        archives.append(item)
+        except PermissionError as e:
+            log.error(f"扫描待解压区失败（权限不足）: {e}")
+        except Exception as e:
+            log.error(f"扫描待解压区失败: {type(e).__name__}: {e}")
         return archives
 
-    def _normalize_wtlive_compat_files(self, mod_dir: Path):
-        # 规范化语音包目录中的元数据与封面文件命名，生成工具可直接读取的 info.json 与 cover.png。
+    def _normalize_wtlive_compat_files(self, mod_dir: Path) -> None:
+        """
+        规范化语音包目录中的元数据与封面文件命名。
+        
+        生成工具可直接读取的 info.json 与 cover.png。
+        
+        Args:
+            mod_dir: 语音包目录路径
+        """
         try:
             mod_dir = Path(mod_dir)
             if not mod_dir.exists() or not mod_dir.is_dir():
@@ -206,8 +337,11 @@ class LibraryManager:
                                 continue
                             if "aimerwt" in f.name.lower():
                                 info_sources.append(f)
+                    except PermissionError:
+                        log.debug(f"无法访问目录: {d}")
                     except Exception:
                         pass
+                        
                 if not info_sources:
                     try:
                         for f in mod_dir.rglob("*.bank"):
@@ -223,8 +357,11 @@ class LibraryManager:
                 if src:
                     try:
                         shutil.move(str(src), str(info_json_path))
-                    except Exception:
-                        pass
+                        log.debug(f"已重命名 {src.name} -> info.json")
+                    except PermissionError as e:
+                        log.warning(f"重命名 info 文件失败（权限不足）: {e}")
+                    except OSError as e:
+                        log.warning(f"重命名 info 文件失败: {e}")
 
             cover_exists = any((mod_dir / f"cover{ext}").exists() for ext in [".png", ".jpg", ".jpeg"])
             if not cover_exists:
@@ -246,13 +383,24 @@ class LibraryManager:
                 if cover_src and not cover_dst.exists():
                     try:
                         shutil.move(str(cover_src), str(cover_dst))
-                    except Exception:
-                        pass
-        except Exception:
-            return
+                        log.debug(f"已重命名 {cover_src.name} -> cover.png")
+                    except PermissionError as e:
+                        log.warning(f"重命名封面文件失败（权限不足）: {e}")
+                    except OSError as e:
+                        log.warning(f"重命名封面文件失败: {e}")
+        except Exception as e:
+            log.warning(f"规范化语音包文件失败: {type(e).__name__}: {e}")
 
-    def get_mod_details(self, mod_name):
-        # 读取语音包的元数据与资源信息，生成前端展示所需的详情字典。
+    def get_mod_details(self, mod_name: str) -> dict[str, Any]:
+        """
+        读取语音包的元数据与资源信息，生成前端展示所需的详情字典。
+        
+        Args:
+            mod_name: 语音包名称
+            
+        Returns:
+            包含语音包详细信息的字典
+        """
         mod_dir = self.library_dir / mod_name
         info_file = mod_dir / "info.json"
         self._normalize_wtlive_compat_files(mod_dir)
@@ -262,7 +410,7 @@ class LibraryManager:
         try:
             mtime = os.path.getmtime(mod_dir)
             default_date = time.strftime("%Y-%m-%d", time.localtime(mtime))
-        except:
+        except OSError:
             default_date = "2026-01-07"
 
         details = {
@@ -274,14 +422,14 @@ class LibraryManager:
             "link_bilibili": "",
             "link_wtlive": "",
             "link_video": "",
-            "tags": [],      # 存储标签列表 ["tank", "radio"]
+            "tags": [],      # 存储标籤列表 ["tank", "radio"]
             "language": [],  # 存储语言列表 ["中", "美"]
             "size_str": "0 MB",
             "cover_path": None,
-            "capabilities": {} # 兼容前端旧逻辑
+            "capabilities": {}  # 兼容前端旧逻辑
         }
 
-        # 2. 读取 info.json (支持 WTLive 伪装格式)
+        # 2. 读取 info.json (支援 WTLive 伪装格式)
         # 逻辑: info.json > info/info.json > *（AimerWT）.bank > info/*（AimerWT）.bank
         info_candidates = []
         
@@ -296,8 +444,10 @@ class LibraryManager:
             if (mod_dir / "info").exists():
                 info_candidates.extend(list((mod_dir / "info").glob("*（AimerWT）.bank")))
                 info_candidates.extend(list((mod_dir / "info").glob("*(AimerWT).bank")))
+        except PermissionError as e:
+            log.warning(f"扫描 info 文件失败（权限不足）: {e}")
         except Exception as e:
-            log.error(f"Glob 搜索出错: {e}")
+            log.warning(f"Glob 搜索出错: {type(e).__name__}: {e}")
 
         found_info_file = None
         for cand in info_candidates:

@@ -225,8 +225,7 @@ class AppApi:
         try:
             safe_msg = formatted_message.replace("\r", "").replace("\n", "<br>")
             msg_js = json.dumps(safe_msg, ensure_ascii=False)
-            webview.settings["ALLOW_DOWNLOADS"] = True
-            self._window.evaluate_js(f"app.appendLog({msg_js})")
+            self._window.evaluate_js(f"if(window.app && app.appendLog) app.appendLog({msg_js})")
         except Exception:
             # 避免在日志回调中抛异常导致业务中断
             log.exception("日志推送失败")

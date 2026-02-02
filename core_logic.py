@@ -1,5 +1,19 @@
 # -*- coding: utf-8 -*-
-# 提供与 War Thunder 安装目录相关的核心操作，包括：校验游戏根目录、自动搜索路径、将语音包文件复制到 sound/mod、更新 config.blk 的 enable_mod 字段、还原纯净状态。
+"""
+核心业务逻辑模组：提供与 War Thunder 安装目录相关的核心操作。
+
+功能包括：
+- 校验游戏根目录
+- 自动搜索路径
+- 将语音包文件複製到 sound/mod
+- 更新 config.blk 的 enable_mod 字段
+- 还原纯淨状态
+
+错误处理策略:
+- 所有 I/O 操作使用具体的异常类型
+- 关键操作支援回滚
+- 异常信息记录完整的上下文
+"""
 import os
 import shutil
 import threading
@@ -8,74 +22,145 @@ import re
 import stat
 import json
 import time
+from pathlib import Path
+from typing import List, Callable, Any
 
 # 引入安装清单管理器
 from manifest_manager import ManifestManager
-from pathlib import Path
-from typing import List
-from logger import get_logger
+from logger import get_logger, log_operation
 
 log = get_logger(__name__)
 
-class CoreService:
-    def __init__(self):
-        self.game_root = None
-        self.logger_callback = None
-        # 安装清单管理器在 validate_game_path 校验通过后初始化
-        self.manifest_mgr = None
 
-    def validate_game_path(self, path_str):
-        # 校验用户提供的游戏根目录是否为可操作的 War Thunder 安装目录。
-        if not path_str: return False, "路径为空"
+class CoreServiceError(Exception):
+    """CoreService 相关错误的基类。"""
+    pass
+
+
+class GamePathError(CoreServiceError):
+    """游戏路径相关错误。"""
+    pass
+
+
+class InstallError(CoreServiceError):
+    """安装过程错误。"""
+    pass
+
+
+class ConfigUpdateError(CoreServiceError):
+    """配置更新错误。"""
+    pass
+
+class CoreService:
+    """
+    核心服务类：管理 War Thunder 游戏目录的语音包操作。
+    
+    属性:
+        game_root: 游戏根目录路径
+        manifest_mgr: 安装清单管理器
+    """
+    
+    def __init__(self):
+        """初始化 CoreService 实例。"""
+        self.game_root: Path | None = None
+        # 安装清单管理器在 validate_game_path 校验通过后初始化
+        self.manifest_mgr: ManifestManager | None = None
+
+    def validate_game_path(self, path_str: str) -> tuple[bool, str]:
+        """
+        校验用户提供的游戏根目录是否为可操作的 War Thunder 安装目录。
+        
+        Args:
+            path_str: 待校验的路径字符串
+            
+        Returns:
+            tuple[bool, str]: (是否有效, 错误/成功讯息)
+        """
+        if not path_str:
+            log.warning("游戏路径校验失败: 路径为空")
+            return False, "路径为空"
+        
         path = Path(path_str)
-        if not path.exists(): return False, "路径不存在"
-        if not (path / "config.blk").exists(): return False, "缺少 config.blk"
+        
+        if not path.exists():
+            log.warning(f"游戏路径校验失败: 路径不存在 - {path}")
+            return False, "路径不存在"
+        
+        if not path.is_dir():
+            log.warning(f"游戏路径校验失败: 不是目录 - {path}")
+            return False, "路径不是目录"
+        
+        config_blk = path / "config.blk"
+        if not config_blk.exists():
+            log.warning(f"游戏路径校验失败: 缺少 config.blk - {path}")
+            return False, "缺少 config.blk"
+        
         self.game_root = path
         # 初始化安装清单管理器（用于记录本次安装文件与冲突检测）
-        self.manifest_mgr = ManifestManager(self.game_root)
+        try:
+            self.manifest_mgr = ManifestManager(self.game_root)
+            log.info(f"游戏路径校验成功: {path}")
+        except Exception as e:
+            log.error(f"初始化清单管理器失败: {e}")
+            # 清单管理器失败不阻止继续操作
+        
         return True, "校验通过"
 
-    def log(self, message, level="INFO"):
-        tag = str(level or "INFO").upper()
-        msg = str(message)
-
-        # 统一前缀：避免重复叠加
-        if tag != "INFO" and not msg.startswith(f"[{tag}]"):
-            msg = f"[{tag}] {msg}"
-
-        if tag in {"WARN", "WARNING", "FAIL"}:
-            log.warning(msg)
-        elif tag in {"ERROR"}:
-            log.error(msg)
-        else:
-            # INFO / SUCCESS / SEARCH / FOUND / INSTALL / ... 都走 INFO
-            log.info(msg)
-
-    def start_search_thread(self, callback):
-        # 以后台线程执行 auto_detect_game_path，并在完成后回调返回结果。
+    def start_search_thread(self, callback: Callable[[str | None], None]) -> None:
+        """
+        以后台线程执行 auto_detect_game_path，并在完成后回调返回结果。
+        
+        Args:
+            callback: 搜索完成后的回调函数，参数为找到的路径或 None
+        """
         def run():
-            path = self.auto_detect_game_path()
-            if callback: callback(path)
+            try:
+                path = self.auto_detect_game_path()
+                if callback:
+                    callback(path)
+            except Exception as e:
+                log.error(f"自动搜索游戏路径线程异常: {e}")
+                if callback:
+                    callback(None)
 
-        t = threading.Thread(target=run)
+        t = threading.Thread(target=run, name="GamePathSearch")
         t.daemon = True
         t.start()
 
-    def auto_detect_game_path(self):
-        # 在本机上自动定位 War Thunder 安装目录。
-        self.log("开始全盘搜索游戏路径...", "SEARCH")
+    def auto_detect_game_path(self) -> str | None:
+        """
+        在本机上自动定位 War Thunder 安装目录。
+        
+        搜索顺序:
+        1. Steam 註册表路径
+        2. 常见安装目录
+        
+        Returns:
+            找到的游戏路径，未找到则返回 None
+        """
+        log.info("[SEARCH] 开始全盘搜索游戏路径...")
+        
+        # 1. 尝试从 Steam 註册表读取
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam")
             steam_path_str, _ = winreg.QueryValueEx(key, "SteamPath")
+            winreg.CloseKey(key)
+            
             steam_path = Path(steam_path_str)
             potential_steam_paths = [steam_path / "steamapps" / "common" / "War Thunder"]
+            
             for p in potential_steam_paths:
                 if self._check_is_wt_dir(p):
-                    self.log(f"通过注册表找到路径: {p}", "FOUND")
+                    log.info(f"[FOUND] 通过註册表找到路径: {p}")
                     return str(p)
-        except Exception:
-            pass
+        except FileNotFoundError:
+            log.debug("Steam 註册表项不存在")
+        except PermissionError as e:
+            log.warning(f"读取 Steam 註册表权限不足: {e}")
+        except Exception as e:
+            log.debug(f"读取 Steam 註册表失败: {e}")
 
+        # 2. 全盘扫描常见路径
         drives = [f"{c}:\\" for c in "CDEFGHIJK"]
         common_subdirs = [
             r"Program Files (x86)\Steam\steamapps\common\War Thunder",
@@ -86,110 +171,182 @@ class CoreService:
         ]
 
         for drive in drives:
-            if not os.path.exists(drive): continue
+            if not os.path.exists(drive):
+                continue
             for subdir in common_subdirs:
                 full_path = Path(drive) / subdir
                 if self._check_is_wt_dir(full_path):
-                    self.log(f"全盘扫描找到路径: {full_path}", "FOUND")
+                    log.info(f"[FOUND] 全盘扫描找到路径: {full_path}")
                     return str(full_path)
-        self.log("未自动找到游戏路径。", "FAIL")
+        
+        log.warning("[FAIL] 未自动找到游戏路径。")
         return None
 
-    def _check_is_wt_dir(self, path):
-        # 判定一个目录是否满足 War Thunder 根目录的最小特征。
-        path = Path(path)
-        return path.exists() and (path / "config.blk").exists()
+    def _check_is_wt_dir(self, path: Path) -> bool:
+        """
+        判定一个目录是否满足 War Thunder 根目录的最小特徵。
+        
+        Args:
+            path: 待检查的路径
+            
+        Returns:
+            是否为有效的 WT 目录
+        """
+        try:
+            path = Path(path)
+            return path.exists() and path.is_dir() and (path / "config.blk").exists()
+        except Exception:
+            return False
 
-    def _is_safe_deletion_path(self, target_path):
-        # 校验待删除路径是否位于 <game_root>/sound/mod 目录内部，避免越界删除。
+    def _is_safe_deletion_path(self, target_path: Path) -> bool:
+        """
+        校验待删除路径是否位于 <game_root>/sound/mod 目录内部，避免越界删除。
+        
+        Args:
+            target_path: 待检查的路径
+            
+        Returns:
+            是否为安全的删除路径
+        """
         if not self.game_root:
             return False
         try:
             mod_dir = (self.game_root / "sound" / "mod").resolve()
             tp = Path(target_path).resolve()
-            return os.path.commonpath([str(tp), str(mod_dir)]) == str(mod_dir) and str(tp) != str(mod_dir)
-        except Exception:
+            common = os.path.commonpath([str(tp), str(mod_dir)])
+            return common == str(mod_dir) and str(tp) != str(mod_dir)
+        except ValueError:
+            # commonpath 在路径不在同一驱动器时会抛出 ValueError
+            return False
+        except Exception as e:
+            log.debug(f"路径安全检查异常: {e}")
             return False
 
-    def _remove_path(self, path_obj):
-        # 删除文件或目录（包含只读文件的处理），用于清理 sound/mod 下的子项。
+    def _remove_path(self, path_obj: Path) -> None:
+        """
+        删除文件或目录（包含只读文件的处理），用于清理 sound/mod 下的子项。
+        
+        Args:
+            path_obj: 待删除的路径
+            
+        Raises:
+            PermissionError: 权限不足
+            OSError: 其他文件系统错误
+        """
         p = Path(path_obj)
+        
+        def _handle_readonly(func, path, exc_info):
+            """处理只读文件的错误回调。"""
+            try:
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+            except Exception as e:
+                log.warning(f"处理只读文件失败: {path} - {e}")
+                raise
+        
         try:
             if p.is_file() or p.is_symlink():
                 try:
                     p.unlink()
-                    return
                 except PermissionError:
-                    try:
-                        os.chmod(p, stat.S_IWRITE)
-                    except Exception:
-                        pass
+                    os.chmod(p, stat.S_IWRITE)
                     p.unlink()
-                    return
-            if p.is_dir():
-                def _onerror(func, path, exc_info):
-                    try:
-                        os.chmod(path, stat.S_IWRITE)
-                    except Exception:
-                        pass
-                    func(path)
-
-                shutil.rmtree(p, onerror=_onerror)
+            elif p.is_dir():
+                shutil.rmtree(p, onerror=_handle_readonly)
         except Exception as e:
-            raise e
+            log.error(f"删除路径失败: {p} - {type(e).__name__}: {e}")
+            raise
 
     def get_installed_mods(self) -> List[str]:
+        """
+        获取已安装的 mod 列表。
+        
+        Returns:
+            已安装的 mod ID 列表
+        """
         if not self.manifest_mgr:
+            log.debug("清单管理器未初始化，返回空列表")
             return []
+        
         try:
-            with open(self.manifest_mgr.manifest_file, "r", encoding="utf-8") as f:
-                _mods = json.loads(f.read())
-                _installed_mods = _mods.get("installed_mods", {})
-                if not _installed_mods:
-                    return []
-                else:
-                    self.log(f"已读取 {len(_installed_mods)} 个mods", "INFO")
-                    return [mod_id for mod_id in _installed_mods.keys()]
+            manifest_file = self.manifest_mgr.manifest_file
+            if not manifest_file.exists():
+                return []
+            
+            with open(manifest_file, "r", encoding="utf-8") as f:
+                _mods = json.load(f)
+            
+            _installed_mods = _mods.get("installed_mods", {})
+            if not _installed_mods:
+                return []
+            
+            mod_list = list(_installed_mods.keys())
+            log.info(f"已读取 {len(mod_list)} 个 mods")
+            return mod_list
+            
         except FileNotFoundError:
-            self.log(f"读取已安装mods失败，文件不存在：{self.manifest_mgr.manifest_file}", "ERROR")
+            log.debug(f"清单文件不存在: {self.manifest_mgr.manifest_file}")
             return []
-        except json.decoder.JSONDecodeError:
-            self.log(f"读取已安装mods失败，文件解析错误：{self.manifest_mgr.manifest_file}", "ERROR")
+        except json.JSONDecodeError as e:
+            log.error(f"读取已安装 mods 失败，文件解析错误: {e}")
+            return []
+        except Exception as e:
+            log.error(f"读取已安装 mods 失败: {type(e).__name__}: {e}")
             return []
 
     # --- 核心：安装逻辑 (V2.2 - 文件夹直拷) ---
-    def install_from_library(self, source_mod_path, install_list=None, progress_callback=None):
-        # 将语音包库中的文件复制到游戏目录 <game_root>/sound/mod，并更新 config.blk 以启用 mod。
+    def install_from_library(
+        self, 
+        source_mod_path: Path, 
+        install_list: List[str] | None = None, 
+        progress_callback: Callable[[int, str], None] | None = None
+    ) -> bool:
+        """
+        将语音包库中的文件複製到游戏目录 <game_root>/sound/mod，并更新 config.blk 以启用 mod。
+        
+        Args:
+            source_mod_path: 语音包源目录路径
+            install_list: 待安装的文件夹相对路径列表
+            progress_callback: 进度回调函数 (百分比, 讯息)
+            
+        Returns:
+            是否安装成功
+        """
         try:
-            self.log(f"准备安装: {source_mod_path.name}", "INSTALL")
+            log.info(f"[INSTALL] 准备安装: {source_mod_path.name}")
 
             if progress_callback:
                 progress_callback(5, f"准备安装: {source_mod_path.name}")
 
             if not self.game_root:
-                raise Exception("未设置游戏路径")
+                raise GamePathError("未设置游戏路径")
 
             game_sound_dir = self.game_root / "sound"
             game_mod_dir = game_sound_dir / "mod"
 
             # 1. 确保目录存在 (不再删除旧文件)
-            if not game_mod_dir.exists():
-                game_mod_dir.mkdir(parents=True, exist_ok=True)
-                self.log("创建 mod 文件夹...", "INIT")
-            else:
-                self.log("检测到 mod 文件夹，准备覆盖安装...", "MERGE")
+            try:
+                if not game_mod_dir.exists():
+                    game_mod_dir.mkdir(parents=True, exist_ok=True)
+                    log.info("[INIT] 创建 mod 文件夹...")
+                else:
+                    log.info("[MERGE] 检测到 mod 文件夹，准备复盖安装...")
+            except PermissionError as e:
+                raise InstallError(f"无法创建 mod 目录（权限不足）: {e}")
+            except OSError as e:
+                raise InstallError(f"无法创建 mod 目录: {e}")
 
             if progress_callback:
                 progress_callback(10, "扫描待安装文件...")
 
-            # 2. 复制文件
-            self.log("正在复制选中文件夹的内容...", "COPY")
+            # 2. 複製文件
+            log.info("[COPY] 正在複製选中文件夹的内容...")
 
             if not install_list or len(install_list) == 0:
-                self.log("未选择任何文件夹，跳过安装。", "WARN")
+                log.warning("未选择任何文件夹，跳过安装。")
                 if progress_callback:
                     progress_callback(100, "未选择文件")
-                return
+                return False
 
             # 首先统计总文件数，用于计算真实进度
             total_files_to_copy = 0
@@ -203,7 +360,7 @@ class CoreService:
                     src_dir = source_mod_path / folder_rel_path
 
                 if not src_dir.exists():
-                    self.log(f"[WARN] 找不到源文件夹: {folder_rel_path}", "WARN")
+                    log.warning(f"找不到源文件夹: {folder_rel_path}")
                     continue
 
                 for root, dirs, files in os.walk(src_dir):
@@ -214,10 +371,10 @@ class CoreService:
                         total_files_to_copy += 1
 
             if total_files_to_copy == 0:
-                self.log("未找到任何可安装的文件。", "WARN")
+                log.warning("未找到任何可安装的文件。")
                 if progress_callback:
                     progress_callback(100, "没有文件")
-                return
+                return False
 
             if progress_callback:
                 progress_callback(15, f"共 {total_files_to_copy} 个文件待安装")
@@ -227,7 +384,7 @@ class CoreService:
             installed_files_record = []
             folder_files_count = {}  # 用于统计每个文件夹的文件数
 
-            # 进度计算：10% 预检，15-95% 复制文件，95-100% 更新配置
+            # 进度计算：10% 预检，15-95% 複製文件，95-100% 更新配置
             copy_progress_start = 15
             copy_progress_end = 95
             last_progress_update = time.monotonic()
@@ -252,23 +409,27 @@ class CoreService:
                         fname = src_file.name
                         if len(fname) > 20:
                             fname = fname[:17] + "..."
-                        progress_callback(int(progress), f"复制: {fname}")
+                        progress_callback(int(progress), f"複製: {fname}")
                         last_progress_update = now
 
+                except PermissionError as e:
+                    log.warning(f"複製文件 {src_file.name} 失败（权限不足）: {e}")
+                except OSError as e:
+                    log.warning(f"複製文件 {src_file.name} 失败: {e}")
                 except Exception as e:
-                    self.log(f"  复制文件 {src_file.name} 失败: {e}", "WARN")
+                    log.warning(f"複製文件 {src_file.name} 失败: {type(e).__name__}: {e}")
 
             # 输出每个文件夹的统计
             for folder_path, count in folder_files_count.items():
-                self.log(f"[OK] 已合并导入 [{folder_path}] ({count} 个文件)", "INFO")
+                log.info(f"[OK] 已合併导入 [{folder_path}] ({count} 个文件)")
 
             # 写入安装清单记录（mod -> 文件名列表）
             if self.manifest_mgr and total_files > 0:
                 try:
                     self.manifest_mgr.record_installation(source_mod_path.name, installed_files_record)
-                    self.log("已更新安装清单记录", "INFO")
+                    log.info("已更新安装清单记录")
                 except Exception as e:
-                    self.log(f"更新清单失败: {e}", "WARN")
+                    log.warning(f"更新清单失败: {e}")
 
             if progress_callback:
                 progress_callback(95, "更新游戏配置...")
@@ -279,47 +440,85 @@ class CoreService:
             if progress_callback:
                 progress_callback(100, "安装完成")
 
-            self.log(f"[DONE] 安装完成！本次覆盖/新增 {total_files} 个文件。", "SUCCESS")
+            log.info(f"[SUCCESS] [DONE] 安装完成！本次复盖/新增 {total_files} 个文件。")
+            return True
 
-        except Exception as e:
-            self.log(f"[ERROR] 安装过程严重错误: {e}", "ERROR")
+        except (GamePathError, InstallError) as e:
+            log.error(f"安装过程错误: {e}")
             if progress_callback:
                 progress_callback(100, "安装失败")
-            # 不向上抛出异常；由日志与回调向调用方传达失败信息
+            return False
+        except Exception as e:
+            log.error(f"安装过程严重错误: {type(e).__name__}: {e}")
+            log.exception("安装异常详情")
+            if progress_callback:
+                progress_callback(100, "安装失败")
+            return False
 
-    def restore_game(self):
-        # 将游戏目录恢复为未加载语音包的状态：清空 sound/mod 下的子项，关闭 config.blk 的 enable_mod，并清空安装清单。
+    def restore_game(self) -> bool:
+        """
+        将游戏目录恢復为未加载语音包的状态。
+        
+        操作包括：
+        - 清空 sound/mod 下的子项
+        - 关闭 config.blk 的 enable_mod
+        - 清空安装清单
+        
+        Returns:
+            是否还原成功
+        """
         try:
-            self.log("正在还原纯净模式...", "RESTORE")
-            if not self.game_root: raise Exception("未设置游戏路径")
+            log.info("[RESTORE] 正在还原纯淨模式...")
+            
+            if not self.game_root:
+                raise GamePathError("未设置游戏路径")
 
             mod_dir = self.game_root / "sound" / "mod"
+            
             if mod_dir.exists():
-                self.log("正在清空 mod 文件夹内容...", "CLEAN")
+                log.info("[CLEAN] 正在清空 mod 文件夹内容...")
                 # 遍历并删除文件夹内的所有内容，但不删除文件夹本身
                 for item in mod_dir.iterdir():
                     try:
                         # 删除前进行边界校验，确保删除目标位于 sound/mod 目录内部
                         if not self._is_safe_deletion_path(item):
-                            self.log(f"🚫 [安全拦截] 拒绝删除保护文件: {item}", "WARN")
+                            log.warning(f"🚫 [安全拦截] 拒绝删除保护文件: {item}")
                             continue
 
                         self._remove_path(item)
-                    except Exception as e:
-                        self.log(f"无法删除 {item.name}: {e}", "WARN")
+                    except PermissionError as e:
+                        log.warning(f"无法删除 {item.name}（权限不足）: {e}")
+                    except OSError as e:
+                        log.warning(f"无法删除 {item.name}: {e}")
             
             # 清空安装清单记录
             if self.manifest_mgr:
-                self.manifest_mgr.clear_manifest()
+                try:
+                    self.manifest_mgr.clear_manifest()
+                except Exception as e:
+                    log.warning(f"清空清单失败: {e}")
 
             self._disable_config_mod()
-            self.log("还原成功！所有 Mod 已清空，配置文件已重置。", "SUCCESS")
+            log.info("[SUCCESS] 还原成功！所有 Mod 已清空，配置文件已重置。")
+            return True
+            
+        except GamePathError as e:
+            log.error(f"还原失败: {e}")
+            return False
         except Exception as e:
-            self.log(f"还原失败: {e}", "ERROR")
+            log.error(f"还原失败: {type(e).__name__}: {e}")
+            log.exception("还原异常详情")
+            return False
 
-    def _update_config_blk(self):
-        # 在 <game_root>/config.blk 中启用 enable_mod:b=yes；必要时创建备份并在失败时回滚。
-
+    def _update_config_blk(self) -> bool:
+        """
+        在 <game_root>/config.blk 中启用 enable_mod:b=yes。
+        
+        必要时创建备份并在失败时回滚。
+        
+        Returns:
+            是否更新成功
+        """
         config = self.game_root / "config.blk"
         backup = self.game_root / "config.blk.backup"
         
@@ -328,26 +527,35 @@ class CoreService:
             if config.exists():
                 try:
                     shutil.copy2(config, backup)
-                    self.log("已创建配置文件备份", "INFO")
-                except Exception as e:
-                    self.log(f"创建备份失败 (将尝试继续): {e}", "WARN")
+                    log.info("已创建配置文件备份")
+                except PermissionError as e:
+                    log.warning(f"创建备份失败（权限不足，将尝试继续）: {e}")
+                except OSError as e:
+                    log.warning(f"创建备份失败（将尝试继续）: {e}")
 
             with open(config, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
+        except FileNotFoundError:
+            log.error("配置文件不存在")
+            return False
+        except PermissionError as e:
+            log.error(f"读取配置文件失败（权限不足）: {e}")
+            return False
         except Exception as e:
-            self.log(f"读取配置文件失败: {e}", "ERROR")
-            return
+            log.error(f"读取配置文件失败: {type(e).__name__}: {e}")
+            return False
 
         # 检查是否已经开启 enable_mod
         if "enable_mod:b=yes" in content:
-            return
+            log.info("Mod 权限已激活，无需更新")
+            return True
 
         new_content = content
         
         # 若存在 enable_mod:b=no，则替换为 enable_mod:b=yes
         if "enable_mod:b=no" in content:
             new_content = content.replace("enable_mod:b=no", "enable_mod:b=yes")
-            self.log("检测到 Mod 被禁用，正在启用...", "INFO")
+            log.info("检测到 Mod 被禁用，正在启用...")
         
         # 若未出现 enable_mod 字段，则在 sound{...} 块起始处插入 enable_mod:b=yes
         else:
@@ -356,57 +564,96 @@ class CoreService:
             if pattern.search(content):
                 # 在 sound{ 后面插入换行和 enable_mod:b=yes
                 new_content = pattern.sub(r'\1\n  enable_mod:b=yes', content, count=1)
-                self.log("添加 enable_mod 字段...", "INFO")
+                log.info("添加 enable_mod 字段...")
             else:
-                self.log("[WARN] 未找到 sound{} 配置块，无法自动修改 config.blk", "WARN")
-                return
+                log.warning("未找到 sound{} 配置块，无法自动修改 config.blk")
+                return False
 
         if new_content != content:
             try:
                 with open(config, 'w', encoding='utf-8') as f:
                     f.write(new_content)
-                self.log("配置文件已更新 (Config Updated)", "SUCCESS")
+                log.info("[SUCCESS] 配置文件已更新 (Config Updated)")
                 
                 # 写入后读取并校验结果
                 with open(config, 'r', encoding='utf-8', errors='ignore') as f:
                     verify_content = f.read()
+                    
                 if "enable_mod:b=yes" in verify_content:
-                    self.log("验证成功：Mod 权限已激活 [OK]", "SUCCESS")
+                    log.info("[SUCCESS] 验证成功：Mod 权限已激活 [OK]")
+                    return True
                 else:
-                    self.log("验证失败：虽然写入成功但未检测到激活项，请检查文件是否被只读或被锁定！", "ERROR")
+                    log.error("验证失败：虽然写入成功但未检测到激活项，请检查文件是否被只读或被锁定！")
                     # 校验失败时尝试回滚到备份内容
-                    if backup.exists():
-                        try:
-                            shutil.copy2(backup, config)
-                            self.log("已自动回滚配置文件", "WARN")
-                        except Exception as restore_error:
-                            self.log(f"回滚失败: {restore_error}", "ERROR")
+                    self._rollback_config(backup, config)
+                    return False
 
+            except PermissionError as e:
+                log.error(f"写入配置文件失败（权限不足）: {e}")
+                log.warning("提示：请检查 config.blk 是否被设置为[只读]，或者游戏是否正在运行导致文件被佔用。")
+                self._rollback_config(backup, config)
+                return False
+            except OSError as e:
+                log.error(f"写入配置文件失败: {e}")
+                self._rollback_config(backup, config)
+                return False
             except Exception as e:
-                self.log(f"写入配置文件失败: {e}", "ERROR")
-                self.log("提示：请检查 config.blk 是否被设置为[只读]，或者游戏是否正在运行导致文件被占用。", "WARN")
-                # 写入异常时尝试回滚到备份内容
-                if backup.exists():
-                    try:
-                        shutil.copy2(backup, config)
-                        self.log("已自动回滚配置文件", "WARN")
-                    except Exception as restore_error:
-                        self.log(f"回滚失败: {restore_error}", "ERROR")
+                log.error(f"写入配置文件失败: {type(e).__name__}: {e}")
+                self._rollback_config(backup, config)
+                return False
+        
+        return True
 
-    def _disable_config_mod(self):
-        # 将 <game_root>/config.blk 中 enable_mod:b=yes 替换为 enable_mod:b=no。
+    def _rollback_config(self, backup: Path, config: Path) -> None:
+        """
+        回滚配置文件到备份版本。
+        
+        Args:
+            backup: 备份文件路径
+            config: 配置文件路径
+        """
+        if backup.exists():
+            try:
+                shutil.copy2(backup, config)
+                log.warning("已自动回滚配置文件")
+            except Exception as restore_error:
+                log.error(f"回滚失败: {restore_error}")
+
+    def _disable_config_mod(self) -> bool:
+        """
+        将 <game_root>/config.blk 中 enable_mod:b=yes 替换为 enable_mod:b=no。
+        
+        Returns:
+            是否禁用成功
+        """
         config = self.game_root / "config.blk"
+        
         try:
             with open(config, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
+        except FileNotFoundError:
+            log.error("配置文件不存在")
+            return False
+        except PermissionError as e:
+            log.error(f"读取配置文件失败（权限不足）: {e}")
+            return False
         except Exception as e:
-            self.log(f"读取配置文件失败: {e}", "ERROR")
-            return
+            log.error(f"读取配置文件失败: {type(e).__name__}: {e}")
+            return False
 
         new_c = content.replace("enable_mod:b=yes", "enable_mod:b=no")
+        
         try:
             with open(config, 'w', encoding='utf-8') as f:
                 f.write(new_c)
-            self.log("配置文件已还原", "INFO")
+            log.info("配置文件已还原")
+            return True
+        except PermissionError as e:
+            log.error(f"写入配置文件失败（权限不足）: {e}")
+            return False
+        except OSError as e:
+            log.error(f"写入配置文件失败: {e}")
+            return False
         except Exception as e:
-            self.log(f"写入配置文件失败: {e}", "ERROR")
+            log.error(f"写入配置文件失败: {type(e).__name__}: {e}")
+            return False
