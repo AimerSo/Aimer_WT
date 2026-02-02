@@ -1220,13 +1220,12 @@ i[class^="ri-"] {
 }
 
 .notice-content {
-    padding: 16px 24px 24px;
+    padding: 12px 20px;
     color: var(--text-main);
     font-size: 14px;
-    line-height: 1.8;
+    line-height: 1.5;
     overflow-y: auto;
     flex: 1;
-    white-space: pre-wrap; /* 关键修复：保留换行符 */
 }
 
 .notice-content strong {
@@ -1235,7 +1234,7 @@ i[class^="ri-"] {
 }
 
 .notice-content p {
-    margin: 0 0 10px 0;
+    margin: 0 0 6px 0;
 }
 
 .notice-content p:last-child {
@@ -1243,13 +1242,13 @@ i[class^="ri-"] {
 }
 
 .notice-content ul {
-    margin: 10px 0;
+    margin: 6px 0;
     padding-left: 20px;
 }
 
 .notice-content li {
-    margin: 6px 0;
-    line-height: 1.6;
+    margin: 2px 0;
+    line-height: 1.4;
 }
 
 /* 日志 (现代化优化版) */
