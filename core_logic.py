@@ -17,7 +17,12 @@
 import os
 import shutil
 import threading
-import winreg
+import sys
+import platform
+try:
+    import winreg
+except ImportError:
+    winreg = None
 import re
 import stat
 import json
@@ -27,7 +32,7 @@ from typing import List, Callable, Any
 
 # 引入安装清单管理器
 from manifest_manager import ManifestManager
-from logger import get_logger, log_operation
+from logger import get_logger
 
 log = get_logger(__name__)
 
@@ -130,54 +135,145 @@ class CoreService:
     def auto_detect_game_path(self) -> str | None:
         """
         在本机上自动定位 War Thunder 安装目录。
+        支持 Windows/Linux/macOS 跨平台搜索。
         
         搜索顺序:
-        1. Steam 註册表路径
-        2. 常见安装目录
+        1. 注册表 (仅 Windows)
+        2. 常见默认路径
+        3. 全盘/用户目录扫描
         
         Returns:
             找到的游戏路径，未找到则返回 None
         """
-        log.info("[SEARCH] 开始全盘搜索游戏路径...")
+        system = platform.system()
+        log.info(f"[SEARCH] 开始自动搜索游戏路径... (系统: {system})")
         
-        # 1. 尝试从 Steam 註册表读取
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam")
-            steam_path_str, _ = winreg.QueryValueEx(key, "SteamPath")
-            winreg.CloseKey(key)
-            
-            steam_path = Path(steam_path_str)
-            potential_steam_paths = [steam_path / "steamapps" / "common" / "War Thunder"]
-            
-            for p in potential_steam_paths:
+        # 1. Windows: 尝试从 Steam 注册表读取
+        if system == "Windows" and winreg:
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam")
+                steam_path_str, _ = winreg.QueryValueEx(key, "SteamPath")
+                winreg.CloseKey(key)
+                
+                steam_path = Path(steam_path_str)
+                # 注册表记录的是 Steam 路径，拼接游戏路径
+                p = steam_path / "steamapps" / "common" / "War Thunder"
                 if self._check_is_wt_dir(p):
-                    log.info(f"[FOUND] 通过註册表找到路径: {p}")
+                    log.info(f"[FOUND] 通过注册表找到路径: {p}")
                     return str(p)
-        except FileNotFoundError:
-            log.debug("Steam 註册表项不存在")
-        except PermissionError as e:
-            log.warning(f"读取 Steam 註册表权限不足: {e}")
-        except Exception as e:
-            log.debug(f"读取 Steam 註册表失败: {e}")
+            except Exception as e:
+                log.debug(f"读取 Steam 注册表失败/跳过: {e}")
 
-        # 2. 全盘扫描常见路径
-        drives = [f"{c}:\\" for c in "CDEFGHIJK"]
-        common_subdirs = [
-            r"Program Files (x86)\Steam\steamapps\common\War Thunder",
-            r"Program Files\Steam\steamapps\common\War Thunder",
-            r"SteamLibrary\steamapps\common\War Thunder",
-            r"Games\War Thunder",
-            r"War Thunder"
-        ]
+        # 2. 检查各平台常见固定路径及多驱动器常见位置
+        possible_paths = []
+        home = Path.home()
+        
+        if system == "Windows":
+            # 生成候选驱动器列表
+            drives = [f"{c}:\\" for c in "CDEFGHIJK"]
+            accessible_drives = [d for d in drives if os.path.exists(d)]
+            
+            # Windows 下常见的 War Thunder 路径模式
+            common_patterns = [
+                r"Program Files (x86)\Steam\steamapps\common\War Thunder",
+                r"Program Files\Steam\steamapps\common\War Thunder",
+                r"SteamLibrary\steamapps\common\War Thunder",
+                r"Steam\steamapps\common\War Thunder",
+                r"Games\War Thunder",
+                r"WarThunder", # 无空格
+                r"War Thunder"
+            ]
+            
+            # 组合驱动器和模式
+            for d in accessible_drives:
+                for pattern in common_patterns:
+                    possible_paths.append(Path(d) / pattern)
+            
+            # 添加 LocalAppData (官方启动器默认安装位置)
+            local_app_data = os.environ.get('LOCALAPPDATA')
+            if local_app_data:
+                possible_paths.append(Path(local_app_data) / "WarThunder")
 
-        for drive in drives:
-            if not os.path.exists(drive):
+        elif system == "Linux":
+            # Linux Steam 默认路径
+            possible_paths.extend([
+                home / ".steam/steam/steamapps/common/War Thunder",
+                home / ".local/share/Steam/steamapps/common/War Thunder",
+                home / ".steam/debian-installation/steamapps/common/War Thunder",
+                # 其它可能的安装位置
+                Path("/usr/games/WarThunder"),
+                Path("/opt/WarThunder")
+            ])
+        elif system == "Darwin":
+            # macOS Steam 默认路径
+            possible_paths.extend([
+                home / "Library/Application Support/Steam/steamapps/common/War Thunder",
+                Path("/Applications/War Thunder.app"), # 独立客户端
+                Path("/Applications/WarThunderLauncher.app"), # 启动器
+                home / "Applications/War Thunder.app"
+            ])
+
+        for p_str in possible_paths:
+            path = Path(p_str)
+            if self._check_is_wt_dir(path):
+                log.info(f"[FOUND] 常见路径检测命中: {path}")
+                return str(path)
+
+        # 3. 广度扫描 (使用 re 匹配)
+        log.info("[SEARCH] 进入广度扫描模式...")
+        # 优化匹配模式：
+        # - ^...$: 完整匹配文件夹名
+        # - War 与 Thunder 之间允许：空白(\s)、下划线(_)、横线(-) 或什么都没有
+        # - re.IGNORECASE: 忽略大小写
+        wt_pattern = re.compile(r'^War[\s\-_]*Thunder$', re.IGNORECASE)
+        
+        search_roots = []
+        exclude_dirs = set()
+
+        if system == "Windows":
+             drives = [f"{c}:\\" for c in "CDEFGHIJK"]
+             search_roots = [d for d in drives if os.path.exists(d)]
+             exclude_dirs = {
+                 "Windows", "ProgramData", "Recycle.Bin", "System Volume Information", 
+                 "Documents and Settings", "AppData"
+             }
+        else:
+            # Unix-like 系统扫描策略
+            if system == "Darwin":
+                # macOS 主要扫描 /Applications 和 用户目录
+                search_roots = ["/Applications", str(home)]
+                exclude_dirs = {"System", "Library", "Volumes", ".Trash"}
+            else:
+                # Linux 扫描 Home, /mnt, /media, /opt
+                search_roots = [str(home), "/mnt", "/media", "/opt"]
+                # 排除系统关键目录和虚拟文件系统
+                exclude_dirs = {"proc", "sys", "dev", "run", "tmp", "var", "boot", "etc", "usr"}
+
+        for root_dir in search_roots:
+            if not os.path.exists(root_dir):
                 continue
-            for subdir in common_subdirs:
-                full_path = Path(drive) / subdir
-                if self._check_is_wt_dir(full_path):
-                    log.info(f"[FOUND] 全盘扫描找到路径: {full_path}")
-                    return str(full_path)
+            
+            log.info(f"正在扫描目录: {root_dir}")
+            try:
+                for root, dirs, _ in os.walk(root_dir):
+                    # 剪枝：移除不需要扫描的目录
+                    # Windows 下排除以 $ 开头的系统隐藏目录，Unix 下排除 . 开头的隐藏目录
+                    dirs[:] = [
+                        d for d in dirs 
+                        if d not in exclude_dirs 
+                        and not (d.startswith('$') if system == "Windows" else d.startswith('.'))
+                    ]
+                    
+                    for d in dirs:
+                        if wt_pattern.match(d):
+                            full_path = Path(root) / d
+                            # 二次确认是有效的游戏目录
+                            if self._check_is_wt_dir(full_path):
+                                log.info(f"[FOUND] 扫描找到路径: {full_path}")
+                                return str(full_path)
+            except Exception as e:
+                log.debug(f"扫描目录 {root_dir} 异常: {e}")
+                continue
         
         log.warning("[FAIL] 未自动找到游戏路径。")
         return None

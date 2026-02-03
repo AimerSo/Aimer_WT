@@ -5,7 +5,6 @@ import itertools
 import json
 import os
 import random
-import re
 import sys
 import threading
 import time
@@ -224,7 +223,7 @@ class AppApi:
         # 1. 追加日志到面板
         try:
             safe_msg = formatted_message.replace("\r", "").replace("\n", "<br>")
-            msg_js = json.dumps(safe_msg, ensure_ascii=False)
+            msg_js = json.dumps(safe_msg, ensure_ascii=True)
             self._window.evaluate_js(f"if(window.app && app.appendLog) app.appendLog({msg_js})")
         except Exception:
             # 避免在日志回调中抛异常导致业务中断
@@ -266,8 +265,8 @@ class AppApi:
                 # 去除可能的标签前缀 (可选，保留也无妨，前端只是显示文本)
                 # msg_plain = re.sub(r"^\s*\[(SUCCESS|WARN|ERROR|INFO|SYS)\]\s*", "", msg_plain)
 
-                msg_plain_js = json.dumps(msg_plain, ensure_ascii=False)
-                level_js = json.dumps(toast_level, ensure_ascii=False)
+                msg_plain_js = json.dumps(msg_plain, ensure_ascii=True)
+                level_js = json.dumps(toast_level, ensure_ascii=True)
                 self._window.evaluate_js(f"if(window.app && app.notifyToast) app.notifyToast({level_js}, {msg_plain_js})")
 
         except Exception:
@@ -518,7 +517,7 @@ class AppApi:
             try:
                 safe_msg = str(message).replace("\r", " ").replace("\n", " ")
                 safe_progress = max(0, min(100, int(progress)))
-                msg_js = json.dumps(safe_msg, ensure_ascii=False)
+                msg_js = json.dumps(safe_msg, ensure_ascii=True)
                 self._window.evaluate_js(
                     f"if(window.MinimalistLoading) MinimalistLoading.update({safe_progress}, {msg_js})"
                 )

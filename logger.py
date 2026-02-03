@@ -13,8 +13,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import platform
 import sys
 import threading
 import traceback
@@ -195,32 +193,9 @@ def format_exception(e: Exception, include_traceback: bool = False) -> str:
     return msg
 
 
-def get_app_data_dir() -> Path:
-    """
-    获取应用数据存储目录（跨平台支援）。
-    - Windows: ~/Documents/Aimer_WT
-    - Linux: ~/.config/Aimer_WT
-    - macOS: ~/Library/Application Support/Aimer_WT
-    """
-    system = platform.system()
-    
-    if system == "Windows":
-        # Windows: 用户文档目录
-        return Path.home() / "Documents" / "Aimer_WT"
-    elif system == "Darwin":
-        # macOS: Application Support 目录
-        return Path.home() / "Library" / "Application Support" / "Aimer_WT"
-    else:
-        # Linux/其他: 使用 XDG_CONFIG_HOME 或 ~/.config
-        xdg_config = os.environ.get("XDG_CONFIG_HOME")
-        if xdg_config:
-            return Path(xdg_config) / "Aimer_WT"
-        else:
-            return Path.home() / ".config" / "Aimer_WT"
-
-
 def _get_log_dir() -> Path:
     """获取日誌存储目录，确保目录存在。"""
+    from utils import get_app_data_dir
     base_dir = get_app_data_dir()
     log_dir = base_dir / "logs"
     try:

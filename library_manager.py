@@ -16,17 +16,18 @@
 """
 import os
 import sys
+import platform
 import shutil
 import subprocess
 import time
 import zipfile
 import json
 import re
-import platform
 from collections import Counter
 from pathlib import Path
 from typing import Callable, Any
-from logger import get_logger, get_app_data_dir, log_operation
+from logger import get_logger
+from utils import get_app_data_dir
 
 log = get_logger(__name__)
 
@@ -1072,10 +1073,10 @@ class LibraryManager:
                     filename = member.filename.encode('cp437').decode('utf-8')
                 except:
                     try:
-                        filename = member.filename.encode('cp437').decode('cp950')
+                        filename = member.filename.encode('cp437').decode('gbk')
                     except:
                         try:
-                            filename = member.filename.encode('cp437').decode('gbk')
+                            filename = member.filename.encode('cp437').decode('cp950')
                         except:
                             filename = member.filename
 
