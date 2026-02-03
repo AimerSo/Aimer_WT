@@ -274,7 +274,7 @@ class CoreService:
           - Flatpak 或其他常见安装位置（若适用）
         """
 
-        self.log("开始检索 Linux Steam 库...", "SEARCH")
+        log.info("[SEARCH] 开始检索 Linux Steam 库...")
         paths = set()
         
         # 1. 常见的 Steam 安装位置 (包括 Flatpak)
@@ -295,7 +295,7 @@ class CoreService:
                         found = re.findall(r'"path"\s+"([^"]+)"', content)
                         paths.update(found)
                 except Exception as e:
-                    self.log(f"解析 VDF 失败: {e}", "WARN")
+                    log.warning(f"解析 VDF 失败: {e}")
 
         # 2. 验证路径
         for base_path in paths:
