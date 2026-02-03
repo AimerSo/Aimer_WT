@@ -65,15 +65,16 @@ class SightsManager:
         self._usersights_path: Path | None = None
         self._cache: dict | None = None
 
-    def discover_usersights_paths(self) -> list[dict[str, Any]]:
+    def discover_usersights_paths(self, configured_sights_path: str | None = None) -> list[dict[str, Any]]:
         """
         自动搜索系统中所有可能的 War Thunder UserSights 路径。
-        
+
         官方路径格式：
         - Windows: Documents/My Games/WarThunder/Saves/<UID>/production/UserSights
         - Linux: ~/.config/WarThunder/Saves/<UID>/production/UserSights
         - macOS: ~/My Games/WarThunder/Saves/<UID>/production/UserSights
-        
+        Args:
+            configured_sights_path: 用户配置的炮镜路径（可选）
         Returns:
             包含 uid, path, exists 的列表
         """
@@ -82,23 +83,70 @@ class SightsManager:
         
         # 根据平台确定基础路径
         possible_bases = []
-        
+        # 从配置路径推导 Saves 基础目录
+        if configured_sights_path:
+            try:
+                p = Path(str(configured_sights_path)).expanduser()
+
+                if p.is_dir():
+                    if p.name.lower() == "saves":
+                        possible_bases.append(p)
+                    else:
+                        for child_name in ("Saves", "saves"):
+                            cand = p / child_name
+                            if cand.exists() and cand.is_dir():
+                                possible_bases.append(cand)
+                                break
+
+                    if p.name.lower() == "usersights" and p.parent.name.lower() == "production":
+                        try:
+                            base = p.parents[2]
+                            if base.exists() and base.is_dir():
+                                possible_bases.append(base)
+                        except Exception:
+                            pass
+
+                    try:
+                        checked = 0
+                        for child in p.iterdir():
+                            if not child.is_dir():
+                                continue
+                            checked += 1
+                            if (child / "production").exists():
+                                possible_bases.append(p)
+                                break
+                            if checked >= 10:
+                                break
+                    except Exception:
+                        pass
+
+                for cand in [p] + list(p.parents):
+                    if cand.name.lower() == "saves":
+                        possible_bases.append(cand)
+                        break
+            except Exception as e:
+                log.debug(f"解析配置炮镜路径失败，略过: {e}")
+
         if system == "Windows":
             # Windows 官方路径
+            docs_dir = None
             try:
                 import ctypes.wintypes
                 buf = ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
                 # CSIDL_PERSONAL = 5 (My Documents), SHGFP_TYPE_CURRENT = 0
                 if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) != 0:
-                    raise SightsPathError("无法通过 Windows API 获取文档路径")
-                
+                    raise OSError("无法通过 Windows API 获取文档路径")
+
                 if not buf.value:
-                    raise SightsPathError("获取到的 Windows 文档路径为空")
+                    raise OSError("获取到的 Windows 文档路径为空")
                      
                 docs_dir = Path(buf.value)
             except Exception as e:
-                raise SightsPathError(f"获取 Windows 文档目录失败: {e}")
-            
+                log.warning(f"获取 Windows 文档目录失败，略过默认搜索路径: {e}")
+
+            if not docs_dir:
+                docs_dir = Path.home() / "Documents"
+
             possible_bases.append(docs_dir / "My Games" / "WarThunder" / "Saves")
         elif system == "Darwin":
             # macOS 官方路径
@@ -116,9 +164,19 @@ class SightsManager:
             possible_bases.append(Path.home() / "Documents" / "My Games" / "WarThunder" / "Saves")
         
         # 搜索所有可能的基础路径
-        found_uids = set()  # 用于去重
+        uid_map = set()
+        seen_bases = set()
         
         for base_path in possible_bases:
+            try:
+                base_key = str(base_path.resolve())
+            except Exception:
+                base_key = str(base_path)
+
+            if base_key in seen_bases:
+                continue
+            seen_bases.add(base_key)
+
             if not base_path.exists():
                 continue
             
@@ -131,7 +189,7 @@ class SightsManager:
                     uid = uid_dir.name
                     
                     # 跳过已处理的 UID
-                    if uid in found_uids:
+                    if uid in uid_map:
                         continue
                     
                     # 构建 UserSights 路径
@@ -142,7 +200,7 @@ class SightsManager:
                         "path": str(usersights_path),
                         "exists": usersights_path.exists()
                     })
-                    found_uids.add(uid)
+                    uid_map.add(uid)
                     
             except PermissionError as e:
                 log.error(f"搜索 {base_path} 失败（权限不足）: {e}")
@@ -156,7 +214,7 @@ class SightsManager:
         results.sort(key=lambda x: x["uid"])
         return results
     
-    def select_uid_path(self, uid: str) -> str:
+    def select_uid_path(self, uid: str, configured_sights_path: str | None = None) -> str:
         """
         根据 UID 选择并设置对应的 UserSights 路径。
         如果路径不存在，会自动创建。
@@ -171,7 +229,7 @@ class SightsManager:
             ValueError: 找不到指定的 UID
             SightsPathError: 无法创建目录
         """
-        discovered = self.discover_usersights_paths()
+        discovered = self.discover_usersights_paths(configured_sights_path=configured_sights_path)
         
         # 查找匹配的 UID
         target = None

@@ -1081,7 +1081,8 @@ class AppApi:
     def discover_usersights_paths(self):
         """自动搜索系统中所有可能的 War Thunder UserSights 路径"""
         try:
-            return self._sights_mgr.discover_usersights_paths()
+            cfg_path = self._cfg_mgr.get_sights_path()
+            return self._sights_mgr.discover_usersights_paths(configured_sights_path=cfg_path)
         except Exception as e:
             log.error(f"搜索 UserSights 路径失败: {e}")
             return []
@@ -1089,7 +1090,8 @@ class AppApi:
     def select_uid_sights_path(self, uid):
         """根据 UID 选择并设置对应的 UserSights 路径"""
         try:
-            path = self._sights_mgr.select_uid_path(uid)
+            cfg_path = self._cfg_mgr.get_sights_path()
+            path = self._sights_mgr.select_uid_path(uid, configured_sights_path=cfg_path)
             self._cfg_mgr.set_sights_path(path)
             log.info(f"已选择 UID {uid} 的炮镜路径: {path}")
             return {"success": True, "path": path}
