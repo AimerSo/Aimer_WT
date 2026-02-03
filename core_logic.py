@@ -150,7 +150,7 @@ class CoreService:
         log.info(f"[SEARCH] 开始自动搜索游戏路径... (系统: {system})")
         
         # 1. Windows: 尝试从 Steam 注册表读取
-        if system == "Windows" and winreg:
+        if winreg:
             try:
                 key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam")
                 steam_path_str, _ = winreg.QueryValueEx(key, "SteamPath")
@@ -169,31 +169,30 @@ class CoreService:
         possible_paths = []
         home = Path.home()
         
-        if system == "Windows":
-            # 生成候选驱动器列表
-            drives = [f"{c}:\\" for c in "CDEFGHIJK"]
-            accessible_drives = [d for d in drives if os.path.exists(d)]
-            
-            # Windows 下常见的 War Thunder 路径模式
-            common_patterns = [
-                r"Program Files (x86)\Steam\steamapps\common\War Thunder",
-                r"Program Files\Steam\steamapps\common\War Thunder",
-                r"SteamLibrary\steamapps\common\War Thunder",
-                r"Steam\steamapps\common\War Thunder",
-                r"Games\War Thunder",
-                r"WarThunder", # 无空格
-                r"War Thunder"
-            ]
-            
-            # 组合驱动器和模式
-            for d in accessible_drives:
-                for pattern in common_patterns:
-                    possible_paths.append(Path(d) / pattern)
-            
-            # 添加 LocalAppData (官方启动器默认安装位置)
-            local_app_data = os.environ.get('LOCALAPPDATA')
-            if local_app_data:
-                possible_paths.append(Path(local_app_data) / "WarThunder")
+        # 生成候选驱动器列表
+        drives = [f"{c}:\\" for c in "CDEFGHIJK"]
+        accessible_drives = [d for d in drives if os.path.exists(d)]
+        
+        # Windows 下常见的 War Thunder 路径模式
+        common_patterns = [
+            r"Program Files (x86)\Steam\steamapps\common\War Thunder",
+            r"Program Files\Steam\steamapps\common\War Thunder",
+            r"SteamLibrary\steamapps\common\War Thunder",
+            r"Steam\steamapps\common\War Thunder",
+            r"Games\War Thunder",
+            r"WarThunder", # 无空格
+            r"War Thunder"
+        ]
+        
+        # 组合驱动器和模式
+        for d in accessible_drives:
+            for pattern in common_patterns:
+                possible_paths.append(Path(d) / pattern)
+        
+        # 添加 LocalAppData (官方启动器默认安装位置)
+        local_app_data = os.environ.get('LOCALAPPDATA')
+        if local_app_data:
+            possible_paths.append(Path(local_app_data) / "WarThunder")
 
         for p_str in possible_paths:
             path = Path(p_str)
@@ -212,24 +211,12 @@ class CoreService:
         search_roots = []
         exclude_dirs = set()
 
-        if system == "Windows":
-             drives = [f"{c}:\\" for c in "CDEFGHIJK"]
-             search_roots = [d for d in drives if os.path.exists(d)]
-             exclude_dirs = {
-                 "Windows", "ProgramData", "Recycle.Bin", "System Volume Information", 
-                 "Documents and Settings", "AppData"
-             }
-        else:
-            # Unix-like 系统扫描策略
-            if system == "Darwin":
-                # macOS 主要扫描 /Applications 和 用户目录
-                search_roots = ["/Applications", str(home)]
-                exclude_dirs = {"System", "Library", "Volumes", ".Trash"}
-            else:
-                # Linux 扫描 Home, /mnt, /media, /opt
-                search_roots = [str(home), "/mnt", "/media", "/opt"]
-                # 排除系统关键目录和虚拟文件系统
-                exclude_dirs = {"proc", "sys", "dev", "run", "tmp", "var", "boot", "etc", "usr"}
+        drives = [f"{c}:\\" for c in "CDEFGHIJK"]
+        search_roots = [d for d in drives if os.path.exists(d)]
+        exclude_dirs = {
+            "Windows", "ProgramData", "Recycle.Bin", "System Volume Information", 
+            "Documents and Settings", "AppData"
+        }
 
         for root_dir in search_roots:
             if not os.path.exists(root_dir):
@@ -239,11 +226,11 @@ class CoreService:
             try:
                 for root, dirs, _ in os.walk(root_dir):
                     # 剪枝：移除不需要扫描的目录
-                    # Windows 下排除以 $ 开头的系统隐藏目录，Unix 下排除 . 开头的隐藏目录
+                    # Windows 下排除以 $ 开头的系统隐藏目录
                     dirs[:] = [
                         d for d in dirs 
                         if d not in exclude_dirs 
-                        and not (d.startswith('$') if system == "Windows" else d.startswith('.'))
+                        and not d.startswith('$')
                     ]
                     
                     for d in dirs:
