@@ -1,0 +1,224 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      manual_bump:
+        description: "Version Bump Type (選擇版本升級類型)"
+        type: choice
+        options:
+          - "patch"
+          - "minor"
+          - "major"
+        default: "patch"
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.guard.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Guard (main only)
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHOULD="true"
+
+          # workflow_dispatch 必須在 main 上觸發
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.ref_name }}" != "main" ]; then
+              echo "workflow_dispatch must run from main (current: ${{ github.ref_name }})"
+              SHOULD="false"
+            fi
+          fi
+
+          # tag push 必須是 main 分支上的提交（可被 origin/main 包含）
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            git fetch origin main --force
+            if git merge-base --is-ancestor "${{ github.sha }}" "origin/main"; then
+              echo "Tag commit is on main"
+            else
+              echo "Tag commit is NOT on main; skipping release"
+              SHOULD="false"
+            fi
+          fi
+
+          echo "should_release=$SHOULD" >> "$GITHUB_OUTPUT"
+
+      - name: Run Semver (Manual Trigger)
+        id: semver
+        if: steps.guard.outputs.should_release == 'true' && github.event_name == 'workflow_dispatch'
+        uses: bitshifted/git-auto-semver@v2
+        with:
+          main_branch: main
+          initial_version: "1.0.0"
+          create_tag: true
+          tag_prefix: "v"
+          manual_bump: ${{ inputs.manual_bump }}
+
+      - name: Determine Final Version
+        id: version
+        if: steps.guard.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="${{ steps.semver.outputs.version-string }}"
+            TAG="v$VERSION"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build on ${{ matrix.os }} (${{ matrix.arch }})
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows amd64
+          - os: windows-latest
+            arch: amd64
+            python-arch: x64
+          # Windows arm64
+          - os: windows-11-arm
+            arch: arm64
+            python-arch: arm64
+          # Linux amd64
+          - os: ubuntu-latest
+            arch: amd64
+            python-arch: x64
+          # Linux arm64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            python-arch: arm64
+          # macOS amd64 (Intel)
+          - os: macos-15-intel
+            arch: amd64
+            python-arch: x64
+          # macOS arm64 (Apple Silicon)
+          - os: macos-latest
+            arch: arm64
+            python-arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: ${{ matrix.python-arch }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install gtk+3 gobject-introspection pygobject3
+          # 設置 PKG_CONFIG_PATH 以便找到 GTK 相關庫
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix)/share/pkgconfig" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build
+        env:
+          PYTHONIOENCODING: utf-8
+          REPORT_URL: ${{ secrets.REPORT_URL }}
+          TELEMETRY_SALT: ${{ secrets.TELEMETRY_SALT }}
+        run: |
+          python build.py
+
+      - name: Rename Checksum
+        shell: bash
+        run: |
+          if [ -f dist/checksum.txt ]; then
+            mv dist/checksum.txt dist/checksum_${{ runner.os }}_${{ matrix.arch }}.txt
+          fi
+
+      - name: Rename file
+        shell: bash
+        run: |
+          ARCH="${{ matrix.arch }}"
+
+          if [ -f dist/WT_Aimer_Voice.exe ]; then
+            mv dist/WT_Aimer_Voice.exe dist/WT_Aimer_Voice_${{ runner.os }}_${ARCH}.exe
+          elif [ -f dist/WT_Aimer_Voice ]; then
+            mv dist/WT_Aimer_Voice dist/WT_Aimer_Voice_${{ runner.os }}_${ARCH}
+          elif [ -f dist/WT_Aimer_Voice.app ]; then
+            # macOS app bundle - 壓縮為 zip
+            cd dist && zip -r WT_Aimer_Voice_${{ runner.os }}_${ARCH}.zip WT_Aimer_Voice.app && rm -rf WT_Aimer_Voice.app
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+
+  release:
+    name: Create Release
+    needs: [prepare, build]
+    if: needs.prepare.outputs.should_release == 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          merge-multiple: true
+          path: dist
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          ls -la dist/ || echo "No artifacts found"
+
+      - name: Generate Release Name
+        id: release_name
+        shell: bash
+        run: |
+          MSG=$(git log -1 --pretty=%s)
+          TAG="${{ needs.prepare.outputs.tag_name }}"
+          echo "title=$TAG - $MSG" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
+          name: ${{ steps.release_name.outputs.title }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: dist/*

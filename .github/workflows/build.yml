@@ -1,94 +1,16 @@
-name: Build and Release
+name: Build
 
 on:
   push:
     branches: [ "**" ]
-    tags:
-      - 'v*'  # 當推送 v 開頭的 tag 時觸發 release
   workflow_dispatch:
-    inputs:
-      manual_bump:
-        description: 'Version Bump Type (選擇版本升級類型)'
-        type: choice
-        options:
-          - 'patch'
-          - 'minor'
-          - 'major'
-        default: 'patch'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  # 判斷是否需要發布 release
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      should_release: ${{ steps.check.outputs.should_release }}
-      version: ${{ steps.final_version.outputs.version }}
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        fetch-tags: true
-
-    - name: Check Release Condition
-      id: check
-      run: |
-        # 情況1: 手動觸發 workflow_dispatch
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          if [[ "${{ github.ref_name }}" == "main" ]] || [[ "${{ github.ref_name }}" == "master" ]]; then
-            echo "Manual trigger on main/master - will release"
-            echo "should_release=true" >> $GITHUB_OUTPUT
-            exit 0
-          else
-            echo "Manual trigger on ${{ github.ref_name }} - build only"
-            echo "should_release=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-        fi
-        
-        # 情況2: Push tag (v* 開頭)
-        if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-          echo "Tag push detected - will release"
-          echo "should_release=true" >> $GITHUB_OUTPUT
-          exit 0
-        fi
-        
-        # 其他情況: 普通 push，只構建不發布
-        echo "Regular push - build only, no release"
-        echo "should_release=false" >> $GITHUB_OUTPUT
-
-    - name: Run Semver (Manual Trigger)
-      id: semver
-      if: steps.check.outputs.should_release == 'true' && github.event_name == 'workflow_dispatch'
-      uses: bitshifted/git-auto-semver@v2
-      with:
-        main_branch: main
-        initial_version: '1.0.0'
-        create_tag: true
-        tag_prefix: "v"
-        manual_bump: ${{ inputs.manual_bump }}
-
-    - name: Determine Final Version
-      id: final_version
-      if: steps.check.outputs.should_release == 'true'
-      run: |
-        # 如果是 tag push，直接使用 tag 名稱
-        if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"  # 移除 v 前綴
-          echo "Using tag version: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-        # 手動觸發時使用 semver 計算的版本
-        elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "Using semver version: ${{ steps.semver.outputs.version-string }}"
-          echo "version=${{ steps.semver.outputs.version-string }}" >> $GITHUB_OUTPUT
-        fi
-
   build:
     name: Build on ${{ matrix.os }} (${{ matrix.arch }})
-    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -180,58 +102,3 @@ jobs:
       with:
         name: build-${{ matrix.os }}-${{ matrix.arch }}
         path: dist/*
-
-  release:
-    name: Create Release
-    needs: [build, prepare]
-    if: needs.prepare.outputs.should_release == 'true' && needs.build.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0 # Needed for git log history
-
-    - name: Download Artifacts
-      uses: actions/download-artifact@v4
-      with:
-        pattern: build-*
-        merge-multiple: true
-        path: dist
-
-    - name: List downloaded artifacts
-      run: |
-        echo "Downloaded artifacts:"
-        ls -la dist/ || echo "No artifacts found"
-
-    - name: Determine Version for Release
-      id: release_version
-      run: |
-        # 優先使用 prepare job 計算的版本
-        if [ -n "${{ needs.prepare.outputs.version }}" ]; then
-          VERSION="${{ needs.prepare.outputs.version }}"
-        # 如果是 tag push，從 ref 獲取
-        elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
-        else
-          # 備用方案
-          VERSION="0.0.0"
-        fi
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-    - name: Generate Release Name
-      id: release_name
-      run: |
-        MSG=$(git log -1 --pretty=%s)
-        VERSION="v${{ steps.release_version.outputs.version }}"
-        echo "title=$VERSION - $MSG" >> $GITHUB_OUTPUT
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: v${{ steps.release_version.outputs.version }}
-        name: ${{ steps.release_name.outputs.title }}
-        draft: false
-        prerelease: false
-        generate_release_notes: true
-        files: dist/*

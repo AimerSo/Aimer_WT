@@ -1263,50 +1263,63 @@ class AppApi:
             return {"success": True, "path": path}
         return {"success": False}
 
-    def save_library_paths(self, pending_dir=None, library_dir=None):
+    def save_pending_dir(self, pending_dir=None):
         """
-        保存待解压区和语音包库的自定义路径。
+        保存待解压区的自定义路径。
         参数为空字串则重设为预设路径。
         """
         try:
-            # 处理待解压区
-            if pending_dir is not None:
-                if pending_dir == "":
-                    # 重设为预设
-                    self._cfg_mgr.set_pending_dir("")
-                    default_pending = self._lib_mgr.root_dir / "WT待解压区"
-                    self._lib_mgr.update_paths(pending_dir=str(default_pending))
-                    log.info("待解压区已重设为预设路径")
-                else:
-                    # 验证路径
-                    p = Path(pending_dir)
-                    if not p.exists():
-                        try:
-                            p.mkdir(parents=True, exist_ok=True)
-                        except Exception as e:
-                            return {"success": False, "msg": f"无法建立待解压区目录: {e}"}
-                    self._cfg_mgr.set_pending_dir(pending_dir)
-                    self._lib_mgr.update_paths(pending_dir=pending_dir)
-            
-            # 处理语音包库
-            if library_dir is not None:
-                if library_dir == "":
-                    # 重设为预设
-                    self._cfg_mgr.set_library_dir("")
-                    default_library = self._lib_mgr.root_dir / "WT语音包库"
-                    self._lib_mgr.update_paths(library_dir=str(default_library))
-                    log.info("语音包库已重设为预设路径")
-                else:
-                    # 验证路径
-                    p = Path(library_dir)
-                    if not p.exists():
-                        try:
-                            p.mkdir(parents=True, exist_ok=True)
-                        except Exception as e:
-                            return {"success": False, "msg": f"无法建立语音包库目录: {e}"}
-                    self._cfg_mgr.set_library_dir(library_dir)
-                    self._lib_mgr.update_paths(library_dir=library_dir)
-            
+            if pending_dir is None:
+                return {"success": True}
+
+            if pending_dir == "":
+                # 重设为预设
+                self._cfg_mgr.set_pending_dir("")
+                default_pending = self._lib_mgr.root_dir / "WT待解压区"
+                self._lib_mgr.update_paths(pending_dir=str(default_pending))
+                log.info(f"待解压区已重设为预设路径: {default_pending}")
+                return {"success": True}
+
+            # 验证路径
+            p = Path(pending_dir)
+            if not p.exists():
+                try:
+                    p.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    return {"success": False, "msg": f"无法建立待解压区目录: {e}"}
+            self._cfg_mgr.set_pending_dir(pending_dir)
+            self._lib_mgr.update_paths(pending_dir=pending_dir)
+            return {"success": True}
+        except Exception as e:
+            log.error(f"保存待解压区路径失败: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def save_library_dir(self, library_dir=None):
+        """
+        保存语音包库的自定义路径。
+        参数为空字串则重设为预设路径。
+        """
+        try:
+            if library_dir is None:
+                return {"success": True}
+
+            if library_dir == "":
+                # 重设为预设
+                self._cfg_mgr.set_library_dir("")
+                default_library = self._lib_mgr.root_dir / "WT语音包库"
+                self._lib_mgr.update_paths(library_dir=str(default_library))
+                log.info(f"语音包库已重设为预设路径: {default_library}")
+                return {"success": True}
+
+            # 验证路径
+            p = Path(library_dir)
+            if not p.exists():
+                try:
+                    p.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    return {"success": False, "msg": f"无法建立语音包库目录: {e}"}
+            self._cfg_mgr.set_library_dir(library_dir)
+            self._lib_mgr.update_paths(library_dir=library_dir)
             return {"success": True}
         except Exception as e:
             log.error(f"保存语音包库路径失败: {e}")

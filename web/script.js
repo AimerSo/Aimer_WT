@@ -2685,7 +2685,7 @@ app.openLibraryFolder = async function () {
 };
 
 app.saveLibraryPaths = async function () {
-    if (!window.pywebview?.api?.save_library_paths) {
+    if (!window.pywebview?.api?.save_pending_dir || !window.pywebview?.api?.save_library_dir) {
         this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
         return;
     }
@@ -2696,26 +2696,33 @@ app.saveLibraryPaths = async function () {
     const libraryDir = libraryInput ? libraryInput.value.trim() : null;
 
     try {
-        const result = await pywebview.api.save_library_paths(pendingDir, libraryDir);
-        if (result && result.success) {
-            this.showAlert('成功', '路径设置已保存', 'success');
-            // 重新加载路径信息以更新 placeholder
-            await this.loadLibraryPathInfo();
-            // 刷新语音包库列表
-            if (typeof this.refreshLibrary === 'function') {
-                this.refreshLibrary();
-            }
-        } else {
-            this.showAlert('错误', result.msg || '保存失败', 'error');
+        const pendingRes = await pywebview.api.save_pending_dir(pendingDir);
+        if (!pendingRes || !pendingRes.success) {
+            this.showErrorToast('保存失败', pendingRes?.msg || '保存失败');
+            return;
+        }
+
+        const libraryRes = await pywebview.api.save_library_dir(libraryDir);
+        if (!libraryRes || !libraryRes.success) {
+            this.showErrorToast('保存失败', libraryRes?.msg || '保存失败');
+            return;
+        }
+
+        this.showInfoToast('已保存', '路径设置已保存');
+        // 重新加载路径信息以更新 placeholder
+        await this.loadLibraryPathInfo();
+        // 刷新语音包库列表
+        if (typeof this.refreshLibrary === 'function') {
+            this.refreshLibrary();
         }
     } catch (e) {
         console.error(e);
-        this.showAlert('错误', '保存失败: ' + e.message, 'error');
+        this.showErrorToast('保存失败', '保存失败: ' + e.message);
     }
 };
 
 app.resetLibraryPaths = async function () {
-    if (!window.pywebview?.api?.save_library_paths) {
+    if (!window.pywebview?.api?.save_pending_dir || !window.pywebview?.api?.save_library_dir) {
         this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
         return;
     }
@@ -2728,28 +2735,34 @@ app.resetLibraryPaths = async function () {
     if (!confirmed) return;
 
     try {
-        // 传入空字串以重置为预设
-        const result = await pywebview.api.save_library_paths('', '');
-        if (result && result.success) {
-            // 清空输入框
-            const pendingInput = document.getElementById('pending-dir-input');
-            const libraryInput = document.getElementById('library-dir-input');
-            if (pendingInput) pendingInput.value = '';
-            if (libraryInput) libraryInput.value = '';
-            
-            this.showAlert('成功', '路径已重置为默认值', 'success');
-            // 重新加载以更新 placeholder
-            await this.loadLibraryPathInfo();
-            // 刷新语音包库列表
-            if (typeof this.refreshLibrary === 'function') {
-                this.refreshLibrary();
-            }
-        } else {
-            this.showAlert('错误', result.msg || '重置失败', 'error');
+        const pendingRes = await pywebview.api.save_pending_dir('');
+        if (!pendingRes || !pendingRes.success) {
+            this.showErrorToast('重置失败', pendingRes?.msg || '重置失败');
+            return;
+        }
+
+        const libraryRes = await pywebview.api.save_library_dir('');
+        if (!libraryRes || !libraryRes.success) {
+            this.showErrorToast('重置失败', libraryRes?.msg || '重置失败');
+            return;
+        }
+
+        // 清空输入框
+        const pendingInput = document.getElementById('pending-dir-input');
+        const libraryInput = document.getElementById('library-dir-input');
+        if (pendingInput) pendingInput.value = '';
+        if (libraryInput) libraryInput.value = '';
+        
+        this.showInfoToast('已重置', '路径已重置为默认值');
+        // 重新加载以更新 placeholder
+        await this.loadLibraryPathInfo();
+        // 刷新语音包库列表
+        if (typeof this.refreshLibrary === 'function') {
+            this.refreshLibrary();
         }
     } catch (e) {
         console.error(e);
-        this.showAlert('错误', '重置失败: ' + e.message, 'error');
+        this.showErrorToast('重置失败', '重置失败: ' + e.message);
     }
 };
 
@@ -2783,18 +2796,14 @@ app.copyPathToClipboard = async function (inputId) {
 
 // 单独重置待解压区路径
 app.resetPendingDir = async function () {
-    if (!window.pywebview?.api?.save_library_paths) {
+    if (!window.pywebview?.api?.save_pending_dir) {
         this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
         return;
     }
 
     try {
-        // 获取当前语音包库路径（保持不变）
-        const libraryInput = document.getElementById('library-dir-input');
-        const libraryDir = libraryInput ? libraryInput.value.trim() : null;
-
         // 将待解压区路径设为空（重置为预设）
-        const result = await pywebview.api.save_library_paths('', libraryDir);
+        const result = await pywebview.api.save_pending_dir('');
         if (result && result.success) {
             const pendingInput = document.getElementById('pending-dir-input');
             if (pendingInput) {
@@ -2806,28 +2815,24 @@ app.resetPendingDir = async function () {
                 this.refreshLibrary();
             }
         } else {
-            this.showAlert('错误', result.msg || '重置失败', 'error');
+            this.showErrorToast('重置失败', result.msg || '重置失败');
         }
     } catch (e) {
         console.error(e);
-        this.showAlert('错误', '重置失败: ' + e.message, 'error');
+        this.showErrorToast('重置失败', '重置失败: ' + e.message);
     }
 };
 
 // 单独重置语音包库路径
 app.resetLibraryDir = async function () {
-    if (!window.pywebview?.api?.save_library_paths) {
+    if (!window.pywebview?.api?.save_library_dir) {
         this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
         return;
     }
 
     try {
-        // 获取当前待解压区路径（保持不变）
-        const pendingInput = document.getElementById('pending-dir-input');
-        const pendingDir = pendingInput ? pendingInput.value.trim() : null;
-
         // 将语音包库路径设为空（重置为预设）
-        const result = await pywebview.api.save_library_paths(pendingDir, '');
+        const result = await pywebview.api.save_library_dir('');
         if (result && result.success) {
             const libraryInput = document.getElementById('library-dir-input');
             if (libraryInput) {
@@ -2839,11 +2844,11 @@ app.resetLibraryDir = async function () {
                 this.refreshLibrary();
             }
         } else {
-            this.showAlert('错误', result.msg || '重置失败', 'error');
+            this.showErrorToast('重置失败', result.msg || '重置失败');
         }
     } catch (e) {
         console.error(e);
-        this.showAlert('错误', '重置失败: ' + e.message, 'error');
+        this.showErrorToast('重置失败', '重置失败: ' + e.message);
     }
 };
 

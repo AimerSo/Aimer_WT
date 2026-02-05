@@ -120,40 +120,55 @@ class LibraryManager:
             包含更新结果的字典 {'pending_updated': bool, 'library_updated': bool}
         """
         result = {'pending_updated': False, 'library_updated': False}
+
+        def _norm_path(path: Path) -> str:
+            try:
+                resolved = path.resolve(strict=False)
+            except Exception:
+                resolved = path
+            return os.path.normcase(os.path.normpath(str(resolved)))
         
         if pending_dir:
             new_path = Path(pending_dir)
-            # 确保目录存在或可创建
-            if not new_path.exists():
-                try:
-                    new_path.mkdir(parents=True, exist_ok=True)
-                    log.info(f"已创建待解压区目录: {new_path}")
-                except PermissionError as e:
-                    log.error(f"无法创建待解压区目录（权限不足）: {e}")
-                    return result
-                except OSError as e:
-                    log.error(f"无法创建待解压区目录: {e}")
-                    return result
-            self.pending_dir = new_path
-            result['pending_updated'] = True
-            log.info(f"待解压区路径已更新: {new_path}")
+            if _norm_path(new_path) == _norm_path(self.pending_dir):
+                # 路径未变更：避免重复日志
+                pass
+            else:
+                # 确保目录存在或可创建
+                if not new_path.exists():
+                    try:
+                        new_path.mkdir(parents=True, exist_ok=True)
+                        log.info(f"已创建待解压区目录: {new_path}")
+                    except PermissionError as e:
+                        log.error(f"无法创建待解压区目录（权限不足）: {e}")
+                        return result
+                    except OSError as e:
+                        log.error(f"无法创建待解压区目录: {e}")
+                        return result
+                self.pending_dir = new_path
+                result['pending_updated'] = True
+                log.info(f"待解压区路径已更新: {new_path}")
         
         if library_dir:
             new_path = Path(library_dir)
-            # 确保目录存在或可创建
-            if not new_path.exists():
-                try:
-                    new_path.mkdir(parents=True, exist_ok=True)
-                    log.info(f"已创建语音包库目录: {new_path}")
-                except PermissionError as e:
-                    log.error(f"无法创建语音包库目录（权限不足）: {e}")
-                    return result
-                except OSError as e:
-                    log.error(f"无法创建语音包库目录: {e}")
-                    return result
-            self.library_dir = new_path
-            result['library_updated'] = True
-            log.info(f"语音包库路径已更新: {new_path}")
+            if _norm_path(new_path) == _norm_path(self.library_dir):
+                # 路径未变更：避免重复日志
+                pass
+            else:
+                # 确保目录存在或可创建
+                if not new_path.exists():
+                    try:
+                        new_path.mkdir(parents=True, exist_ok=True)
+                        log.info(f"已创建语音包库目录: {new_path}")
+                    except PermissionError as e:
+                        log.error(f"无法创建语音包库目录（权限不足）: {e}")
+                        return result
+                    except OSError as e:
+                        log.error(f"无法创建语音包库目录: {e}")
+                        return result
+                self.library_dir = new_path
+                result['library_updated'] = True
+                log.info(f"语音包库路径已更新: {new_path}")
         
         return result
 
