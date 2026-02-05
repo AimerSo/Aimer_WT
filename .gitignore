@@ -30,9 +30,3 @@ WT语音包库/
 
 # Local config (often contains personal game path)
 settings.json
-app_secrets.py
-.env
-*.db
-telemetry
-build.bat
-test
