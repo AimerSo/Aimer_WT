@@ -280,17 +280,6 @@
     0 2px 4px -1px rgba(0, 0, 0, 0.3);
     --shadow-btn-primary: 0 2px 5px rgba(245, 158, 11, 0.3);
 
-    /* --- 深色模式变量覆盖 --- */
-    --bg-log: #1e1e1e;
-    --text-log: #eee;
-    --border-log: #333;
-
-    --log-info: #38bdf8;
-    --log-success: #34d399;
-    --log-warn: #fbbf24;
-    --log-sys: #9ca3af;
-    --log-scan: #fb923c;
-
     /* --- [Aimer Dark v1.0] 细节强化 --- */
     --card-shadow-rgb: 0,
     0,
@@ -1332,19 +1321,14 @@ i[class^="ri-"] {
 
 .log-container {
     flex: 1;
-    background: #FFFFFF;
-    color: #374151;
+    background: var(--bg-log);
+    color: var(--text-log);
     padding: 20px 24px;
     font-family: "JetBrains Mono", "Consolas", "SF Mono", monospace;
     font-size: 13px;
     overflow-y: auto;
     line-height: 1.6;
     border-radius: 0 0 16px 16px;
-}
-
-[data-theme="dark"] .log-container {
-    background: #1e1e1e;
-    color: #e5e7eb;
 }
 
 .log-line {
@@ -1366,28 +1350,53 @@ i[class^="ri-"] {
 }
 
 .log-line.info {
-    color: #0EA5E9;
+    color: var(--log-info, #0EA5E9);
 }
 
 .log-line.success {
-    color: #10B981;
+    color: var(--log-success, #10B981);
 }
 
 .log-line.error {
-    color: #EF4444;
+    color: var(--log-error, #EF4444);
 }
 
 .log-line.warn {
-    color: #F59E0B;
+    color: var(--log-warn, #F59E0B);
 }
 
 .log-line.sys {
-    color: #9CA3AF;
+    color: var(--log-sys, #9CA3AF);
 }
 
 .log-line.scan {
-    color: var(--primary);
+    color: var(--log-scan, var(--primary));
     font-weight: 600;
+}
+
+/* 深色模式下的日志行颜色 */
+[data-theme="dark"] .log-line.info {
+    color: var(--log-info, #38BDF8);
+}
+
+[data-theme="dark"] .log-line.success {
+    color: var(--log-success, #34D399);
+}
+
+[data-theme="dark"] .log-line.error {
+    color: var(--log-error, #F87171);
+}
+
+[data-theme="dark"] .log-line.warn {
+    color: var(--log-warn, #FBBF24);
+}
+
+[data-theme="dark"] .log-line.sys {
+    color: var(--log-sys, #6B7280);
+}
+
+[data-theme="dark"] .log-line:hover {
+    background: rgba(255, 153, 0, 0.08);
 }
 
 /* --- Library Toolbar V2 (简约扁平风格) --- */

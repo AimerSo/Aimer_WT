@@ -134,7 +134,19 @@ Aimer UI 原生支持 **明亮 (Light)** 和 **深色 (Dark)** 两种模式。�
 | `--status-error` | 错误/失败。通常为红色。 |
 | `--status-icon-def` | 图标默认色。未触发任何状态时的灰色。 |
 
-### H. 控件与细节 (Controls & Details)
+### H. 运行日志颜色 (Log Colors)
+首页运行日志的各类消息颜色。
+
+| 变量名 (Key) | 描述 (Description) |
+| :--- | :--- |
+| `--log-info` | 信息日志颜色。通常为蓝色。 |
+| `--log-success` | 成功日志颜色。通常为绿色。 |
+| `--log-error` | 错误日志颜色。通常为红色。 |
+| `--log-warn` | 警告日志颜色。通常为橙色。 |
+| `--log-sys` | 系统日志颜色。通常为灰色。 |
+| `--log-scan` | 扫描日志颜色。默认使用主色调。 |
+
+### I. 控件与细节 (Controls & Details)
 往往被忽略但至关重要的细节。
 
 | 变量名 (Key) | 描述 (Description) |

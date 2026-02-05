@@ -302,10 +302,26 @@
                                 <div class="drop-zone-compact" id="sights-drop-zone">
                                     <div class="drop-zone-inner">
                                         <div class="drop-zone-actions">
-                                            <button class="btn-v2 primary" id="btn-sights-primary"
+                                            <!-- UID 选择下拉框 -->
+                                            <div class="uid-selector-wrapper">
+                                                <label class="uid-selector-label">
+                                                    <i class="ri-user-line"></i>
+                                                    选择用户 UID
+                                                </label>
+                                                <div class="uid-selector-row">
+                                                    <select id="sights-uid-select" class="uid-select" onchange="app.onSightsUidChange(this.value)">
+                                                        <option value="">-- 自动搜索中 --</option>
+                                                    </select>
+                                                    <button class="btn-v2 icon-only" onclick="app.refreshSightsUidList()" title="刷新 UID 列表">
+                                                        <i class="ri-refresh-line"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="uid-selector-divider"></div>
+                                            <button class="btn-v2" id="btn-sights-primary"
                                                 onclick="app.selectSightsPath()">
                                                 <i class="ri-folder-open-line"></i>
-                                                <span>设置炮镜路径</span>
+                                                <span>手动选择路径</span>
                                             </button>
                                             <button class="btn-v2" id="btn-sights-secondary"
                                                 onclick="app.openSightsFolder()">
@@ -670,6 +686,77 @@
                             <i class="ri-alert-line"></i> 一键还原纯净模式 (清空 mod 文件夹并禁用配置文件开关)
                         </button>
                     </div>
+                </div>
+            </div>
+
+            <!-- 分隔區域 -->
+            <div class="settings-section-divider"></div>
+
+            <!-- 語音包庫路徑設置 -->
+            <div class="card" id="library-path-card">
+                <div class="card-header">
+                    <h2>语音包库路径</h2>
+                    <span class="subtitle">Voice Pack Library Location</span>
+                </div>
+                <div class="path-settings-body">
+                    <!-- 待解壓區 -->
+                    <div class="path-field">
+                        <label class="path-label">
+                            <i class="ri-folder-zip-line"></i>
+                            待解压区路径
+                            <span class="path-label-hint">(存放待导入的压缩包)</span>
+                        </label>
+                        <div class="path-input-row">
+                            <div class="path-input-wrapper">
+                                <input type="text" id="pending-dir-input" class="path-input" readonly
+                                    placeholder="使用默认路径">
+                                <button class="path-copy-btn" onclick="app.copyPathToClipboard('pending-dir-input')" title="复制路径">
+                                    <i class="ri-file-copy-line"></i>
+                                </button>
+                            </div>
+                            <button class="btn secondary" onclick="app.browsePendingDir()" title="选择自定义路径">
+                                <i class="ri-folder-add-line"></i>
+                            </button>
+                            <button class="btn secondary" onclick="app.openPendingFolder()" title="打开文件夹">
+                                <i class="ri-folder-open-line"></i>
+                            </button>
+                            <button class="btn secondary" onclick="app.resetPendingDir()" title="重置为默认">
+                                <i class="ri-refresh-line"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 語音包庫 -->
+                    <div class="path-field">
+                        <label class="path-label">
+                            <i class="ri-folder-music-line"></i>
+                            语音包库路径
+                            <span class="path-label-hint">(存放已解压的语音包)</span>
+                        </label>
+                        <div class="path-input-row">
+                            <div class="path-input-wrapper">
+                                <input type="text" id="library-dir-input" class="path-input" readonly
+                                    placeholder="使用默认路径">
+                                <button class="path-copy-btn" onclick="app.copyPathToClipboard('library-dir-input')" title="复制路径">
+                                    <i class="ri-file-copy-line"></i>
+                                </button>
+                            </div>
+                            <button class="btn secondary" onclick="app.browseLibraryDir()" title="选择自定义路径">
+                                <i class="ri-folder-add-line"></i>
+                            </button>
+                            <button class="btn secondary" onclick="app.openLibraryFolder()" title="打开文件夹">
+                                <i class="ri-folder-open-line"></i>
+                            </button>
+                            <button class="btn secondary" onclick="app.resetLibraryDir()" title="重置为默认">
+                                <i class="ri-refresh-line"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <p class="path-hint">
+                        <i class="ri-information-line"></i>
+                        选择自定义路径后将自动保存并立即生效，已存在的文件不会自动迁移
+                    </p>
                 </div>
             </div>
         </div>
