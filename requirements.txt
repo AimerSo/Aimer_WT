@@ -1,3 +1,0 @@
-pywebview
-pyinstaller
-py-splash

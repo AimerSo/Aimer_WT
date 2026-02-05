@@ -1215,6 +1215,7 @@ i[class^="ri-"] {
     line-height: 1.8;
     overflow-y: auto;
     flex: 1;
+    white-space: pre-wrap; /* 关键修复：保留换行符 */
 }
 
 .notice-content strong {

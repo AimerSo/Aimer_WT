@@ -23,7 +23,9 @@ from library_manager import ArchivePasswordCanceled, LibraryManager
 from logger import setup_logger, get_logger, set_ui_callback
 from sights_manager import SightsManager
 from skins_manager import SkinsManager
+from telemetry_manager import init_telemetry, get_hwid
 
+APP_VERSION = "2.1.0"
 AGREEMENT_VERSION = "2026-01-10"
 
 # 资源目录定位：打包环境使用 _MEIPASS，开发环境使用源码目录
@@ -190,12 +192,105 @@ class AppApi:
         self._sights_mgr = SightsManager()
         self._logic = CoreService()
 
+        # 初始化遥测系统
+        tm = init_telemetry(APP_VERSION)
+        tm.set_server_message_callback(self.on_server_message)
+        tm.set_user_command_callback(self.on_user_command)
+        tm.set_log_callback(self.log_from_backend)
+
         self._search_running = False
         self._is_busy = False
         self._password_event = threading.Event()
         self._password_lock = threading.Lock()
         self._password_value = None
         self._password_cancelled = False
+
+        # 遥测消息去重
+        self._last_alert_content = None  # 紧急通知 (弹窗)
+        self._last_notice_content = None  # 公告栏 (左下角的)
+        self._last_update_content = None  # 更新提示
+        self._last_maintenance_status = None  # 维护模式
+        self._last_announce_content = None  # 兼容以前的 key (可选)
+
+    def on_server_message(self, config: dict):
+        """处理服务端下发的系统消息（公告/更新/维护）"""
+        if not self._window:
+            return
+
+        def safe_js_call(func_name, *args):
+            # 将参数序列化为 JSON 字符串，确保特殊字符（引号、换行）被正确转义
+            js_args = ", ".join([json.dumps(arg, ensure_ascii=False) for arg in args])
+            return f"if(window.app && app.{func_name}) app.{func_name}({js_args})"
+
+        try:
+            # 1. 维护模式处理 (状态发生变化时才提示)
+            is_maint = config.get("maintenance", False)
+            maint_msg = config.get("maintenance_msg", "")
+            maint_key = f"{is_maint}:{maint_msg}"
+
+            if is_maint and (self._last_maintenance_status != maint_key):
+                self.log_from_backend(f"[SYS] ⚠️ 维护模式已开启: {maint_msg}", "WARN")
+                self._window.evaluate_js(safe_js_call("showWarnToast", "维护模式已开启", maint_msg, 8000))
+
+            self._last_maintenance_status = maint_key
+
+            # 2. 紧急通知弹窗 (Alert - 内容变化时才提示)
+            if config.get("alert_active"):
+                title = config.get("alert_title", "系统通知")
+                content = config.get("alert_content", "")
+                full_alert_key = f"{title}|{content}"
+
+                if content and (self._last_alert_content != full_alert_key):
+                    self.log_from_backend(f"[通知] {title}", "SUCCESS")
+                    self._window.evaluate_js(safe_js_call("showAlert", title, content, "info"))
+                    self._last_alert_content = full_alert_key
+
+            # 3. 公告栏常驻内容 (Notice - 发现有效内容则覆盖首页公告)
+            if config.get("notice_active"):
+                notice_content = config.get("notice_content", "")
+                if notice_content and (self._last_notice_content != notice_content):
+                    self._window.evaluate_js(safe_js_call("updateNoticeBar", notice_content))
+                    self._last_notice_content = notice_content
+
+            # 4. 更新提示 (内容变化时才提示)
+            if config.get("update_active"):
+                content = config.get("update_content", "")
+                update_url = config.get("update_url", "")
+
+                update_key = f"{content}|{update_url}"
+                if content and (self._last_update_content != update_key):
+                    self.log_from_backend(f"[更新] {content}", "INFO")
+                    self._window.evaluate_js(safe_js_call("showAlert", "发现新版本", content, "success", update_url))
+                    self._last_update_content = update_key
+
+        except Exception as e:
+            print(f"消息处理异常: {e}")
+
+    def on_user_command(self, cmd_json: str):
+        """处理针对当前用户的特定指令驱动"""
+        if not self._window:
+            return
+
+        import json
+        try:
+            cmd = json.loads(cmd_json)
+            cmd_type = cmd.get("type")
+            msg = cmd.get("message", "")
+
+            # 序列化辅助
+            def safe_js_call(func_name, *args):
+                js_args = ", ".join([json.dumps(arg, ensure_ascii=False) for arg in args])
+                return f"if(window.app && app.{func_name}) app.{func_name}({js_args})"
+
+            if cmd_type == "popup":
+                self.log_from_backend("[CMD] 收到远程强制弹窗", "INFO")
+                self._window.evaluate_js(safe_js_call("showAlert", "系统通知", msg, "info"))
+            elif cmd_type == "toast":
+                self.log_from_backend(f"[CMD] 收到远程提示: {msg}", "INFO")
+                self._window.evaluate_js(safe_js_call("showWarnToast", "管理员消息", msg, 5000))
+
+        except Exception as e:
+            print(f"专用指令解析异常: {e}")
 
     def set_window(self, window):
         # 绑定 PyWebview Window 实例到桥接层，供后续 API 调用使用。
@@ -346,7 +441,8 @@ class AppApi:
             "theme": theme,
             "active_theme": self._cfg_mgr.get_active_theme(),
             "installed_mods": self._logic.get_installed_mods(),
-            "sights_path": sights_path
+            "sights_path": sights_path,
+            "hwid": get_hwid()
         }
 
     def save_theme_selection(self, filename):
@@ -509,6 +605,35 @@ class AppApi:
                 log.error(f"打开 UserSkins 失败: {e}")
 
         # 未列入允许名单的 folder_type 不执行任何操作
+
+    def open_external(self, url):
+        """
+        功能定位:
+        - 在系统默认浏览器中打开指定的 URL。
+
+        输入输出:
+        - 参数:
+          - url: str，要打开的链接。
+        - 返回: None
+        - 外部资源/依赖: os.startfile 或 webbrowser
+
+        实现逻辑:
+        - 校验协议，若无则补充 https://。
+        - 使用 os.startfile (Windows) 打开连接。
+        """
+        if not url:
+            return
+
+        import re
+        u = str(url).strip()
+        if not re.match(r'^[a-zA-Z]+://', u):
+            u = "https://" + u
+
+        try:
+            import os
+            os.startfile(u)
+        except Exception as e:
+            self.log_from_backend(f"[ERROR] 无法打开链接: {e}")
 
     # --- 辅助方法 ---
     def update_loading_ui(self, progress, message):
@@ -939,7 +1064,7 @@ class AppApi:
             library_dir = Path(self._lib_mgr.library_dir).resolve()
             target = (library_dir / str(mod_name)).resolve()
             if os.path.commonpath([str(target), str(library_dir)]) != str(
-                library_dir
+                    library_dir
             ) or str(target) == str(library_dir):
                 raise Exception("非法路径")
             shutil.rmtree(target)
@@ -1040,7 +1165,6 @@ class AppApi:
             return []
 
         theme_list = []
-        # 遍历 json 文件
         for file in themes_dir.glob("*.json"):
             try:
                 data = self._load_json_with_fallback(file)
@@ -1499,6 +1623,7 @@ def main() -> int:
     # 绑定窗口对象到桥接层
     api.set_window(window)
 
+
     def _bind_drag_drop(win):
         # 绑定拖拽投放事件，用于在特定页面接收文件拖入并触发导入流程。
         try:
@@ -1549,6 +1674,7 @@ def main() -> int:
         except Exception:
             log.debug("绑定拖放事件失败", exc_info=True)
             return
+
 
     def _on_start(win):
         try:
