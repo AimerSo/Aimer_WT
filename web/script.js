@@ -1217,7 +1217,7 @@ const app = {
     },
 
     // 自定义提示弹窗（替代原生 alert）
-    showAlert(title, message, iconType = 'info', linkUrl = null) {
+    showAlert(title, message, iconType = 'info') {
         const modal = document.getElementById('modal-alert');
         if (!modal) {
             console.error('modal-alert not found, falling back to native alert');
@@ -1228,21 +1228,9 @@ const app = {
         const titleEl = document.getElementById('alert-title');
         const msgEl = document.getElementById('alert-message');
         const iconEl = document.getElementById('alert-icon');
-        const linkBtn = document.getElementById('alert-link-btn');
 
         if (titleEl) titleEl.textContent = title || '提示';
         if (msgEl) msgEl.textContent = message || '';
-
-        // 处理跳转链接按钮
-        if (linkBtn) {
-            if (linkUrl) {
-                linkBtn.style.display = 'flex';
-                linkBtn.dataset.url = linkUrl;
-            } else {
-                linkBtn.style.display = 'none';
-                linkBtn.dataset.url = '';
-            }
-        }
 
         // 根据类型设置图标
         if (iconEl) {
@@ -1263,14 +1251,6 @@ const app = {
 
         modal.classList.remove('hiding');
         modal.classList.add('show');
-    },
-
-    // 动态更新首页公告栏文字
-    updateNoticeBar(contentHtml) {
-        const container = document.querySelector('.notice-content');
-        if (container && contentHtml) {
-            container.innerHTML = contentHtml;
-        }
     },
 
     recoverToSafeState(reason) {
@@ -1839,17 +1819,11 @@ const app = {
     openExternal(url) {
         const u = String(url || '').trim();
         if (!u) return;
-
-        // 优先使用后端 API 以在外部浏览器打开，并处理协议头
-        if (window.pywebview?.api?.open_external) {
-            pywebview.api.open_external(u);
-        } else {
-            // 降级方案
-            let finalUrl = u;
-            if (!finalUrl.match(/^[a-zA-Z]+:\/\//)) {
-                finalUrl = 'https://' + finalUrl;
-            }
-            window.open(finalUrl, '_blank', 'noopener');
+        try {
+            window.open(u, '_blank', 'noopener');
+        } catch (e) {
+            console.error(e);
+            this.showAlert('错误', '打开链接失败', 'error');
         }
     },
 
