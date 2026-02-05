@@ -154,11 +154,6 @@ const app = {
     },
 
     async onThemeChange(filename) {
-        if (filename === 'default.json') {
-            this.resetTheme();
-            pywebview.api.save_theme_selection("default.json");
-            return;
-        }
         const themeData = await pywebview.api.load_theme_content(filename);
         if (themeData && (themeData.colors || themeData.light || themeData.dark)) {
             this.applyThemeData(themeData);
@@ -166,72 +161,20 @@ const app = {
         } else {
             app.showAlert("错误", "主题文件损坏或格式错误！");
             document.getElementById('theme-select').value = "default.json";
-            this.resetTheme();
+            // 尝试载入预设主题
+            const defaultTheme = await pywebview.api.load_theme_content("default.json");
+            if (defaultTheme) {
+                this.applyThemeData(defaultTheme);
+            } else {
+                this.resetTheme();
+            }
         }
     },
 
-    // 初始化
+    // 初始化 - 此函数会被下方的 app.init 复盖，保留此处仅为结构完整性
+    // 实际初始化逻辑请见文件末尾的 app.init = async function() {...}
     async init() {
-        console.log("App initializing...");
-        this.recoverToSafeState('init');
-
-        if (!this._safetyHandlersInstalled) {
-            this._safetyHandlersInstalled = true;
-
-            window.addEventListener('error', () => this.recoverToSafeState('error'));
-            window.addEventListener('unhandledrejection', () => this.recoverToSafeState('unhandledrejection'));
-            document.addEventListener('keydown', (e) => {
-                if (e.key !== 'Escape') return;
-                const openModal = document.querySelector('.modal-overlay.show');
-                if (openModal && openModal.id) app.closeModal(openModal.id);
-            });
-        }
-
-        // 移除开局强制应用默认主题的逻辑，直接使用 CSS 默认值
-        // 这样可以避免内联样式覆盖 CSS 的深色模式定义
-
-        // 监听 pywebview 准备就绪
-        window.addEventListener('pywebviewready', async () => {
-            console.log("PyWebview ready!");
-            // 获取初始状态
-            const state = await pywebview.api.init_app_state();
-            this.updatePathUI(state.game_path, state.path_valid);
-
-            // 加载主题列表并应用上次的选择
-            await this.loadThemeList();
-            if (state.active_theme && state.active_theme !== 'default.json') {
-                const select = document.getElementById('theme-select');
-                if (select) select.value = state.active_theme;
-
-                // 加载内容
-                const themeData = await pywebview.api.load_theme_content(state.active_theme);
-                if (themeData && themeData.colors) {
-                    this.applyTheme(themeData.colors);
-                }
-            }
-
-            const themeBtn = document.getElementById('btn-theme');
-            if (state.theme === 'Light') {
-                document.documentElement.setAttribute('data-theme', 'light');
-                themeBtn.innerHTML = '<i class="ri-moon-line"></i>';
-            } else {
-                document.documentElement.setAttribute('data-theme', 'dark');
-                themeBtn.innerHTML = '<i class="ri-sun-line"></i>';
-            }
-
-            // 绑定快捷键
-            document.addEventListener('keydown', this.handleShortcuts.bind(this));
-
-            // --- 新增：设置页面卡片悬停时禁用全局拖拽，防止干扰交互 ---
-            document.querySelectorAll('#page-settings .card').forEach(card => {
-                card.addEventListener('mouseenter', () => {
-                    document.body.classList.add('drag-disabled');
-                });
-                card.addEventListener('mouseleave', () => {
-                    document.body.classList.remove('drag-disabled');
-                });
-            });
-        });
+        // 此方法将被复盖，不需要实现
     },
 
     // --- 页面切换 ---
@@ -1435,17 +1378,38 @@ const app = {
     },
 
     async browsePath() {
-        const res = await pywebview.api.browse_folder();
-        if (res) {
-            this.updatePathUI(res.path, res.valid);
+        if (!window.pywebview?.api?.browse_folder) {
+            console.error('API not ready: browse_folder');
+            this.showAlert('错误', '后端连接未就绪，请稍候再试或重启程序', 'error');
+            return;
+        }
+        try {
+            const res = await pywebview.api.browse_folder();
+            if (res) {
+                this.updatePathUI(res.path, res.valid);
+            }
+        } catch (e) {
+            console.error('browsePath failed:', e);
+            this.showAlert('错误', '选择路径失败: ' + e.message, 'error');
         }
     },
 
     autoSearch() {
+        if (!window.pywebview?.api?.start_auto_search) {
+            console.error('API not ready: start_auto_search');
+            this.showAlert('错误', '后端连接未就绪，请稍候再试或重启程序', 'error');
+            return;
+        }
         document.getElementById('btn-auto-search').disabled = true;
         document.getElementById('status-text').textContent = '搜索中...';
         document.getElementById('status-icon').textContent = '⏳';
-        pywebview.api.start_auto_search();
+        try {
+            pywebview.api.start_auto_search();
+        } catch (e) {
+            console.error('autoSearch failed:', e);
+            document.getElementById('btn-auto-search').disabled = false;
+            this.showAlert('错误', '启动搜索失败: ' + e.message, 'error');
+        }
     },
 
     // 被 Python 调用的回调
@@ -1492,7 +1456,9 @@ const app = {
 
     clearLogs() {
         document.getElementById('log-container').innerHTML = '';
-        pywebview.api.clear_logs();
+        if (window.pywebview?.api?.clear_logs) {
+            pywebview.api.clear_logs();
+        }
     },
 
     // --- 语音包库逻辑 ---
@@ -1502,24 +1468,46 @@ const app = {
         if (this._libraryRefreshing) return;
         const isManual = !!(opts && opts.manual);
         if (!isManual && this._libraryLoaded) return;
+        
+        // 检查 API 是否就绪
+        if (!window.pywebview?.api?.get_library_list) {
+            console.warn('refreshLibrary: API not ready, will retry later');
+            // 短暂延迟后重试
+            setTimeout(() => {
+                this._libraryRefreshing = false;
+                this.refreshLibrary(opts);
+            }, 1000);
+            return;
+        }
+        
         this._libraryRefreshing = true;
 
         listContainer.classList.add('fade-out');
         await new Promise(r => setTimeout(r, 200));
 
-        const mods = await pywebview.api.get_library_list({ force_refresh: isManual });
-        app.modCache = mods;
+        try {
+            const mods = await pywebview.api.get_library_list({ force_refresh: isManual });
+            app.modCache = mods;
+            this.renderList(mods);
+        } catch (e) {
+            console.error('refreshLibrary failed:', e);
+            listContainer.innerHTML = `
+                <div class="empty-state">
+                    <i class="ri-error-warning-line"></i>
+                    <h3>加载失败</h3>
+                    <p>请检查后端连接状态: ${e.message}</p>
+                </div>
+            `;
+        } finally {
+            requestAnimationFrame(() => {
+                listContainer.classList.remove('fade-out');
+            });
 
-        this.renderList(mods);
-
-        requestAnimationFrame(() => {
-            listContainer.classList.remove('fade-out');
-        });
-
-        const searchInput = document.querySelector('.search-input');
-        if (searchInput) searchInput.value = '';
-        this._libraryLoaded = true;
-        this._libraryRefreshing = false;
+            const searchInput = document.querySelector('.search-input');
+            if (searchInput) searchInput.value = '';
+            this._libraryLoaded = true;
+            this._libraryRefreshing = false;
+        }
     },
 
     renderList(modsToRender) {
@@ -2085,7 +2073,7 @@ document.getElementById('btn-confirm-install').onclick = async function () {
         if (conflicts && conflicts.length > 0) {
             // 构建冲突提示信息
             const conflictCount = conflicts.length;
-            let msg = `检测到 <strong>${conflictCount}</strong> 个文件冲突，继续安装将覆盖现有文件。<br><br>`;
+            let msg = `检测到 <strong>${conflictCount}</strong> 个文件冲突，继续安装将复盖现有文件。<br><br>`;
             msg += `<div style="max-height:100px;overflow-y:auto;background:rgba(0,0,0,0.05);padding:8px;border-radius:4px;font-size:12px;">`;
 
             // 只显示前 5 个
@@ -2257,12 +2245,14 @@ app.handleShortcuts = function (e) {
 };
 
 // 启动 (稍作修改: init 里面调用 checkDisclaimer)
-app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisclaimer，或者修改之前的 init
-    // 但由于之前的 init 已经被定义了（虽然是同一个文件里的对象方法，但为了确保正确插入）
-    // 我们这里直接修改原有的 init 函数体比较好。由于工具限制，我们重写一下 init_app_state 之后的回调部分。
-    // 其实更好的办法是在 pywebviewready 监听器里直接调用。
+app.init = async function () {
+    // 防止重複初始化
+    if (this._initStarted) {
+        console.log("App init already started, skipping...");
+        return;
+    }
+    this._initStarted = true;
 
-    // 复用之前的 init 逻辑，但这里为了方便，我们直接把之前的 init 逻辑 copy 过来并加上 disclaimer
     console.log("App initializing...");
     this.recoverToSafeState('init');
     this.initToasts();
@@ -2282,9 +2272,15 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
         });
     }
 
-    // 监听 pywebview 准备就绪
-    window.addEventListener('pywebviewready', async () => {
-        console.log("PyWebview ready!");
+    // 核心初始化逻辑，抽取为独立函数以便重用
+    const doInit = async () => {
+        // 防止重複执行核心初始化
+        if (this._coreInitDone) {
+            console.log("Core init already done, skipping...");
+            return;
+        }
+        this._coreInitDone = true;
+        console.log("PyWebview ready, starting core init...");
 
         this._setupModalDragLock();
 
@@ -2327,14 +2323,21 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
 
         // 加载主题列表并应用上次的选择
         await this.loadThemeList();
-        if (state.active_theme && state.active_theme !== 'default.json') {
-            const select = document.getElementById('theme-select');
-            if (select) select.value = state.active_theme;
+        const activeTheme = state.active_theme || 'default.json';
+        const select = document.getElementById('theme-select');
+        if (select) select.value = activeTheme;
 
-            const themeData = await pywebview.api.load_theme_content(state.active_theme);
-            if (themeData && (themeData.colors || themeData.light || themeData.dark)) {
-                this.applyThemeData(themeData);
-            }
+        // 加载主题内容（包括 default.json）
+        const themeData = await pywebview.api.load_theme_content(activeTheme);
+        if (themeData && (themeData.colors || themeData.light || themeData.dark)) {
+            this.applyThemeData(themeData);
+        }
+
+        // 加载语音包库路径信息（设置页显示用）
+        try {
+            await this.loadLibraryPathInfo();
+        } catch (e) {
+            console.error('loadLibraryPathInfo failed:', e);
         }
 
         // 绑定快捷键
@@ -2359,6 +2362,32 @@ app.init = async function () { // 覆盖之前的 init 实现以插入 checkDisc
             telSwitch.checked = !!state.telemetry_enabled;
         }
     });
+    };
+
+    // 防止重複註册 pywebviewready 监听器
+    if (!this._pywebviewReadyListenerAdded) {
+        this._pywebviewReadyListenerAdded = true;
+        window.addEventListener('pywebviewready', doInit);
+    }
+
+    // 备用机制：如果 pywebview 已经就绪但事件没有触发（例如快取问题）
+    // 则在短暂延迟后手动检查并初始化
+    setTimeout(() => {
+        if (window.pywebview && window.pywebview.api && !this._coreInitDone) {
+            console.log("PyWebview API detected but event not fired, triggering manual init...");
+            doInit();
+        }
+    }, 500);
+
+    // 额外的备用机制：更长的超时确保初始化
+    setTimeout(() => {
+        if (window.pywebview && window.pywebview.api && !this._coreInitDone) {
+            console.log("PyWebview API detected (late check), triggering manual init...");
+            doInit();
+        } else if (!this._coreInitDone) {
+            console.warn("PyWebview API still not available after timeout, UI may not be fully functional.");
+        }
+    }, 2000);
 };
 
 app.init();
@@ -2393,6 +2422,7 @@ app.switchResourceView = function (target) {
 // ===========================
 
 app.sightsPath = null;
+app._sightsUidList = [];
 
 app.loadSightsView = function () {
     const primaryBtn = document.getElementById('btn-sights-primary');
@@ -2401,9 +2431,12 @@ app.loadSightsView = function () {
     const secondaryBtn = document.getElementById('btn-sights-secondary');
     const secondaryText = secondaryBtn ? secondaryBtn.querySelector('span') : null;
 
+    // 自动搜索 UID 列表
+    this.refreshSightsUidList();
+
     if (this.sightsPath) {
         if (primaryBtn) primaryBtn.onclick = () => app.selectSightsPath();
-        if (primaryText) primaryText.textContent = '更改炮镜路径';
+        if (primaryText) primaryText.textContent = '手动选择路径';
         if (primaryIcon) primaryIcon.className = 'ri-folder-open-line';
 
         if (secondaryBtn) secondaryBtn.disabled = false;
@@ -2422,11 +2455,70 @@ app.loadSightsView = function () {
 
     this._sightsLoaded = false;
     if (primaryBtn) primaryBtn.onclick = () => app.selectSightsPath();
-    if (primaryText) primaryText.textContent = '设置炮镜路径';
+    if (primaryText) primaryText.textContent = '手动选择路径';
     if (primaryIcon) primaryIcon.className = 'ri-folder-open-line';
 
     if (secondaryBtn) secondaryBtn.disabled = true;
     if (secondaryText) secondaryText.textContent = '打开 UserSights';
+};
+
+// 刷新 UID 列表
+app.refreshSightsUidList = async function () {
+    const select = document.getElementById('sights-uid-select');
+    if (!select) return;
+
+    if (!window.pywebview?.api?.discover_usersights_paths) {
+        select.innerHTML = '<option value="">-- API 未就绪 --</option>';
+        return;
+    }
+
+    try {
+        select.innerHTML = '<option value="">-- 搜索中... --</option>';
+        const paths = await pywebview.api.discover_usersights_paths();
+        this._sightsUidList = paths || [];
+
+        if (this._sightsUidList.length === 0) {
+            select.innerHTML = '<option value="">-- 未找到 UID --</option>';
+            return;
+        }
+
+        // 构建选项
+        let html = '<option value="">-- 选择 UID --</option>';
+        for (const item of this._sightsUidList) {
+            const status = item.exists ? '✓' : '(新建)';
+            const selected = this.sightsPath && this.sightsPath.includes(item.uid) ? 'selected' : '';
+            html += `<option value="${item.uid}" ${selected}>${item.uid} ${status}</option>`;
+        }
+        select.innerHTML = html;
+    } catch (e) {
+        console.error('刷新 UID 列表失败:', e);
+        select.innerHTML = '<option value="">-- 搜索失败 --</option>';
+    }
+};
+
+// UID 选择变更事件
+app.onSightsUidChange = async function (uid) {
+    if (!uid) return;
+
+    if (!window.pywebview?.api?.select_uid_sights_path) {
+        this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
+        return;
+    }
+
+    try {
+        const result = await pywebview.api.select_uid_sights_path(uid);
+        if (result && result.success) {
+            this.sightsPath = result.path;
+            this._sightsLoaded = false;
+            this.loadSightsView();
+            this.showInfoToast('已设置', `UID ${uid} 的炮镜路径已设置`);
+        } else {
+            this.showAlert('错误', result?.error || '设置失败', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        this.showAlert('错误', '选择 UID 失败: ' + e.message, 'error');
+    }
 };
 
 app.selectSightsPath = async function () {
@@ -2554,4 +2646,328 @@ app.refreshSights = async function (opts) {
             refreshBtn.classList.remove('is-loading');
         }
     }
+};
+
+// --- 语音包库路径管理 ---
+app.loadLibraryPathInfo = async function () {
+    const pendingInput = document.getElementById('pending-dir-input');
+    const libraryInput = document.getElementById('library-dir-input');
+    
+    // 检查 API 是否可用
+    if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_library_path_info !== 'function') {
+        console.warn('loadLibraryPathInfo: API not ready');
+        if (pendingInput) pendingInput.placeholder = '等待后端连接...';
+        if (libraryInput) libraryInput.placeholder = '等待后端连接...';
+        return;
+    }
+
+    try {
+        console.log('loadLibraryPathInfo: calling API...');
+        const info = await pywebview.api.get_library_path_info();
+        console.log('loadLibraryPathInfo: got info', info);
+        
+        if (pendingInput && info) {
+            if (info.custom_pending_dir) {
+                pendingInput.value = info.custom_pending_dir;
+                pendingInput.title = info.custom_pending_dir;
+            } else {
+                pendingInput.value = '';
+                pendingInput.placeholder = info.default_pending_dir || '使用默认路径';
+                pendingInput.title = info.default_pending_dir || '';
+            }
+        }
+        if (libraryInput && info) {
+            if (info.custom_library_dir) {
+                libraryInput.value = info.custom_library_dir;
+                libraryInput.title = info.custom_library_dir;
+            } else {
+                libraryInput.value = '';
+                libraryInput.placeholder = info.default_library_dir || '使用默认路径';
+                libraryInput.title = info.default_library_dir || '';
+            }
+        }
+    } catch (e) {
+        console.error('加载语音包库路径信息失败:', e);
+        if (pendingInput) pendingInput.placeholder = '加载失败';
+        if (libraryInput) libraryInput.placeholder = '加载失败';
+    }
+};
+
+app.browsePendingDir = async function () {
+    if (!window.pywebview?.api?.select_pending_dir) {
+        this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
+        return;
+    }
+
+    try {
+        const result = await pywebview.api.select_pending_dir();
+        if (result && result.success && result.path) {
+            const input = document.getElementById('pending-dir-input');
+            if (input) {
+                input.value = result.path;
+                input.title = result.path;
+            }
+            await this.saveLibraryPaths();
+        }
+    } catch (e) {
+        console.error(e);
+        this.showAlert('错误', '选择路径失败: ' + e.message, 'error');
+    }
+};
+
+app.browseLibraryDir = async function () {
+    if (!window.pywebview?.api?.select_library_dir) {
+        this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
+        return;
+    }
+
+    try {
+        const result = await pywebview.api.select_library_dir();
+        if (result && result.success && result.path) {
+            const input = document.getElementById('library-dir-input');
+            if (input) {
+                input.value = result.path;
+                input.title = result.path;
+            }
+            await this.saveLibraryPaths();
+        }
+    } catch (e) {
+        console.error(e);
+        this.showAlert('错误', '选择路径失败: ' + e.message, 'error');
+    }
+};
+
+app.openPendingFolder = async function () {
+    if (!window.pywebview?.api?.open_pending_folder) {
+        this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
+        return;
+    }
+
+    try {
+        await pywebview.api.open_pending_folder();
+    } catch (e) {
+        console.error(e);
+        this.showAlert('错误', '打开文件夹失败: ' + e.message, 'error');
+    }
+};
+
+app.openLibraryFolder = async function () {
+    if (!window.pywebview?.api?.open_library_folder) {
+        this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
+        return;
+    }
+
+    try {
+        await pywebview.api.open_library_folder();
+    } catch (e) {
+        console.error(e);
+        this.showAlert('错误', '打开文件夹失败: ' + e.message, 'error');
+    }
+};
+
+app.saveLibraryPaths = async function () {
+    if (!window.pywebview?.api?.save_pending_dir || !window.pywebview?.api?.save_library_dir) {
+        this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
+        return;
+    }
+
+    const pendingInput = document.getElementById('pending-dir-input');
+    const libraryInput = document.getElementById('library-dir-input');
+    const pendingDir = pendingInput ? pendingInput.value.trim() : null;
+    const libraryDir = libraryInput ? libraryInput.value.trim() : null;
+
+    try {
+        const pendingRes = await pywebview.api.save_pending_dir(pendingDir);
+        if (!pendingRes || !pendingRes.success) {
+            this.showErrorToast('保存失败', pendingRes?.msg || '保存失败');
+            return;
+        }
+
+        const libraryRes = await pywebview.api.save_library_dir(libraryDir);
+        if (!libraryRes || !libraryRes.success) {
+            this.showErrorToast('保存失败', libraryRes?.msg || '保存失败');
+            return;
+        }
+
+        this.showInfoToast('已保存', '路径设置已保存');
+        // 重新加载路径信息以更新 placeholder
+        await this.loadLibraryPathInfo();
+        // 刷新语音包库列表
+        if (typeof this.refreshLibrary === 'function') {
+            this.refreshLibrary();
+        }
+    } catch (e) {
+        console.error(e);
+        this.showErrorToast('保存失败', '保存失败: ' + e.message);
+    }
+};
+
+app.resetLibraryPaths = async function () {
+    if (!window.pywebview?.api?.save_pending_dir || !window.pywebview?.api?.save_library_dir) {
+        this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
+        return;
+    }
+
+    // 确认重置
+    const confirmed = await this.showConfirmDialog(
+        '重置路径',
+        '确定要将待解压区和语音包库路径重置为默认值吗？'
+    );
+    if (!confirmed) return;
+
+    try {
+        const pendingRes = await pywebview.api.save_pending_dir('');
+        if (!pendingRes || !pendingRes.success) {
+            this.showErrorToast('重置失败', pendingRes?.msg || '重置失败');
+            return;
+        }
+
+        const libraryRes = await pywebview.api.save_library_dir('');
+        if (!libraryRes || !libraryRes.success) {
+            this.showErrorToast('重置失败', libraryRes?.msg || '重置失败');
+            return;
+        }
+
+        // 清空输入框
+        const pendingInput = document.getElementById('pending-dir-input');
+        const libraryInput = document.getElementById('library-dir-input');
+        if (pendingInput) pendingInput.value = '';
+        if (libraryInput) libraryInput.value = '';
+        
+        this.showInfoToast('已重置', '路径已重置为默认值');
+        // 重新加载以更新 placeholder
+        await this.loadLibraryPathInfo();
+        // 刷新语音包库列表
+        if (typeof this.refreshLibrary === 'function') {
+            this.refreshLibrary();
+        }
+    } catch (e) {
+        console.error(e);
+        this.showErrorToast('重置失败', '重置失败: ' + e.message);
+    }
+};
+
+// 複製路径到剪贴板
+app.copyPathToClipboard = async function (inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    const path = input.value || input.placeholder;
+    if (!path || path === '使用默认路径' || path === '等待后端连接...') {
+        this.showInfoToast('提示', '没有可复制的路径');
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(path);
+        
+        // 显示複製成功的视觉反馈
+        const btn = input.parentElement.querySelector('.path-copy-btn');
+        if (btn) {
+            btn.classList.add('copied');
+            setTimeout(() => btn.classList.remove('copied'), 1500);
+        }
+        
+        this.showInfoToast('已复制', '路径已复制到剪贴板');
+    } catch (e) {
+        console.error('复制失败:', e);
+        this.showErrorToast('复制失败', '无法访问剪贴板');
+    }
+};
+
+// 单独重置待解压区路径
+app.resetPendingDir = async function () {
+    if (!window.pywebview?.api?.save_pending_dir) {
+        this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
+        return;
+    }
+
+    try {
+        // 将待解压区路径设为空（重置为预设）
+        const result = await pywebview.api.save_pending_dir('');
+        if (result && result.success) {
+            const pendingInput = document.getElementById('pending-dir-input');
+            if (pendingInput) {
+                pendingInput.value = '';
+            }
+            this.showInfoToast('已重置', '待解压区路径已重置为默认值');
+            await this.loadLibraryPathInfo();
+            if (typeof this.refreshLibrary === 'function') {
+                this.refreshLibrary();
+            }
+        } else {
+            this.showErrorToast('重置失败', result.msg || '重置失败');
+        }
+    } catch (e) {
+        console.error(e);
+        this.showErrorToast('重置失败', '重置失败: ' + e.message);
+    }
+};
+
+// 单独重置语音包库路径
+app.resetLibraryDir = async function () {
+    if (!window.pywebview?.api?.save_library_dir) {
+        this.showAlert('错误', '功能未就绪，请检查后端连接', 'error');
+        return;
+    }
+
+    try {
+        // 将语音包库路径设为空（重置为预设）
+        const result = await pywebview.api.save_library_dir('');
+        if (result && result.success) {
+            const libraryInput = document.getElementById('library-dir-input');
+            if (libraryInput) {
+                libraryInput.value = '';
+            }
+            this.showInfoToast('已重置', '语音包库路径已重置为默认值');
+            await this.loadLibraryPathInfo();
+            if (typeof this.refreshLibrary === 'function') {
+                this.refreshLibrary();
+            }
+        } else {
+            this.showErrorToast('重置失败', result.msg || '重置失败');
+        }
+    } catch (e) {
+        console.error(e);
+        this.showErrorToast('重置失败', '重置失败: ' + e.message);
+    }
+};
+
+// 辅助方法：显示确认对话框
+app.showConfirmDialog = function (title, message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('modal-confirm');
+        const titleEl = document.getElementById('confirm-title');
+        const msgEl = document.getElementById('confirm-message');
+        const cancelBtn = document.getElementById('btn-confirm-cancel');
+        const okBtn = document.getElementById('btn-confirm-ok');
+        
+        if (!modal || !titleEl || !msgEl) {
+            resolve(false);
+            return;
+        }
+        
+        titleEl.textContent = title;
+        msgEl.innerHTML = message;
+        okBtn.innerHTML = '<i class="ri-check-line"></i> 确认';
+        okBtn.className = 'btn primary';
+        
+        const cleanup = () => {
+            modal.classList.remove('show');
+            cancelBtn.onclick = null;
+            okBtn.onclick = null;
+        };
+        
+        cancelBtn.onclick = () => {
+            cleanup();
+            resolve(false);
+        };
+        
+        okBtn.onclick = () => {
+            cleanup();
+            resolve(true);
+        };
+        
+        modal.classList.add('show');
+    });
 };

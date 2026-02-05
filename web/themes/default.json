@@ -24,6 +24,16 @@
         "--status-error": "#EF4444",
         "--status-icon-def": "#E2E8F0",
         
+        "--log-info": "#0EA5E9",
+        "--log-success": "#10B981",
+        "--log-error": "#EF4444",
+        "--log-warn": "#F59E0B",
+        "--log-sys": "#9CA3AF",
+        "--log-scan": "#FF9900",
+        "--bg-log": "#FFFFff",
+        "--text-log": "#374151",
+        "--border-log": "#E2E8F0",
+        
         "--mod-card-title": "#2C3E50",
         "--mod-ver-bg": "rgba(255,153,0,0.1)",
         "--mod-ver-text": "#FF9900",
@@ -45,5 +55,57 @@
         "--tag-air-bg": "#F3F4F6", "--tag-air-text": "#4B5563",
         "--tag-naval-bg": "#E0F2FE", "--tag-naval-text": "#0284C7",
         "--tag-radio-bg": "#FEF9C3", "--tag-radio-text": "#CA8A04"
+    },
+    "dark": {
+        "--primary": "#FF9900",
+        "--primary-hover": "#FFB340",
+        "--bg-body": "#1a1a1a",
+        "--bg-card": "#252525",
+        "--text-main": "#e5e7eb",
+        "--text-sec": "#9ca3af",
+        "--border-color": "#333333",
+        
+        "--nav-bg": "#252525",
+        "--nav-item-text": "#9ca3af",
+        "--nav-item-hover-bg": "rgba(255, 255, 255, 0.1)",
+        "--nav-item-active": "#FF9900",
+        "--nav-item-active-bg": "rgba(255, 153, 0, 0.15)",
+        
+        "--status-waiting": "#FBBF24",
+        "--status-success": "#34D399",
+        "--status-error": "#F87171",
+        "--status-icon-def": "#444444",
+        
+        "--mod-card-title": "#e5e7eb",
+        "--mod-ver-bg": "rgba(255,153,0,0.2)",
+        "--mod-ver-text": "#FF9900",
+        "--mod-author-text": "#9ca3af",
+        
+        "--action-trash": "#9ca3af",
+        "--action-trash-hover": "#F87171",
+        "--action-refresh": "#e5e7eb",
+        "--action-refresh-bg": "#FF9900",
+
+        "--link-bili-normal": "#38BDF8",
+        "--link-bili-hover": "#e5e7eb",
+        "--link-wt-normal": "#9ca3af",
+        "--link-wt-hover": "#e5e7eb",
+        "--link-vid-normal": "#F87171",
+        "--link-vid-hover": "#e5e7eb",
+        
+        "--tag-tank-bg": "#1a3320", "--tag-tank-text": "#4ade80",
+        "--tag-air-bg": "#2a2a2a", "--tag-air-text": "#9ca3af",
+        "--tag-naval-bg": "#1e293b", "--tag-naval-text": "#38bdf8",
+        "--tag-radio-bg": "#422006", "--tag-radio-text": "#facc15",
+        
+        "--log-info": "#38BDF8",
+        "--log-success": "#34D399",
+        "--log-error": "#F87171",
+        "--log-warn": "#FBBF24",
+        "--log-sys": "#6B7280",
+        "--log-scan": "#FF9900",
+        "--bg-log": "#1e1e1e",
+        "--text-log": "#e5e7eb",
+        "--border-log": "#333333"
     }
 }

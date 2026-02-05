@@ -1,0 +1,104 @@
+name: Build
+
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows amd64
+          - os: windows-latest
+            arch: amd64
+            python-arch: x64
+          # Windows arm64
+          - os: windows-11-arm
+            arch: arm64
+            python-arch: arm64
+          # Linux amd64
+          - os: ubuntu-latest
+            arch: amd64
+            python-arch: x64
+          # Linux arm64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            python-arch: arm64
+          # macOS amd64 (Intel)
+          - os: macos-15-intel
+            arch: amd64
+            python-arch: x64
+          # macOS arm64 (Apple Silicon)
+          - os: macos-latest
+            arch: arm64
+            python-arch: arm64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        architecture: ${{ matrix.python-arch }}
+
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+
+    - name: Install macOS dependencies
+      if: runner.os == 'macOS'
+      run: |
+        brew install gtk+3 gobject-introspection pygobject3
+        # 設置 PKG_CONFIG_PATH 以便找到 GTK 相關庫
+        echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix)/share/pkgconfig" >> $GITHUB_ENV
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Build
+      env:
+        PYTHONIOENCODING: utf-8
+        REPORT_URL: ${{ secrets.REPORT_URL }}
+        TELEMETRY_SALT: ${{ secrets.TELEMETRY_SALT }}
+      run: |
+        python build.py
+
+    - name: Rename Checksum
+      shell: bash
+      run: |
+        if [ -f dist/checksum.txt ]; then
+          mv dist/checksum.txt dist/checksum_${{ runner.os }}_${{ matrix.arch }}.txt
+        fi
+
+    - name: Rename file
+      shell: bash
+      run: |
+        ARCH="${{ matrix.arch }}"
+
+        if [ -f dist/WT_Aimer_Voice.exe ]; then
+          mv dist/WT_Aimer_Voice.exe dist/WT_Aimer_Voice_${{ runner.os }}_${ARCH}.exe
+        elif [ -f dist/WT_Aimer_Voice ]; then
+          mv dist/WT_Aimer_Voice dist/WT_Aimer_Voice_${{ runner.os }}_${ARCH}
+        elif [ -f dist/WT_Aimer_Voice.app ]; then
+          # macOS app bundle - 壓縮為 zip
+          cd dist && zip -r WT_Aimer_Voice_${{ runner.os }}_${ARCH}.zip WT_Aimer_Voice.app && rm -rf WT_Aimer_Voice.app
+        fi
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-${{ matrix.os }}-${{ matrix.arch }}
+        path: dist/*

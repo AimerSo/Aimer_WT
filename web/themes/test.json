@@ -44,6 +44,16 @@
         "--tag-tank-bg": "#1a3320", "--tag-tank-text": "#4ade80",
         "--tag-air-bg": "#202020", "--tag-air-text": "#9ca3af",
         "--tag-naval-bg": "#1e293b", "--tag-naval-text": "#38bdf8",
-        "--tag-radio-bg": "#422006", "--tag-radio-text": "#facc15"
+        "--tag-radio-bg": "#422006", "--tag-radio-text": "#facc15",
+        
+        "--bg-log": "#1a1a1a",
+        "--text-log": "#e0e0e0",
+        "--border-log": "#333333",
+        "--log-info": "#38bdf8",
+        "--log-success": "#4ade80",
+        "--log-error": "#ff4500",
+        "--log-warn": "#ffd700",
+        "--log-sys": "#888888",
+        "--log-scan": "#FF69B4"
     }
 }

@@ -20,6 +20,7 @@
 ## 环境要求
 
 - Windows/Linux
+- Microsoft Edge WebView2 Runtime（Windows only）
 - Python（建议 3.10+，以你本地可运行版本为准）
 - 依赖：pywebview
 ## 🐧 Linux / Steam Deck 支持
@@ -35,10 +36,6 @@
 1. 安装依赖（最小示例）：
 
 ```bash
-pip install pywebview
-```  
-或  
-```bash
 pip install -r requirements.txt
 ```
 
@@ -47,6 +44,11 @@ pip install -r requirements.txt
 ```bash
 python main.py
 ```
+
+## 启动参数（可选）
+
+- `--allow-fallback`：当 WebView2 不可用且 edgechromium 启动失败时，允许尝试降级启动（可能导致部分界面不可用）。
+- `--perf`：开启部分接口的性能日志输出。
 
 ## 目录结构说明
 
