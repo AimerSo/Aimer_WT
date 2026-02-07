@@ -97,6 +97,15 @@
     </header>
 
     <div class="main-container">
+        <!-- 拖放文件时的浮层 -->
+        <div id="drop-overlay" class="drop-overlay">
+            <div class="drop-overlay-content">
+                <i class="ri-file-zip-line drop-overlay-icon"></i>
+                <div class="drop-overlay-text">放下并导入语音包</div>
+                <div style="font-size: 14px; color: var(--text-sec);">支持 ZIP / RAR / 7Z 等格式</div>
+            </div>
+        </div>
+
 
         <div id="page-home" class="page active">
             <div class="home-grid">
@@ -309,10 +318,12 @@
                                                     选择用户 UID
                                                 </label>
                                                 <div class="uid-selector-row">
-                                                    <select id="sights-uid-select" class="uid-select" onchange="app.onSightsUidChange(this.value)">
+                                                    <select id="sights-uid-select" class="uid-select"
+                                                        onchange="app.onSightsUidChange(this.value)">
                                                         <option value="">-- 自动搜索中 --</option>
                                                     </select>
-                                                    <button class="btn-v2 icon-only" onclick="app.refreshSightsUidList()" title="刷新 UID 列表">
+                                                    <button class="btn-v2 icon-only"
+                                                        onclick="app.refreshSightsUidList()" title="刷新 UID 列表">
                                                         <i class="ri-refresh-line"></i>
                                                     </button>
                                                 </div>
@@ -678,11 +689,14 @@
                         <div style="height: 1px; background: var(--border-color); margin: 20px 0; opacity: 0.5;"></div>
                         <div style="display: flex; align-items: center; justify-content: space-between;">
                             <div>
-                                <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-main);">加入用户体验改善计划</div>
+                                <div
+                                    style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-main);">
+                                    加入用户体验改善计划</div>
                                 <div style="font-size: 12px; color: var(--text-sec);">允许发送匿名使用数据以改进软件</div>
                             </div>
                             <label class="switch">
-                                <input type="checkbox" id="telemetry-switch" onchange="app.toggleTelemetry(this.checked)">
+                                <input type="checkbox" id="telemetry-switch"
+                                    onchange="app.toggleTelemetry(this.checked)">
                                 <span class="slider"></span>
                             </label>
                         </div>
@@ -722,7 +736,8 @@
                             <div class="path-input-wrapper">
                                 <input type="text" id="pending-dir-input" class="path-input" readonly
                                     placeholder="使用默认路径">
-                                <button class="path-copy-btn" onclick="app.copyPathToClipboard('pending-dir-input')" title="复制路径">
+                                <button class="path-copy-btn" onclick="app.copyPathToClipboard('pending-dir-input')"
+                                    title="复制路径">
                                     <i class="ri-file-copy-line"></i>
                                 </button>
                             </div>
@@ -749,7 +764,8 @@
                             <div class="path-input-wrapper">
                                 <input type="text" id="library-dir-input" class="path-input" readonly
                                     placeholder="使用默认路径">
-                                <button class="path-copy-btn" onclick="app.copyPathToClipboard('library-dir-input')" title="复制路径">
+                                <button class="path-copy-btn" onclick="app.copyPathToClipboard('library-dir-input')"
+                                    title="复制路径">
                                     <i class="ri-file-copy-line"></i>
                                 </button>
                             </div>

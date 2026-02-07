@@ -253,77 +253,116 @@ const app = {
 
         try {
             const forceRefresh = !!(opts && opts.manual);
-            const res = await pywebview.api.get_skins_list({ force_refresh: forceRefresh });
+            // 改用异步接口，让扫描在后台进行，前端立即响应
+            pywebview.api.refresh_skins_async({ force_refresh: forceRefresh });
+        } catch (e) {
+            console.error(e);
+            this._skinsRefreshing = false;
+        }
+    },
+
+    // 接收后端异步推送的基本列表数据
+    onSkinsListReady(res) {
+        const listEl = document.getElementById('skins-list');
+        const countEl = document.getElementById('skins-count');
+        const refreshBtn = document.getElementById('btn-refresh-skins');
+
+        if (!listEl || !countEl || !res || !res.valid) {
+            this._skinsRefreshing = false;
+            if (refreshBtn) refreshBtn.classList.remove('is-loading');
+            return;
+        }
+
+        const items = res.items || [];
+        countEl.textContent = `本地: ${items.length}`;
+
+        if (items.length === 0) {
+            this._skinsLoaded = true;
+            this._skinsRefreshing = false;
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.classList.remove('is-loading');
+            }
+            listEl.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1;">
+                    <i class="ri-brush-3-line"></i>
+                    <h3>还没有涂装</h3>
+                    <p>拖入 ZIP 或点击“选择 ZIP 解压”，导入后会自动出现在这里</p>
+                </div>
+            `;
+            return;
+        }
+
+        // --- 分片渲染逻辑 ---
+        listEl.innerHTML = '';
+        const CHUNK_SIZE = 24;
+        let currentIndex = 0;
+        const seq = this._skinsRefreshSeq;
+
+        const renderChunk = () => {
             if (seq !== this._skinsRefreshSeq) return;
-            if (!camoPage.classList.contains('active')) return;
-            if (!skinsView.classList.contains('active')) return;
 
-            if (!res || !res.valid) {
-                this._skinsLoaded = false;
-                countEl.textContent = '本地: 0';
-                listEl.innerHTML = `
-                    <div class="empty-state" style="grid-column: 1 / -1;">
-                        <i class="ri-error-warning-line"></i>
-                        <h3>未设置有效游戏路径</h3>
-                        <p>请先在主页定位《战争雷霆》安装目录</p>
-                    </div>
-                `;
-                return;
-            }
-
-            const items = res.items || [];
-            countEl.textContent = `本地: ${items.length}`;
-
-            if (items.length === 0) {
-                this._skinsLoaded = true;
-                listEl.innerHTML = `
-                    <div class="empty-state" style="grid-column: 1 / -1;">
-                        <i class="ri-brush-3-line"></i>
-                        <h3>还没有涂装</h3>
-                        <p>拖入 ZIP 或点击“选择 ZIP 解压”，导入后会自动出现在这里</p>
-                    </div>
-                `;
-                return;
-            }
-
+            const chunk = items.slice(currentIndex, currentIndex + CHUNK_SIZE);
             const placeholder = 'assets/card_image_small.png';
-            listEl.innerHTML = items.map(it => {
+
+            const html = chunk.map(it => {
+                // 初始显示占位图或已有封面
                 const cover = it.cover_url || placeholder;
                 const isDefaultCover = !!it.cover_is_default;
                 const sizeText = app._formatBytes(it.size_bytes || 0);
+                const safeName = app._escapeHtml(it.name);
 
-                // Add edit button to the card
                 return `
-                    <div class="small-card" title="${app._escapeHtml(it.path || '')}">
+                    <div class="small-card animate-in" title="${app._escapeHtml(it.path || '')}" data-skin-name="${safeName}">
                         <div class="small-card-img-wrapper" style="position:relative;">
-                             <img class="small-card-img${isDefaultCover ? ' is-default-cover' : ''}" src="${cover}" alt="">
+                             <img class="small-card-img${isDefaultCover ? ' is-default-cover' : ''} skin-img-node" 
+                                  src="${cover}" loading="lazy" alt="">
                              <div class="skin-edit-overlay">
                                  <button class="btn-v2 icon-only small secondary skin-edit-btn"
-                                         onclick="app.openEditSkinModal('${app._escapeHtml(it.name)}', '${cover.replace(/'/g, "\\'")}')">
+                                         onclick="app.openEditSkinModal('${safeName}', this.closest('.small-card').querySelector('.skin-img-node').src)">
                                      <i class="ri-edit-line"></i>
                                  </button>
                              </div>
                         </div>
                         <div class="small-card-body">
                             <div class="skin-card-footer">
-                                <div class="skin-card-name" title="${app._escapeHtml(it.name || '')}">${app._escapeHtml(it.name || '')}</div>
+                                <div class="skin-card-name" title="${safeName}">${safeName}</div>
                                 <div class="skin-card-size">${sizeText}</div>
                             </div>
                         </div>
                     </div>
                 `;
             }).join('');
-            this._skinsLoaded = true;
-        } catch (e) {
-            console.error(e);
-        } finally {
-            this._skinsRefreshing = false;
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.classList.remove('is-loading');
+
+            listEl.insertAdjacentHTML('beforeend', html);
+            currentIndex += CHUNK_SIZE;
+
+            if (currentIndex < items.length) {
+                requestAnimationFrame(renderChunk);
+            } else {
+                this._skinsLoaded = true;
+                this._skinsRefreshing = false;
+                if (refreshBtn) {
+                    refreshBtn.disabled = false;
+                    refreshBtn.classList.remove('is-loading');
+                }
+            }
+        };
+
+        renderChunk();
+    },
+
+    // 接收后端异步推送的封面数据
+    onSkinCoverReady(skinName, coverUrl) {
+        const card = document.querySelector(`.small-card[data-skin-name="${CSS.escape(skinName)}"]`);
+        if (card) {
+            const img = card.querySelector('.skin-img-node');
+            if (img && img.src.includes('card_image_small.png')) {
+                img.src = coverUrl;
             }
         }
     },
+
 
     // --- Skin Editing Logic (New) ---
     currentEditSkin: null,
@@ -2280,6 +2319,11 @@ app.init = async function () {
         // 1. 优先检查免责声明
         await app.checkDisclaimer();
 
+        // 1.2 全局拖放初始化 (暂时禁用)
+        // TODO 需要优化，拖放压缩包时大概率卡死
+        // if (app.setupGlobalDragDrop) app.setupGlobalDragDrop();
+
+
         // 2. 获取初始状态
         const state = await pywebview.api.init_app_state() || {
             game_path: "",
@@ -2962,3 +3006,86 @@ app.showConfirmDialog = function (title, message) {
         modal.classList.add('show');
     });
 };
+
+/**
+ * 全局拖放识别逻辑 (Global Drag & Drop Setup)
+ * 功能：在特定页面监听文件拖入，并显示高级视觉反馈。
+ */
+app._dragCounter = 0;
+app.hideDropOverlay = function () {
+    const overlay = document.getElementById('drop-overlay');
+    if (overlay) overlay.classList.remove('active');
+    app._dragCounter = 0;
+};
+
+app.setupGlobalDragDrop = function () {
+    const overlay = document.getElementById('drop-overlay');
+    if (!overlay) return;
+
+    // 定义允许显示拖放层的页面 (包括首页)
+    const allowedPages = ['page-home', 'page-lib', 'page-camo', 'page-sight'];
+
+    const canShow = () => {
+        const activePageEl = document.querySelector('.page.active');
+        if (!activePageEl) return false;
+        const activePageId = activePageEl.id;
+
+        // 额外的逻辑判断：如果在炮镜库则也允许
+        if (activePageId === 'page-camo') {
+            const sightsView = document.getElementById('view-sights');
+            if (sightsView && sightsView.classList.contains('active')) return true;
+        }
+
+        return allowedPages.includes(activePageId);
+    };
+
+    window.addEventListener('dragenter', (e) => {
+        if (!canShow()) return;
+        e.preventDefault();
+        app._dragCounter++;
+        if (app._dragCounter === 1) {
+            // --- 动态更新提示文本 ---
+            const activePageEl = document.querySelector('.page.active');
+            const textEl = overlay.querySelector('.drop-overlay-text');
+            if (activePageEl && textEl) {
+                const id = activePageEl.id;
+                if (id === 'page-lib' || id === 'page-home') {
+                    textEl.innerText = '放下并导入语音包';
+                } else if (id === 'page-camo') {
+                    const sightsView = document.getElementById('view-sights');
+                    if (sightsView && sightsView.classList.contains('active')) {
+                        textEl.innerText = '放下并导入炮镜';
+                    } else {
+                        textEl.innerText = '放下并导入涂装';
+                    }
+                } else if (id === 'page-sight') {
+                    textEl.innerText = '放下并导入信息/炮镜';
+                }
+            }
+            overlay.classList.add('active');
+        }
+    });
+
+    window.addEventListener('dragover', (e) => {
+        if (!canShow()) return;
+        e.preventDefault();
+        if (!overlay.classList.contains('active')) {
+            overlay.classList.add('active');
+        }
+    });
+
+    window.addEventListener('dragleave', (e) => {
+        if (!canShow()) return;
+        e.preventDefault();
+        app._dragCounter--;
+        if (app._dragCounter <= 0) {
+            app.hideDropOverlay();
+        }
+    });
+
+    window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        app.hideDropOverlay();
+    });
+};
+

@@ -865,28 +865,117 @@ class AppApi:
         else:
             pass
 
-    def get_skins_list(self, opts=None):
-        # 扫描游戏目录下的 UserSkins 并返回前端渲染所需的涂装列表数据。
-        path = self._cfg_mgr.get_game_path()
-        valid, msg = self._logic.validate_game_path(path)
-        if not valid:
-            return {
-                "valid": False,
-                "msg": msg or "未设置有效游戏路径",
-                "exists": False,
-                "path": "",
-                "items": [],
-            }
+    def import_voice_zip_from_path(self, zip_path):
+        """导入指定路径的压缩包"""
+        if self._is_busy:
+            log.warning("另一个任务正在进行中，请稍候...")
+            return False
 
-        default_cover_path = WEB_DIR / "assets" / "card_image_small.png"
+        zip_path = str(zip_path)
+        self._is_busy = True
+
+        if self._window:
+            msg_js = json.dumps(f"准备导入: {Path(zip_path).name}", ensure_ascii=False)
+            self._window.evaluate_js(
+                f"if(window.MinimalistLoading) MinimalistLoading.show(false, {msg_js})"
+            )
+
+        def _run():
+            try:
+                self.update_loading_ui(1, f"正在读取: {Path(zip_path).name}")
+
+                def password_provider(archive_path, reason):
+                    hint = "密码错误，请重试" if reason == "incorrect" else ""
+                    return self._request_archive_password(Path(archive_path).name, hint)
+
+                self._lib_mgr.unzip_single_zip(
+                    Path(zip_path),
+                    progress_callback=self.update_loading_ui,
+                    password_provider=password_provider,
+                )
+
+                if self._window:
+                    self._window.evaluate_js("app.refreshLibrary()")
+                    msg_js = json.dumps("导入完成", ensure_ascii=False)
+                    self._window.evaluate_js(
+                        f"if(window.MinimalistLoading) MinimalistLoading.update(100, {msg_js})"
+                    )
+            except ArchivePasswordCanceled:
+                log.warning("已取消输入密码，导入已终止")
+                if self._window:
+                    self._window.evaluate_js("if(window.MinimalistLoading) MinimalistLoading.hide()")
+            except Exception as e:
+                log.error(f"导入失败: {e}")
+                if self._window:
+                    msg_js = json.dumps("导入失败", ensure_ascii=False)
+                    self._window.evaluate_js(
+                        f"if(window.MinimalistLoading) MinimalistLoading.update(100, {msg_js})"
+                    )
+            finally:
+                self._is_busy = False
+
+        t = threading.Thread(target=_run)
+        t.daemon = True
+        t.start()
+        return True
+
+
+    def refresh_skins_async(self, opts=None):
+        """
+        先传回基本信息，再异步推送封面数据。
+        """
+        game_path = self._cfg_mgr.get_game_path()
+        valid, _ = self._logic.validate_game_path(game_path)
+        if not valid:
+            return False
+
         force_refresh = False
         if isinstance(opts, dict):
             force_refresh = bool(opts.get("force_refresh"))
-        data = self._skins_mgr.scan_userskins(
-            path, default_cover_path=default_cover_path, force_refresh=force_refresh
-        )
+
+        def _worker():
+            try:
+                default_cover_path = WEB_DIR / "assets" / "card_image_small.png"
+                data = self._skins_mgr.scan_userskins(
+                    game_path, default_cover_path=default_cover_path, 
+                    force_refresh=force_refresh, skip_covers=True
+                )
+                data["valid"] = True
+                
+                # 推送基本列表到前端，让界面先渲染出来
+                if self._window:
+                    js_data = json.dumps(data, ensure_ascii=False)
+                    self._window.evaluate_js(f"if(app.onSkinsListReady) app.onSkinsListReady({js_data})")
+
+                items = data.get("items", [])
+                for it in items:
+                    name = it.get("name")
+                    preview_path = it.get("preview_path")
+                    cover_url = ""
+                    
+                    if preview_path and Path(preview_path).exists():
+                        cover_url = self._skins_mgr._to_data_url(Path(preview_path))
+                    elif default_cover_path.exists():
+                        cover_url = self._skins_mgr._to_data_url(default_cover_path)
+
+                    if self._window and cover_url:
+                        # 单条推送，避免大数据包造成的卡顿
+                        name_js = json.dumps(name, ensure_ascii=False)
+                        url_js = json.dumps(cover_url, ensure_ascii=True)
+                        self._window.evaluate_js(f"if(app.onSkinCoverReady) app.onSkinCoverReady({name_js}, {url_js})")
+            except Exception as e:
+                log.error(f"后台刷新涂装库失败: {e}")
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return True
+
+    def get_skins_list(self, opts=None):
+        # 保留原接口供兼容，但实际上前端将改用 refresh_skins_async
+        path = self._cfg_mgr.get_game_path()
+        default_cover_path = WEB_DIR / "assets" / "card_image_small.png"
+        force_refresh = bool(opts.get("force_refresh")) if opts else False
+        data = self._skins_mgr.scan_userskins(path, default_cover_path, force_refresh)
         data["valid"] = True
-        data["msg"] = ""
         return data
 
     def import_skin_zip_dialog(self):
@@ -1670,7 +1759,9 @@ def main() -> int:
 
     # 绑定窗口对象到桥接层
     api.set_window(window)
+    
 
+    # TODO 需要优化，拖放压缩包时大概率卡死
     def _bind_drag_drop(win):
         # 绑定拖拽投放事件，用于在特定页面接收文件拖入并触发导入流程。
         try:
@@ -1679,54 +1770,81 @@ def main() -> int:
             log.debug("DOMEventHandler 不可用，略过拖放绑定")
             return
 
+
         def on_drop(e):
-            try:
-                active_page = win.evaluate_js(
-                    "(document.querySelector('.page.active')||{}).id || ''"
-                )
-            except Exception:
-                active_page = ""
-
-            if active_page != "page-camo":
-                return
-
-            try:
-                files = (e.get("dataTransfer", {}) or {}).get("files", []) or []
-            except Exception:
-                files = []
-
-            full_paths = []
-            for f in files:
+            def _async_processor():
                 try:
-                    p = f.get("pywebviewFullPath")
-                except Exception:
-                    p = None
-                if p:
-                    full_paths.append(p)
+                    win.evaluate_js("if(window.app && app.hideDropOverlay) app.hideDropOverlay()")
 
-            if not full_paths:
-                return
+                    try:
+                        active_page = win.evaluate_js("(document.querySelector('.page.active')||{}).id || ''")
+                    except Exception:
+                        active_page = ""
 
-            zip_files = [p for p in full_paths if str(p).lower().endswith(".zip")]
-            if not zip_files:
-                return
+                    allowed_pages = ["page-home", "page-lib", "page-camo", "page-sight"]
+                    if not active_page or active_page not in allowed_pages:
+                        return
 
-            for zp in zip_files[:1]:
-                th = threading.Thread(target=api.import_skin_zip_from_path, args=(zp,))
-                th.daemon = True
-                th.start()
+                    if active_page == "page-home":
+                        win.evaluate_js("app.switchTab('lib')")
+                        active_page = "page-lib"
+
+                    # 提取文件路径
+                    try:
+                        data_tx = e.get("dataTransfer") or {}
+                        files = data_tx.get("files") or []
+                    except Exception:
+                        files = []
+
+                    full_paths = []
+                    for f in files:
+                        p = f.get("pywebviewFullPath")
+                        if p:
+                            full_paths.append(str(p))
+
+                    if not full_paths:
+                        return
+
+                    archive_exts = (".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2")
+                    zip_files = [p for p in full_paths if p.lower().endswith(archive_exts)]
+                    if not zip_files:
+                        return
+
+                    zp = zip_files[0]
+                    
+                    if active_page == "page-lib":
+                        api.import_voice_zip_from_path(zp)
+                    elif active_page == "page-camo":
+                        try:
+                            res_view = win.evaluate_js(
+                                "(document.querySelector('#page-camo .resource-nav-item.active')||{}).dataset.target || 'skins'"
+                            )
+                        except Exception:
+                            res_view = "skins"
+                        
+                        if res_view == "sights":
+                            api.import_sights_zip_from_path(zp)
+                        else:
+                            api.import_skin_zip_from_path(zp)
+                    elif active_page == "page-sight":
+                        api.import_sights_zip_from_path(zp)
+
+                except Exception as ex:
+                    log.error(f"拖拽处理发生异常: {ex}", exc_info=True)
+
+            threading.Thread(target=_async_processor, daemon=True).start()
 
         try:
-            win.dom.document.events.drop += DOMEventHandler(on_drop, True, True)
+            win.dom.document.events.drop += DOMEventHandler(on_drop, True, False)
         except Exception:
             log.debug("绑定拖放事件失败", exc_info=True)
             return
 
     def _on_start(win):
-        try:
-            _bind_drag_drop(win)
-        except Exception:
-            log.exception("_bind_drag_drop 失败")
+        # try:
+        #     _bind_drag_drop(win)
+        # except Exception:
+        #     log.exception("_bind_drag_drop 失败")
 
         # 部分 GUI 后端可能忽略 create_window 的 x/y；启动后补一次置中
         try:

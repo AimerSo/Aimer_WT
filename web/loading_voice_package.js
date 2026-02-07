@@ -37,7 +37,7 @@ const MinimalistLoading = {
     currentProgress: 0,
     targetProgress: 0,
     animationFrame: null,
-    messages: ["准备加载文件...", "正在处理语音包...", "正在写入配置...", "同步中...", "加载完成！"],
+    messages: ["准备加载文件...", "正在处理资源...", "正在写入配置...", "同步中...", "加载完成！"],
 
     // 初始化并创建 DOM 结构
     _init() {
@@ -176,7 +176,7 @@ const MinimalistLoading = {
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" style="opacity: 0.75;"></path>
                     </svg>
                     <div>
-                        <p id="loading-status" class="loading-text-status">正在加载语音包...</p>
+                        <p id="loading-status" class="loading-text-status">正在处理资源...</p>
                         <p id="loading-percent" class="loading-text-percent">已完成 0%</p>
                     </div>
                 </div>

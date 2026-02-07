@@ -75,60 +75,84 @@ class SkinsManager:
         self, 
         game_path: str | Path, 
         default_cover_path: Path | None = None, 
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        skip_covers: bool = False
     ) -> dict[str, Any]:
         """
         扫描 UserSkins 目录下的涂装文件夹，并生成前端展示用的列表数据。
-        
-        Args:
-            game_path: 游戏安装路径
-            default_cover_path: 默认封面路径
-            force_refresh: 是否强制刷新缓存
-            
-        Returns:
-            包含 exists, path, items, valid 的字典
+        skip_covers: 如果为 True，则不生成 base64 的 cover_url，仅返回 preview_path。
         """
         userskins_dir = self.get_userskins_dir(game_path)
         
-        if not force_refresh and self._cache is not None:
-            if self._cache.get("path") == str(userskins_dir) and Path(self._cache["path"]).exists():
-                return self._cache
-
         if not userskins_dir.exists():
-            return {"exists": False, "path": str(userskins_dir), "items": []}
+            self._cache = None
+            return {"exists": False, "path": str(userskins_dir), "items": [], "valid": True}
+
+        try:
+            current_mtime = userskins_dir.stat().st_mtime
+        except Exception:
+            current_mtime = 0
+
+        if not force_refresh and self._cache is not None:
+            if (self._cache.get("path") == str(userskins_dir) and 
+                self._cache.get("mtime") == current_mtime):
+                # 如果缓存中有完整数据，直接返回即可
+                return self._cache
 
         items = []
         try:
-            for entry in sorted(userskins_dir.iterdir(), key=lambda p: p.name.lower()):
-                if not entry.is_dir():
-                    continue
-
-                size_bytes, file_count = self._get_dir_size_and_count(entry)
+            entries = sorted([e for e in userskins_dir.iterdir() if e.is_dir()], key=lambda p: p.name.lower())
+            
+            for entry in entries:
+                size_bytes, file_count = self._get_dir_size_and_count_fast(entry)
                 preview_path = self._find_preview_image(entry)
                 cover_url = ""
                 cover_is_default = False
-                if preview_path:
-                    cover_url = self._to_data_url(preview_path)
-                elif default_cover_path and default_cover_path.exists():
-                    cover_url = self._to_data_url(default_cover_path)
-                    cover_is_default = True
+                
+                if not skip_covers:
+                    if preview_path:
+                        cover_url = self._to_data_url(preview_path)
+                    elif default_cover_path and default_cover_path.exists():
+                        cover_url = self._to_data_url(default_cover_path)
+                        cover_is_default = True
 
                 items.append({
                     "name": entry.name,
                     "path": str(entry),
                     "size_bytes": size_bytes,
                     "file_count": file_count,
+                    "preview_path": str(preview_path) if preview_path else "",
                     "cover_url": cover_url,
                     "cover_is_default": cover_is_default,
                 })
-        except PermissionError as e:
-            log.error(f"扫描涂装失败（权限不足）: {e}")
-        except OSError as e:
+        except Exception as e:
             log.error(f"扫描涂装失败: {e}")
 
-        result = {"exists": True, "path": str(userskins_dir), "items": items, "valid": True}
-        self._cache = result
+        result = {
+            "exists": True, 
+            "path": str(userskins_dir), 
+            "mtime": current_mtime, 
+            "items": items, 
+            "valid": True
+        }
+        if not skip_covers:
+            self._cache = result
         return result
+
+    def _get_dir_size_and_count_fast(self, dir_path: Path) -> tuple[int, int]:
+        """优化版统计：限制遍历文件数量，防止异常庞大的项目造成挂起。"""
+        total = 0
+        count = 0
+        try:
+            for entry in dir_path.rglob("*"):
+                if count > 200: # 单个涂装文件夹如果超过200个文件，停止统计详细信息以保性能
+                    break
+                if entry.is_file():
+                    total += entry.stat().st_size
+                    count += 1
+        except Exception:
+            pass
+        return total, count
 
     def import_skin_zip(
         self,

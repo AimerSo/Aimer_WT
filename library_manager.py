@@ -82,16 +82,11 @@ class LibraryManager:
 
     def __init__(self, pending_dir: str | None = None,
                  library_dir: str | None = None):
-        # 定义支持的压缩格式列表
-
-        """
-        初始化 LibraryManager。
-        
-        Args:
-            pending_dir: 自定义待解压区路径
-            library_dir: 自定义语音包库路径
-        """
+        """初始化 LibraryManager。"""
         self.root_dir = get_app_data_dir()
+        self._details_cache = {} # 缓存单个 mod 的详情
+        self._scan_cache = None   # 缓存整个扫描结果
+        self._last_scan_mtime = 0
 
         # 初始化待解压区与语音包库目录路径
         # 支援自定义路径，若未提供则使用预设值
@@ -288,21 +283,27 @@ class LibraryManager:
     def scan_library(self) -> list[str]:
         """
         扫描语音包库目录下的语音包文件夹列表。
-        
-        Returns:
-            语音包文件夹名称列表
         """
-        mods = []
         try:
-            if self.library_dir.exists():
-                for item in self.library_dir.iterdir():
-                    if item.is_dir():
-                        mods.append(item.name)
-        except PermissionError as e:
-            log.error(f"扫描语音包库失败（权限不足）: {e}")
+            if not self.library_dir.exists():
+                return []
+            
+            # 检查目录修改时间
+            current_mtime = self.library_dir.stat().st_mtime
+            if self._scan_cache is not None and self._last_scan_mtime == current_mtime:
+                return self._scan_cache
+
+            mods = []
+            for item in self.library_dir.iterdir():
+                if item.is_dir():
+                    mods.append(item.name)
+            
+            self._scan_cache = mods
+            self._last_scan_mtime = current_mtime
+            return mods
         except Exception as e:
-            log.error(f"扫描语音包库失败: {type(e).__name__}: {e}")
-        return mods
+            log.error(f"扫描语音包库失败: {e}")
+            return []
 
     def scan_pending(self) -> list[Path]:
         """
@@ -415,15 +416,18 @@ class LibraryManager:
     def get_mod_details(self, mod_name: str) -> dict[str, Any]:
         """
         读取语音包的元数据与资源信息，生成前端展示所需的详情字典。
-        
-        Args:
-            mod_name: 语音包名称
-            
-        Returns:
-            包含语音包详细信息的字典
         """
         mod_dir = self.library_dir / mod_name
-        info_file = mod_dir / "info.json"
+        
+        try:
+            current_mtime = mod_dir.stat().st_mtime
+        except Exception:
+            current_mtime = 0
+            
+        cached = self._details_cache.get(mod_name)
+        if cached and cached.get("_mtime") == current_mtime:
+            return cached
+
         self._normalize_wtlive_compat_files(mod_dir)
 
         # 1. 默认数据
@@ -585,6 +589,9 @@ class LibraryManager:
                 "capabilities": {"tank": True, "air": True, "naval": True, "radio": True}
             })
 
+        # 存入缓存
+        details["_mtime"] = current_mtime
+        self._details_cache[mod_name] = details
         return details
 
     def _detect_smart_tags(self, mod_dir):

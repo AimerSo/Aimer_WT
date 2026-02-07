@@ -750,7 +750,8 @@
 }
 
 .path-copy-btn.copied i::before {
-    content: "\eb7a"; /* ri-check-line */
+    content: "\eb7a";
+    /* ri-check-line */
 }
 
 .path-hint {
@@ -1177,8 +1178,13 @@
 }
 
 @keyframes btnV2Spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .crop-modal {
