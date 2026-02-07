@@ -1085,17 +1085,12 @@ class AppApi:
             if not mod_path.exists():
                 return []
 
-            # 遍历将要安装的目录集合，收集目标文件名列表
+            # install_list 现在是文件路径列表，直接提取文件名
             files_to_install = []
-            for folder_rel_path in install_list:
-                if folder_rel_path == "根目录":
-                    src_dir = mod_path
-                else:
-                    src_dir = mod_path / folder_rel_path
-                if src_dir.exists():
-                    for root, dirs, files in os.walk(src_dir):
-                        for file in files:
-                            files_to_install.append(file)
+            for file_rel_path in install_list:
+                # 只提取文件名
+                file_name = Path(file_rel_path).name
+                files_to_install.append(file_name)
 
             # 调用 manifest_mgr 进行冲突检测
             if self._logic.manifest_mgr:

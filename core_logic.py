@@ -475,27 +475,8 @@ class CoreService:
                     progress_callback(100, "未选择文件")
                 return False
 
-            # 首先统计总文件数，用于计算真实进度
-            total_files_to_copy = 0
-            files_info = []  # [(src_file, dest_file, folder_rel_path), ...]
-
-            for folder_rel_path in install_list:
-                src_dir = None
-                if folder_rel_path == "根目录":
-                    src_dir = source_mod_path
-                else:
-                    src_dir = source_mod_path / folder_rel_path
-
-                if not src_dir.exists():
-                    log.warning(f"找不到源文件夹: {folder_rel_path}")
-                    continue
-
-                for root, dirs, files in os.walk(src_dir):
-                    for file in files:
-                        src_file = Path(root) / file
-                        dest_file = game_mod_dir / file
-                        files_info.append((src_file, dest_file, folder_rel_path))
-                        total_files_to_copy += 1
+            # 统计总文件数
+            total_files_to_copy = len(install_list)
 
             if total_files_to_copy == 0:
                 log.warning("未找到任何可安装的文件。")
@@ -509,27 +490,30 @@ class CoreService:
             total_files = 0
             # 收集本次安装的目标文件名，用于写入安装清单
             installed_files_record = []
-            folder_files_count = {}  # 用于统计每个文件夹的文件数
 
             # 进度计算：10% 预检，15-95% 複製文件，95-100% 更新配置
             copy_progress_start = 15
             copy_progress_end = 95
             last_progress_update = time.monotonic()
 
-            for idx, (src_file, dest_file, folder_rel_path) in enumerate(files_info):
+            for idx, file_rel_path in enumerate(install_list):
                 try:
+                    # 构建源文件和目标文件路径
+                    src_file = source_mod_path / file_rel_path
+
+                    # 目标文件只使用文件名，不保留目录结构
+                    dest_file = game_mod_dir / Path(file_rel_path).name
+
+                    if not src_file.exists():
+                        log.warning(f"[WARN] 源文件不存在: {file_rel_path}")
+                        continue
                     shutil.copy2(src_file, dest_file)
                     total_files += 1
                     installed_files_record.append(dest_file.name)
 
-                    # 统计每个文件夹的文件数
-                    if folder_rel_path not in folder_files_count:
-                        folder_files_count[folder_rel_path] = 0
-                    folder_files_count[folder_rel_path] += 1
-
                     # 更新进度 (限制更新频率，避免 UI 卡顿)
                     now = time.monotonic()
-                    if progress_callback and (now - last_progress_update >= 0.1 or idx == len(files_info) - 1):
+                    if progress_callback and (now - last_progress_update >= 0.1 or idx == len(install_list) - 1):
                         progress = copy_progress_start + (idx + 1) / total_files_to_copy * (
                                 copy_progress_end - copy_progress_start)
                         # 文件名截断显示
@@ -546,9 +530,7 @@ class CoreService:
                 except Exception as e:
                     log.warning(f"複製文件 {src_file.name} 失败: {type(e).__name__}: {e}")
 
-            # 输出每个文件夹的统计
-            for folder_path, count in folder_files_count.items():
-                log.info(f"[OK] 已合併导入 [{folder_path}] ({count} 个文件)")
+            log.info(f"已成功安装 {total_files} 个文件")
 
             # 写入安装清单记录（mod -> 文件名列表）
             if self.manifest_mgr and total_files > 0:

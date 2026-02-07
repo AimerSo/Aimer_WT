@@ -1483,7 +1483,7 @@ const app = {
         if (this._libraryRefreshing) return;
         const isManual = !!(opts && opts.manual);
         if (!isManual && this._libraryLoaded) return;
-        
+
         // 检查 API 是否就绪
         if (!window.pywebview?.api?.get_library_list) {
             console.warn('refreshLibrary: API not ready, will retry later');
@@ -1494,7 +1494,7 @@ const app = {
             }, 1000);
             return;
         }
-        
+
         this._libraryRefreshing = true;
 
         listContainer.classList.add('fade-out');
@@ -1969,59 +1969,58 @@ app.openInstallModal = async function (modId) {
     const container = document.getElementById('install-toggles');
     container.innerHTML = '';
 
-    // 新逻辑：基于文件夹列表
-    const folders = mod.folders || [];
+    const fileGroups = mod.files || [];
 
-    if (folders.length === 0) {
-        container.innerHTML = '<div class="no-folders" style="padding:20px;text-align:center;color:#888;">⚠️ 未检测到有效语音包文件夹 (不含 .bank 文件)</div>';
+    if (fileGroups.length === 0) {
+        container.innerHTML = '<div class="no-folders" style="padding:20px;text-align:center;color:#888;">⚠️ 未检测到有效语音文件</div>';
     } else {
-        folders.forEach(item => {
-            // 兼容旧版字符串格式 (防止报错)
-            let folderPath = "";
-            let folderType = "folder";
-
-            if (typeof item === 'string') {
-                folderPath = item;
-            } else {
-                folderPath = item.path;
-                folderType = item.type || "folder";
-            }
-
+        fileGroups.forEach(group => {
             const div = document.createElement('div');
             // 默认全选
             div.className = 'toggle-btn available selected';
-            div.dataset.key = folderPath;
+            div.dataset.key = group.code; // 使用 code 作为标识
+            div.dataset.files = JSON.stringify(group.files); // 存储文件列表
 
-            // 截断逻辑：超过4个字，第3个字后加...
-            let displayName = folderPath;
-            // 如果是 "根目录"，显示为 "根目录"
-            if (folderPath === "根目录") {
-                displayName = "根目录";
-            } else {
-                // 取最后一段路径名显示 (如果路径很长)
-                const parts = folderPath.split(/[/\\]/);
-                const name = parts[parts.length - 1];
-                if (name.length > 4) {
-                    displayName = name.substring(0, 3) + '...';
-                } else {
-                    displayName = name;
-                }
-            }
+            // 显示名称和文件数量
+            const displayName = group.type;
+            const fileCount = group.count;
 
             // 根据类型选择图标
-            let iconClass = "ri-folder-3-line";
-            if (folderType === "ground") iconClass = "ri-car-line"; // 陆战
-            else if (folderType === "radio") iconClass = "ri-radio-2-line"; // 无线电
-            else if (folderType === "aircraft") iconClass = "ri-plane-line"; // 空战
+            let iconClass = "ri-file-music-line"; // 默认音频图标
 
-            div.innerHTML = `<i class="${iconClass}"></i><div class="label">${displayName}</div>`;
+            if (group.code.includes('ground') || group.code.includes('tank')) {
+                iconClass = "ri-car-line";
+            }
+            // 无线电/通用语音
+            else if (group.code.includes('common') || group.code.includes('dialogs_chat')) {
+                iconClass = "ri-radio-2-line";
+            }
+            // 空战相关
+            else if (group.code.includes('aircraft')) {
+                iconClass = "ri-plane-line";
+            }
+            // 海战相关
+            else if (group.code.includes('ships') || group.code.includes('naval')) {
+                iconClass = "ri-ship-line";
+            }
+            // 步兵相关
+            else if (group.code.includes('infantry')) {
+                iconClass = "ri-user-line";
+            }
+            // 降噪包
+            else if (group.code.includes('masterbank')) {
+                iconClass = "ri-volume-mute-line";
+            }
+            div.innerHTML = `<i class="${iconClass}"></i><div class="label">${displayName} <span style="opacity:0.6;font-size:11px;">(${fileCount})</span></div>`;
+
 
             div.onclick = () => {
                 div.classList.toggle('selected');
             };
 
             // Tooltip 交互
-            div.onmouseenter = (e) => app.showTooltip(div, folderPath);
+            const tooltipText = `${displayName}\n包含 ${fileCount} 个文件`;
+            div.onmouseenter = (e) => app.showTooltip(div, tooltipText);
             div.onmouseleave = () => app.hideTooltip();
 
             container.appendChild(div);
@@ -2033,13 +2032,23 @@ app.openInstallModal = async function (modId) {
 
 document.getElementById('btn-confirm-install').onclick = async function () {
     const toggles = document.querySelectorAll('#install-toggles .toggle-btn.selected');
-    const selection = Array.from(toggles).map(el => el.dataset.key);
+
+    // 收集所有选中类型的文件列表
+    let allFiles = [];
+    toggles.forEach(el => {
+        try {
+            const files = JSON.parse(el.dataset.files || '[]');
+            allFiles = allFiles.concat(files);
+        } catch (e) {
+            console.error('解析文件列表失败:', e);
+        }
+    });
 
     // 如果列表为空（说明可能是全量安装模式，或者用户没选）
     // 但如果有 toggle 存在却没选，那就是用户取消了所有
     const hasToggles = document.querySelectorAll('#install-toggles .toggle-btn').length > 0;
 
-    if (hasToggles && selection.length === 0) {
+    if (hasToggles && allFiles.length === 0) {
         app.showAlert("提示", "请至少选择一个模块！");
         return;
     }
@@ -2051,8 +2060,8 @@ document.getElementById('btn-confirm-install').onclick = async function () {
     conflictBtn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> 检查中...';
 
     try {
-        // 将数组参数序列化为 JSON 字符串传递给后端
-        const conflicts = await pywebview.api.check_install_conflicts(app.currentModId, JSON.stringify(selection));
+        // 将文件列表序列化为 JSON 字符串传递给后端
+        const conflicts = await pywebview.api.check_install_conflicts(app.currentModId, JSON.stringify(allFiles));
 
         if (conflicts && conflicts.length > 0) {
             // 构建冲突提示信息
@@ -2090,8 +2099,8 @@ document.getElementById('btn-confirm-install').onclick = async function () {
         MinimalistLoading.show(false, "正在准备安装...");
     }
 
-    // 将数组参数序列化为 JSON 字符串传递给后端
-    pywebview.api.install_mod(app.currentModId, JSON.stringify(selection));
+    // 将文件列表序列化为 JSON 字符串传递给后端
+    pywebview.api.install_mod(app.currentModId, JSON.stringify(allFiles));
     app.closeModal('modal-install');
     app.switchTab('home'); // 跳转回主页看日志
 };
@@ -2634,7 +2643,7 @@ app.refreshSights = async function (opts) {
 app.loadLibraryPathInfo = async function () {
     const pendingInput = document.getElementById('pending-dir-input');
     const libraryInput = document.getElementById('library-dir-input');
-    
+
     // 检查 API 是否可用
     if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_library_path_info !== 'function') {
         console.warn('loadLibraryPathInfo: API not ready');
@@ -2647,7 +2656,7 @@ app.loadLibraryPathInfo = async function () {
         console.log('loadLibraryPathInfo: calling API...');
         const info = await pywebview.api.get_library_path_info();
         console.log('loadLibraryPathInfo: got info', info);
-        
+
         if (pendingInput && info) {
             if (info.custom_pending_dir) {
                 pendingInput.value = info.custom_pending_dir;
@@ -2815,7 +2824,7 @@ app.resetLibraryPaths = async function () {
         const libraryInput = document.getElementById('library-dir-input');
         if (pendingInput) pendingInput.value = '';
         if (libraryInput) libraryInput.value = '';
-        
+
         this.showInfoToast('已重置', '路径已重置为默认值');
         // 重新加载以更新 placeholder
         await this.loadLibraryPathInfo();
@@ -2842,14 +2851,14 @@ app.copyPathToClipboard = async function (inputId) {
 
     try {
         await navigator.clipboard.writeText(path);
-        
+
         // 显示複製成功的视觉反馈
         const btn = input.parentElement.querySelector('.path-copy-btn');
         if (btn) {
             btn.classList.add('copied');
             setTimeout(() => btn.classList.remove('copied'), 1500);
         }
-        
+
         this.showInfoToast('已复制', '路径已复制到剪贴板');
     } catch (e) {
         console.error('复制失败:', e);
@@ -2923,33 +2932,33 @@ app.showConfirmDialog = function (title, message) {
         const msgEl = document.getElementById('confirm-message');
         const cancelBtn = document.getElementById('btn-confirm-cancel');
         const okBtn = document.getElementById('btn-confirm-ok');
-        
+
         if (!modal || !titleEl || !msgEl) {
             resolve(false);
             return;
         }
-        
+
         titleEl.textContent = title;
         msgEl.innerHTML = message;
         okBtn.innerHTML = '<i class="ri-check-line"></i> 确认';
         okBtn.className = 'btn primary';
-        
+
         const cleanup = () => {
             modal.classList.remove('show');
             cancelBtn.onclick = null;
             okBtn.onclick = null;
         };
-        
+
         cancelBtn.onclick = () => {
             cleanup();
             resolve(false);
         };
-        
+
         okBtn.onclick = () => {
             cleanup();
             resolve(true);
         };
-        
+
         modal.classList.add('show');
     });
 };

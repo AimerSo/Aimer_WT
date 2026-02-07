@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Callable, Any
 from logger import get_logger
 from utils import get_app_data_dir
+from wt_sound import VoiceType, Country
 
 log = get_logger(__name__)
 
@@ -76,12 +77,12 @@ class LibraryManager:
         pending_dir: 待解压区目录
         library_dir: 语音包库目录
     """
-    
+
     SUPPORTED_EXTENSIONS = (".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2")
-    
-    def __init__(self, pending_dir: str | None = None, 
+
+    def __init__(self, pending_dir: str | None = None,
                  library_dir: str | None = None):
-    # 定义支持的压缩格式列表
+        # 定义支持的压缩格式列表
 
         """
         初始化 LibraryManager。
@@ -91,23 +92,23 @@ class LibraryManager:
             library_dir: 自定义语音包库路径
         """
         self.root_dir = get_app_data_dir()
-        
+
         # 初始化待解压区与语音包库目录路径
         # 支援自定义路径，若未提供则使用预设值
         if pending_dir and Path(pending_dir).exists():
             self.pending_dir = Path(pending_dir)
         else:
             self.pending_dir = self.root_dir / DIR_PENDING
-        
+
         if library_dir and Path(library_dir).exists():
             self.library_dir = Path(library_dir)
         else:
             self.library_dir = self.root_dir / DIR_LIBRARY
-        
+
         # 确保目录存在
         self._ensure_dirs()
 
-    def update_paths(self, pending_dir: str | None = None, 
+    def update_paths(self, pending_dir: str | None = None,
                      library_dir: str | None = None) -> dict[str, bool]:
         """
         动态更新待解压区和语音包库路径。
@@ -127,7 +128,7 @@ class LibraryManager:
             except Exception:
                 resolved = path
             return os.path.normcase(os.path.normpath(str(resolved)))
-        
+
         if pending_dir:
             new_path = Path(pending_dir)
             if _norm_path(new_path) == _norm_path(self.pending_dir):
@@ -148,7 +149,7 @@ class LibraryManager:
                 self.pending_dir = new_path
                 result['pending_updated'] = True
                 log.info(f"待解压区路径已更新: {new_path}")
-        
+
         if library_dir:
             new_path = Path(library_dir)
             if _norm_path(new_path) == _norm_path(self.library_dir):
@@ -169,7 +170,7 @@ class LibraryManager:
                 self.library_dir = new_path
                 result['library_updated'] = True
                 log.info(f"语音包库路径已更新: {new_path}")
-        
+
         return result
 
     def get_current_paths(self) -> dict[str, str]:
@@ -198,7 +199,7 @@ class LibraryManager:
         """
         encodings = ["utf-8-sig", "utf-8", "cp950", "big5", "gbk"]
         last_error = None
-        
+
         for enc in encodings:
             try:
                 with open(file_path, "r", encoding=enc) as f:
@@ -212,7 +213,7 @@ class LibraryManager:
             except Exception as e:
                 last_error = e
                 continue
-        
+
         if last_error:
             log.warning(f"无法读取 JSON 文件 {file_path}: {last_error}")
         return None
@@ -262,7 +263,7 @@ class LibraryManager:
         try:
             path_str = str(path)
             system = platform.system()
-            
+
             if system == "Windows":
                 os.startfile(path_str)
             elif system == "Darwin":  # macOS
@@ -361,7 +362,7 @@ class LibraryManager:
                         log.debug(f"无法访问目录: {d}")
                     except Exception:
                         pass
-                        
+
                 if not info_sources:
                     try:
                         for f in mod_dir.rglob("*.bank"):
@@ -424,7 +425,7 @@ class LibraryManager:
         mod_dir = self.library_dir / mod_name
         info_file = mod_dir / "info.json"
         self._normalize_wtlive_compat_files(mod_dir)
-        
+
         # 1. 默认数据
         # 尝试获取文件夹修改时间作为默认日期
         try:
@@ -442,7 +443,7 @@ class LibraryManager:
             "link_bilibili": "",
             "link_wtlive": "",
             "link_video": "",
-            "tags": [],      # 存储标籤列表 ["tank", "radio"]
+            "tags": [],  # 存储标籤列表 ["tank", "radio"]
             "language": [],  # 存储语言列表 ["中", "美"]
             "size_str": "0 MB",
             "cover_path": None,
@@ -452,11 +453,11 @@ class LibraryManager:
         # 2. 读取 info.json (支援 WTLive 伪装格式)
         # 逻辑: info.json > info/info.json > *（AimerWT）.bank > info/*（AimerWT）.bank
         info_candidates = []
-        
+
         # (1) 标准 info.json
         info_candidates.append(mod_dir / "info.json")
         info_candidates.append(mod_dir / "info" / "info.json")
-        
+
         # (2) 伪装的 .bank 文件 (检测 （AimerWT） 字样)
         try:
             info_candidates.extend(list(mod_dir.glob("*（AimerWT）.bank")))
@@ -487,12 +488,13 @@ class LibraryManager:
                         found_info_file = aimer_banks[0]
             except Exception:
                 pass
-        
+
         if found_info_file:
             try:
                 data = self._load_json_with_fallback(found_info_file)
                 if isinstance(data, dict):
-                    for key in ["title", "author", "version", "date", "note", "link_bilibili", "link_wtlive", "link_video", "tags", "language"]:
+                    for key in ["title", "author", "version", "date", "note", "link_bilibili", "link_wtlive",
+                                "link_video", "tags", "language"]:
                         if key in data:
                             details[key] = data[key]
                 else:
@@ -508,7 +510,7 @@ class LibraryManager:
                 if t not in combined_tags:
                     combined_tags.append(t)
             details["tags"] = combined_tags
-            
+
         # 如果作者没写语言，则显示"未识别"
         if not details["language"]:
             details["language"] = ["未识别"]
@@ -529,7 +531,7 @@ class LibraryManager:
             if t in cap_map:
                 details["capabilities"][cap_map[t]] = True
             elif t in ["tank", "air", "naval", "radio", "status", "missile", "music", "noise", "pilot"]:
-                 details["capabilities"][t] = True
+                details["capabilities"][t] = True
 
         # 5. 计算大小
         details["size_str"] = self._get_dir_size_str(mod_dir)
@@ -539,7 +541,7 @@ class LibraryManager:
             mod_dir / "cover.bank",
             mod_dir / "info" / "cover.bank"
         ]
-        
+
         for bank_path in potential_cover_banks:
             if bank_path.exists():
                 # 将 cover.bank 统一为 cover.png 以便前端按固定文件名读取
@@ -553,22 +555,22 @@ class LibraryManager:
         # 扫描封面 (支持根目录和 info 子目录)
         search_dirs = [mod_dir, mod_dir / "info"]
         found_cover = False
-        
+
         for d in search_dirs:
             if found_cover: break
             if not d.exists(): continue
-            
+
             for img_ext in [".png", ".jpg", ".jpeg"]:
                 img_path = d / f"cover{img_ext}"
                 if img_path.exists():
                     details["cover_path"] = str(img_path)
                     found_cover = True
                     break
-        
-        # 7. 文件夹详情
-        details["folders"] = self._detect_mod_folders(mod_dir)
-        
-        # 对特定语音包名称提供固定展示字段，用于界面展示数据复盖
+
+        # 7. 文件详情 (按类型分类)
+        details["files"] = self._detect_mod_files(mod_dir)
+
+        # 对特定语音包名称提供固定展示字段，用于界面展示数据覆盖
         if mod_name == "Aimer":
             details.update({
                 "author": "Aimer",
@@ -582,13 +584,13 @@ class LibraryManager:
                 "language": ["中", "美", "俄"],
                 "capabilities": {"tank": True, "air": True, "naval": True, "radio": True}
             })
-        
+
         return details
 
     def _detect_smart_tags(self, mod_dir):
         # 基于语音包目录内 .bank 文件的命名规则推断功能标签（tags）。
         detected_tags = set()
-        
+
         try:
             # 遍历所有 .bank 文件
             for f in mod_dir.rglob("*.bank"):
@@ -607,7 +609,7 @@ class LibraryManager:
                     detected_tags.add("noise")
                 if re.match(r'dialogs_chat_[a-z0-9]+\.bank$', name):
                     detected_tags.add("pilot")
-                
+
                 # 1. 陆战
                 # 匹配: _crew_dialogs_ground_cn.assets.bank
                 m_ground = re.match(r'(_)?crew_dialogs_ground_([a-z0-9]+)\.assets\.bank', name)
@@ -618,7 +620,7 @@ class LibraryManager:
                 if "crew_dialogs_ground.assets.bank" in name:
                     detected_tags.add("tank")
                     continue
-                    
+
                 # 2. 无线电/局势 (合并原来的无线电和局势播报)
                 m_radio = re.match(r'(_)?crew_dialogs_common_([a-z0-9]+)\.assets\.bank', name)
                 if m_radio:
@@ -627,26 +629,26 @@ class LibraryManager:
                 if "crew_dialogs_common.assets.bank" in name:
                     detected_tags.add("radio")
                     continue
-                    
+
                 # 3. 空战 (仅检测 aircraft_gui.assets.bank)
                 if name == "aircraft_gui.assets.bank":
                     detected_tags.add("air")
                     continue
-                
+
                 # 4. 导弹音效 (检测多个文件)
-                if name in ["aircraft_common.assets.bank", "aircraft_effects.assets.bank", 
-                           "aircraft_guns.assets.bank", "aircraft_guns.bank"]:
+                if name in ["aircraft_common.assets.bank", "aircraft_effects.assets.bank",
+                            "aircraft_guns.assets.bank", "aircraft_guns.bank"]:
                     detected_tags.add("missile")
                     continue
-                
+
                 # 5. 音乐包 (检测带有 aircraft_music 字样的文件)
                 if "aircraft_music" in name:
                     detected_tags.add("music")
                     continue
-                    
+
         except Exception as e:
             log.warning(f"智能检测出错: {e}")
-            
+
         return list(detected_tags)
 
     def _map_lang_code(self, code):
@@ -664,75 +666,84 @@ class LibraryManager:
         }
         return mapping.get(code, code.upper())
 
+    @staticmethod
+    def match_voice_type(filename_lower):
+        base_name = filename_lower
+        if base_name.endswith('.assets.bank'):
+            base_name = base_name.replace('.assets.bank', '')
+        elif base_name.endswith('.bank'):
+            base_name = base_name.replace('.bank', '')
+        else:
+            return None
+        if base_name.startswith('_'):
+            base_name = base_name[1:]
 
-    def _detect_mod_folders(self, mod_dir):
+        for country in Country:
+            if base_name.endswith('_' + country.code):
+                base_name = base_name.rsplit('_', 1)[0]
+
+        for voice_type in VoiceType:
+            if not voice_type.tag:
+                continue
+
+            type_code = voice_type.code
+
+            if base_name in type_code:
+                return voice_type
+
+        return None
+
+    def _detect_mod_files(self, mod_dir):
         """
-        递归扫描 .bank 文件，返回它们所在的上一级文件夹名称（相对路径）
-        去除重复，并按名称排序
+        递归扫描 .bank 文件,按语音类型分类返回文件列表
+        返回格式: [{"type": "陆战语音", "code": "crew_dialogs_ground", "files": [...], "count": 3}, ...]
         """
-        folders_map = {}
+
+        # 按类型分组存储文件
+        type_groups = {}
+
         try:
-            # 查找所有 .bank 文件 (不区分大小写，但 glob 通常区分，所以写两次或用正则)
-            # Windows 下 glob 通常不区分大小写，但为了保险
-            all_files = list(mod_dir.rglob("*.bank")) + list(mod_dir.rglob("*.BANK"))
-            
+            # 查找所有 .bank 文件 (使用 set 去重,避免 Windows 下重复统计)
+            all_files_set = set(mod_dir.rglob("*.bank"))
+            all_files_set.update(mod_dir.rglob("*.BANK"))
+            all_files = list(all_files_set)
+
             for f in all_files:
-                if f.is_file():
-                    parent = f.parent
-                    try:
-                        # 获取相对于 mod_dir 的路径
-                        rel_path = parent.relative_to(mod_dir)
-                        path_str = str(rel_path).replace("\\", "/") # 统一使用正斜杠
-                        
-                        if path_str not in folders_map:
-                            folder_type = self._determine_folder_type(parent)
-                            folders_map[path_str] = {
-                                "path": path_str if path_str != "." else "根目录",
-                                "type": folder_type,
-                                "label": path_str if path_str != "." else "根目录"
-                            }
-                    except ValueError:
-                        continue
+                if not f.is_file():
+                    continue
+
+                filename = f.name.lower()
+                # 获取相对于 mod_dir 的路径
+                try:
+                    rel_path = f.relative_to(mod_dir)
+                    rel_path_str = str(rel_path).replace("\\", "/")
+                except ValueError:
+                    continue
+
+                # 匹配语音类型
+                matched_type = self.match_voice_type(filename)
+
+                # 如果匹配到类型,加入分组
+                if matched_type:
+                    type_key = matched_type.code
+                    if type_key not in type_groups:
+                        type_groups[type_key] = {
+                            "type": matched_type.tag,  # 显示名称
+                            "code": matched_type.code,  # 代码标识
+                            "files": [],
+                            "count": 0
+                        }
+
+                    type_groups[type_key]["files"].append(rel_path_str)
+                    type_groups[type_key]["count"] += 1
+
         except Exception as e:
-            log.warning(f"扫描文件夹出错: {e}")
-        
-        return sorted(list(folders_map.values()), key=lambda x: x["path"])
+            log.error(f"扫描文件出错: {e}")
 
-    def _determine_folder_type(self, folder_path):
-        """
-        根据文件夹内的文件名判断文件夹类型
-        优先级: 陆战 > 无线电 > 空战 > 默认
-        """
-        try:
-            # 获取文件夹下所有文件名
-            filenames = [f.name for f in folder_path.iterdir() if f.is_file()]
-            
-            # 1. 陆战语音: _crew_dialogs_ground_<国家缩写>.assets.bank
-            # 兼容: crew_dialogs_ground.assets.bank (无前缀/后缀)
-            for name in filenames:
-                if re.match(r'(_)?crew_dialogs_ground.*\.assets\.bank', name, re.IGNORECASE):
-                    return "ground"
-            
-            # 2. 无线电语音: _crew_dialogs_common_<国家缩写>.assets.bank
-            # 兼容: crew_dialogs_common.assets.bank
-            for name in filenames:
-                if re.match(r'(_)?crew_dialogs_common.*\.assets\.bank', name, re.IGNORECASE):
-                    return "radio"
-            
-            # 3. 空战音效: aircraft_guns.assets.bank 或 aircraft_gui.assets.bank
-            for name in filenames:
-                if re.match(r'aircraft_guns\.assets\.bank', name, re.IGNORECASE) or \
-                   re.match(r'aircraft_gui\.assets\.bank', name, re.IGNORECASE):
-                    return "aircraft"
-            
-            return "folder"
-            
-        except Exception:
-            return "folder"
+        # 转换为列表并按类型名称排序
+        result = sorted(list(type_groups.values()), key=lambda x: x["type"])
 
-    def _detect_mod_capabilities(self, mod_dir):
-        """[已废弃] 旧的检测逻辑"""
-        return {}
+        return result
 
     def _get_dir_size_str(self, path):
         """计算文件夹大小并格式化（优化版本）"""
@@ -741,21 +752,21 @@ class LibraryManager:
             # 优化：限制遍历深度和文件数量，避免大目录卡死
             file_count = 0
             max_files = 5000  # 最多统计5000个文件
-            max_depth = 10    # 最多遍历10层深度
-            
+            max_depth = 10  # 最多遍历10层深度
+
             for dirpath, dirnames, filenames in os.walk(path):
                 # 检查深度
                 rel_path = os.path.relpath(dirpath, path)
                 depth = rel_path.count(os.sep) if rel_path != '.' else 0
                 if depth > max_depth:
                     continue
-                
+
                 for f in filenames:
                     if file_count >= max_files:
                         # 达到上限，返回估算值
                         mb_size = total_size / (1024 * 1024)
                         return f"~{int(mb_size)} MB+"
-                    
+
                     fp = os.path.join(dirpath, f)
                     if not os.path.islink(fp):
                         try:
@@ -766,15 +777,11 @@ class LibraryManager:
         except Exception as e:
             log.warning(f"计算目录大小失败: {e}")
             return "未知"
-        
+
         mb_size = total_size / (1024 * 1024)
         if mb_size < 1:
             return "<1 MB"
         return f"{int(mb_size)} MB"
-
-    def _detect_mod_capabilities(self, mod_dir):
-        # 兼容旧版接口签名的占位实现。
-        return {}
 
     def _is_safe_path(self, path, base_dir):
         # 校验路径是否位于指定基准目录内，用于限制删除/移动等文件操作的作用范围。
@@ -796,29 +803,29 @@ class LibraryManager:
             if platform.system() == "Windows" and abs_path.drive.lower() == "c:":
                 if not str(abs_path).startswith(str(abs_base)):
                     return False
-            
+
             # 3. Linux/Mac 基础保护 (不允许操作 / 根目录)
             if platform.system() != "Windows":
-                 if str(abs_path) == "/":
-                     return False
+                if str(abs_path) == "/":
+                    return False
 
             # 4. 基础检查：是否在 base_dir 内部
             # 兼容大小写不敏感系统(Windows/macOS) 和 敏感系统(Linux)
             if platform.system() == "Windows":
-                 return str(abs_path).lower().startswith(str(abs_base).lower())
+                return str(abs_path).lower().startswith(str(abs_base).lower())
             else:
-                 return str(abs_path).startswith(str(abs_base))
+                return str(abs_path).startswith(str(abs_base))
         except:
             return False
 
     def _find_7z(self):
         return (
-            shutil.which("7z")
-            or shutil.which("7z.exe")
-            or shutil.which("7za")
-            or shutil.which("7za.exe")
-            or shutil.which("7zr")
-            or shutil.which("7zr.exe")
+                shutil.which("7z")
+                or shutil.which("7z.exe")
+                or shutil.which("7za")
+                or shutil.which("7za.exe")
+                or shutil.which("7zr")
+                or shutil.which("7zr.exe")
         )
 
     def _run_7z(self, args):
@@ -831,7 +838,8 @@ class LibraryManager:
         output = (result.stdout or "") + "\n" + (result.stderr or "")
         return result.returncode, output
 
-    def _extract_with_7z(self, archive_path, target_dir, progress_callback=None, base_progress=0, share_progress=100, password=None):
+    def _extract_with_7z(self, archive_path, target_dir, progress_callback=None, base_progress=0, share_progress=100,
+                         password=None):
         seven_zip = self._find_7z()
         if not seven_zip:
             raise Exception("未检测到 7z 解压组件，请安装 7-Zip 后重试")
@@ -866,21 +874,25 @@ class LibraryManager:
             except Exception:
                 pass
 
-    def _extract_archive_with_password(self, archive_path, target_dir, progress_callback=None, base_progress=0, share_progress=100, password_provider=None):
+    def _extract_archive_with_password(self, archive_path, target_dir, progress_callback=None, base_progress=0,
+                                       share_progress=100, password_provider=None):
         password = None
         while True:
             try:
                 if archive_path.suffix.lower() == ".zip":
                     try:
-                        self._extract_zip_safely(archive_path, target_dir, progress_callback, base_progress, share_progress, password=password)
+                        self._extract_zip_safely(archive_path, target_dir, progress_callback, base_progress,
+                                                 share_progress, password=password)
                     except (NotImplementedError, RuntimeError) as e:
                         msg = str(e).lower()
                         if "compression method is not supported" in msg:
-                            self._extract_with_7z(archive_path, target_dir, progress_callback, base_progress, share_progress, password=password)
+                            self._extract_with_7z(archive_path, target_dir, progress_callback, base_progress,
+                                                  share_progress, password=password)
                         else:
                             raise
                 elif archive_path.suffix.lower() in (".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2"):
-                    self._extract_with_7z(archive_path, target_dir, progress_callback, base_progress, share_progress, password=password)
+                    self._extract_with_7z(archive_path, target_dir, progress_callback, base_progress, share_progress,
+                                          password=password)
                 else:
                     raise Exception(f"不支持的压缩格式: {archive_path.suffix}")
                 return
@@ -943,33 +955,32 @@ class LibraryManager:
             estimated_size = zip_size * 3
             # 需要至少 2 倍的估算空间作为安全余量 (解压过程可能产生临时文件)
             required_space = estimated_size * 2
-            
-            target_drive = Path(self.library_dir).anchor # 获取盘符 (如 C:\)
+
+            target_drive = Path(self.library_dir).anchor  # 获取盘符 (如 C:\)
             if not target_drive: target_drive = self.library_dir
-            
-            import shutil
+
             total, used, free = shutil.disk_usage(target_drive)
-            
+
             if free < required_space:
                 free_mb = free / (1024 * 1024)
                 required_mb = required_space / (1024 * 1024)
                 self.log(f"磁盘空间不足! 可用: {free_mb:.0f}MB, 需要: {required_mb:.0f}MB", "ERROR")
                 raise Exception(f"磁盘空间不足 (需 {required_mb:.0f}MB)")
-                
+
         except Exception as e:
             if "磁盘空间不足" in str(e):
-                raise e # 重新抛出给上层处理
+                raise e  # 重新抛出给上层处理
             self.log(f"磁盘空间检查失败 (跳过检查): {e}", "WARN")
 
         mod_name = zip_path.stem
         target_dir = self.library_dir / mod_name
-        
+
         if target_dir.exists():
             self.log(f"[SKIPPED] 跳过重复: {mod_name} (库中已存在)", "WARN")
             self.log("提示: 如果想重新导入，请先删除库中的同名文件夹。", "INFO")
             if progress_callback: progress_callback(100, "跳过重复文件")
             return
-        
+
         try:
             target_dir.mkdir()
             self.log(f"[UNZIP] 正在导入: {zip_path.name}", "UNZIP")
@@ -987,14 +998,18 @@ class LibraryManager:
         except ArchivePasswordCanceled:
             self.log("[WARN] 已取消输入密码，导入已终止", "WARN")
             if target_dir.exists():
-                try: shutil.rmtree(target_dir)
-                except: pass
+                try:
+                    shutil.rmtree(target_dir)
+                except:
+                    pass
             raise
         except Exception as e:
             self.log(f"[ERROR] 导入失败: {e}", "ERROR")
             if target_dir.exists():
-                try: shutil.rmtree(target_dir)
-                except: pass
+                try:
+                    shutil.rmtree(target_dir)
+                except:
+                    pass
             raise
 
     def unzip_zips_to_library(self, progress_callback=None, password_provider=None):
@@ -1007,26 +1022,26 @@ class LibraryManager:
 
         total = len(zips)
         self.log(f"发现 {total} 个待解压文件...", "INFO")
-        
+
         success_count = 0
         skipped_count = 0
-        
+
         for idx, zip_file in enumerate(zips):
             try:
                 mod_name = zip_file.stem
                 target_dir = self.library_dir / mod_name
-                
+
                 # 计算总体进度区间
                 base_progress = (idx / total) * 100
                 share_progress = (1 / total) * 100
-                
+
                 if target_dir.exists():
                     self.log(f"[SKIPPED] 跳过重复: {mod_name}", "WARN")
                     skipped_count += 1
                     if progress_callback:
                         progress_callback(base_progress + share_progress, f"跳过: {mod_name}")
                     continue
-                
+
                 target_dir.mkdir()
                 self.log(f"[UNZIP] 正在解压 ({idx + 1}/{total}): {zip_file.name}", "UNZIP")
 
@@ -1039,27 +1054,32 @@ class LibraryManager:
                     password_provider=password_provider,
                 )
                 self._normalize_wtlive_compat_files(target_dir)
-                
+
                 success_count += 1
                 self.log(f"[SUCCESS] 解压成功: {mod_name}", "SUCCESS")
             except ArchivePasswordCanceled:
                 self.log(f"[WARN] 已取消输入密码，跳过: {zip_file.name}", "WARN")
                 if target_dir.exists():
-                    try: shutil.rmtree(target_dir)
-                    except: pass
+                    try:
+                        shutil.rmtree(target_dir)
+                    except:
+                        pass
                 if progress_callback:
                     progress_callback(base_progress + share_progress, f"跳过: {mod_name}")
                 skipped_count += 1
             except Exception as e:
                 self.log(f"[ERROR] 解压 {zip_file.name} 失败: {e}", "ERROR")
                 if target_dir.exists():
-                    try: shutil.rmtree(target_dir)
-                    except: pass
+                    try:
+                        shutil.rmtree(target_dir)
+                    except:
+                        pass
 
         self.log(f"[INFO] 解压完成: 成功 {success_count}, 跳过 {skipped_count}", "INFO")
         if progress_callback: progress_callback(100, "全部完成")
 
-    def _extract_zip_safely(self, zip_path, target_dir, progress_callback=None, base_progress=0, share_progress=100, password=None):
+    def _extract_zip_safely(self, zip_path, target_dir, progress_callback=None, base_progress=0, share_progress=100,
+                            password=None):
         # 解压 ZIP 文件到目标目录，并提供进度回调与路径边界校验。
         target_root = Path(target_dir).resolve()
         with zipfile.ZipFile(zip_path, 'r') as zf:
@@ -1084,11 +1104,11 @@ class LibraryManager:
                         total_bytes += int(getattr(m, "file_size", 0) or 0)
                     except Exception:
                         pass
-            
+
             for idx, member in enumerate(file_list):
                 if idx % 50 == 0:
                     time.sleep(0.001)
-                
+
                 try:
                     filename = member.filename.encode('cp437').decode('utf-8')
                 except:
@@ -1100,8 +1120,9 @@ class LibraryManager:
                         except:
                             filename = member.filename
 
-                if "__MACOSX" in filename or "desktop.ini" in filename: continue
-                
+                if "__MACOSX" in filename or "desktop.ini" in filename:
+                    continue
+
                 now = time.monotonic()
                 should_push = (idx == 0) or (idx % 10 == 0) or (idx == total_files - 1)
                 if progress_callback and total_files > 0 and should_push and (now - last_update) >= 0.05:
@@ -1115,7 +1136,7 @@ class LibraryManager:
                     except Exception:
                         pass
                     last_update = now
-                
+
                 # 路径边界校验：目标路径必须位于 target_dir 内部
                 full_target_path = (target_dir / filename).resolve()
                 try:
@@ -1123,8 +1144,8 @@ class LibraryManager:
                 except Exception:
                     is_inside = False
                 if not is_inside:
-                     self.log(f"[WARN] 拦截恶意路径穿越文件: {filename}", "WARN")
-                     continue
+                    self.log(f"[WARN] 拦截恶意路径穿越文件: {filename}", "WARN")
+                    continue
 
                 target_path = target_dir / filename
                 if member.is_dir():
@@ -1166,7 +1187,7 @@ class LibraryManager:
                                     fname = "..." + fname[-25:]
                                 progress_callback(int(current_percent), f"解压中: {fname}")
                                 last_update = now
-            
+
             if progress_callback:
                 progress_callback(int(base_progress + share_progress), "解压完成")
 
