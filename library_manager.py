@@ -506,35 +506,66 @@ class LibraryManager:
             except Exception as e:
                 log.warning(f"读取 info.json 失败: {e}")
 
-        # 基于文件规则推断 tags（仅推断功能标签；language 不进行推断）
-        detected_tags = self._detect_smart_tags(mod_dir)
-        if detected_tags:
-            combined_tags = []
-            for t in list(details["tags"]) + list(detected_tags):
-                if t not in combined_tags:
-                    combined_tags.append(t)
-            details["tags"] = combined_tags
+        # 文件详情 (按类型分类)
+        # 这一步会同时检测文件类型和语言
+        details["files"] = self._detect_mod_files(mod_dir)
 
-        # 如果作者没写语言，则显示"未识别"
-        if not details["language"]:
-            details["language"] = ["未识别"]
+        # 收集自动检测到的标签和语言
+        detected_tags = set()
+        detected_langs = set()
+        
+        if details["files"]:
+            for group in details["files"]:
+                # type 是 VoiceType.tag (如 "陆战语音")
+                t = group.get("type")
+                if t:
+                    detected_tags.add(t)
+                
+                langs = group.get("merged_langs", [])
+                for l in langs:
+                    detected_langs.add(l)
+
+        # 合并标签：以 info.json 为主，补充自动检测到的
+        combined_tags = list(details["tags"])
+        for t in detected_tags:
+            if t not in combined_tags:
+                combined_tags.append(t)
+        details["tags"] = combined_tags
+
+        # 合并语言：如果 info.json 没写，或者写的是"未识别"，则使用自动检测结果
+        if not details["language"] or details["language"] == ["未识别"]:
+            if detected_langs:
+                # 按常用语排序或保持扫描顺序
+                details["language"] = sorted(list(detected_langs))
+            else:
+                details["language"] = ["未识别"]
+        else:
+            # 如果已有，补充检测到的新语言
+            for l in detected_langs:
+                if l not in details["language"]:
+                    details["language"].append(l)
 
         # 将 tags 映射为前端使用的 capabilities 键
-        cap_map = {
-            "tank": "tank", "陆战": "tank", "ground": "tank",
-            "air": "air", "空战": "air", "aircraft": "air",
-            "naval": "naval", "海战": "naval",
-            "radio": "radio", "无线电": "radio", "无线电/局势": "radio",
-            "status": "status", "局势播报": "radio",
-            "missile": "missile", "导弹音效": "missile",
-            "music": "music", "音乐包": "music",
-            "noise": "noise", "降噪包": "noise",
-            "pilot": "pilot", "飞行员语音": "pilot"
-        }
         for t in details["tags"]:
-            if t in cap_map:
-                details["capabilities"][cap_map[t]] = True
-            elif t in ["tank", "air", "naval", "radio", "status", "missile", "music", "noise", "pilot"]:
+            tl = t.lower()
+            if any(k in tl for k in ["tank", "ground", "陆战"]):
+                details["capabilities"]["tank"] = True
+            if any(k in tl for k in ["air", "aircraft", "空战", "座舱"]):
+                details["capabilities"]["air"] = True
+            if any(k in tl for k in ["naval", "ships", "海战"]):
+                details["capabilities"]["naval"] = True
+            if any(k in tl for k in ["radio", "无线电", "status", "局势", "对话"]):
+                details["capabilities"]["radio"] = True
+            if any(k in tl for k in ["missile", "导弹", "武器", "guns", "weapons"]):
+                details["capabilities"]["missile"] = True
+            if any(k in tl for k in ["music", "音乐"]):
+                details["capabilities"]["music"] = True
+            if any(k in tl for k in ["noise", "降噪", "主音库", "masterbank"]):
+                details["capabilities"]["noise"] = True
+            if any(k in tl for k in ["pilot", "飞行员", "infantry", "步兵"]):
+                details["capabilities"]["pilot"] = True
+            
+            if t in ["tank", "air", "naval", "radio", "status", "missile", "music", "noise", "pilot"]:
                 details["capabilities"][t] = True
 
         # 5. 计算大小
@@ -673,44 +704,40 @@ class LibraryManager:
         }
         return mapping.get(code, code.upper())
 
-    @staticmethod
-    def match_voice_type(filename_lower):
-        base_name = filename_lower
-        if base_name.endswith('.assets.bank'):
-            base_name = base_name.replace('.assets.bank', '')
-        elif base_name.endswith('.bank'):
-            base_name = base_name.replace('.bank', '')
-        else:
-            return None
-        if base_name.startswith('_'):
-            base_name = base_name[1:]
-
-        for country in Country:
-            if base_name.endswith('_' + country.code):
-                base_name = base_name.rsplit('_', 1)[0]
-
-        for voice_type in VoiceType:
-            if not voice_type.tag:
-                continue
-
-            type_code = voice_type.code
-
-            if base_name in type_code:
-                return voice_type
-
-        return None
+    def _get_v_type_cls(self, v_type):
+        """将 VoiceType 映射到前端 CSS 类名"""
+        if not v_type:
+            return "default"
+        code = v_type.code.lower()
+        tag = (v_type.tag or "").lower()
+        
+        if any(k in code or k in tag for k in ["ground", "tank", "陆战"]):
+            return "tank"
+        if any(k in code or k in tag for k in ["air", "aircraft", "空战", "座舱"]):
+            return "air"
+        if any(k in code or k in tag for k in ["naval", "ships", "海战"]):
+            return "naval"
+        if any(k in code or k in tag for k in ["radio", "common", "dialogs", "无线电", "对话"]):
+            return "radio"
+        if any(k in code or k in tag for k in ["missile", "guns", "weapons", "导弹", "武器"]):
+            return "missile"
+        if any(k in code or k in tag for k in ["music", "音乐"]):
+            return "music"
+        if any(k in code or k in tag for k in ["noise", "masterbank", "降噪"]):
+            return "noise"
+        if any(k in code or k in tag for k in ["pilot", "飞行员", "infantry", "步兵"]):
+            return "pilot"
+        return "default"
 
     def _detect_mod_files(self, mod_dir):
         """
-        递归扫描 .bank 文件,按语音类型分类返回文件列表
-        返回格式: [{"type": "陆战语音", "code": "crew_dialogs_ground", "files": [...], "count": 3}, ...]
+        递归扫描 .bank 文件,按语音类型分类返回文件列表，并识别语言。
+        返回格式: [{"type": "陆战语音", "code": "crew_dialogs_ground", "cls": "tank", "files": [...], ...}, ...]
         """
-
-        # 按类型分组存储文件
         type_groups = {}
 
         try:
-            # 查找所有 .bank 文件 (使用 set 去重,避免 Windows 下重复统计)
+            # 查找所有 .bank 文件
             all_files_set = set(mod_dir.rglob("*.bank"))
             all_files_set.update(mod_dir.rglob("*.BANK"))
             all_files = list(all_files_set)
@@ -720,37 +747,89 @@ class LibraryManager:
                     continue
 
                 filename = f.name.lower()
-                # 获取相对于 mod_dir 的路径
                 try:
                     rel_path = f.relative_to(mod_dir)
                     rel_path_str = str(rel_path).replace("\\", "/")
                 except ValueError:
                     continue
 
-                # 匹配语音类型
-                matched_type = self.match_voice_type(filename)
+                # 匹配语音类型及语言信息
+                matched_data = self.match_voice_type(filename)
 
-                # 如果匹配到类型,加入分组
-                if matched_type:
-                    type_key = matched_type.code
+                if matched_data:
+                    v_type, v_country, _ = matched_data
+                    type_key = v_type.code
+                    
                     if type_key not in type_groups:
                         type_groups[type_key] = {
-                            "type": matched_type.tag,  # 显示名称
-                            "code": matched_type.code,  # 代码标识
+                            "type": v_type.tag,
+                            "code": v_type.code,
+                            "cls": self._get_v_type_cls(v_type), # 增加颜色类名
                             "files": [],
-                            "count": 0
+                            "count": 0,
+                            "langs": set() 
                         }
 
                     type_groups[type_key]["files"].append(rel_path_str)
                     type_groups[type_key]["count"] += 1
-
+                    if v_country:
+                        lang_name = self._map_lang_code(v_country.code)
+                        type_groups[type_key]["langs"].add(lang_name)
         except Exception as e:
-            log.error(f"扫描文件出错: {e}")
+            log.error(f"扫描模块化文件出错: {e}")
 
-        # 转换为列表并按类型名称排序
-        result = sorted(list(type_groups.values()), key=lambda x: x["type"])
+        # 转换为最终格式
+        final_list = []
+        for g in type_groups.values():
+            g["merged_langs"] = sorted(list(g["langs"]))
+            del g["langs"]
+            final_list.append(g)
 
-        return result
+        return sorted(final_list, key=lambda x: x["type"])
+
+    @staticmethod
+    def match_voice_type(filename_lower):
+        """
+        匹配文件名对应的语音类型和语言
+        返回: (VoiceType, Country or None, base_name) 或 None
+        """
+        base_name = filename_lower
+        if base_name.endswith('.assets.bank'):
+            base_name = base_name.replace('.assets.bank', '')
+        elif base_name.endswith('.bank'):
+            base_name = base_name.replace('.bank', '')
+        else:
+            return None
+            
+        if base_name.startswith('_'):
+            base_name = base_name[1:]
+
+        detected_country = None
+        # 按照 code 长度倒序排列，优先识别长后缀
+        sorted_countries = sorted(list(Country), key=lambda x: len(x.code), reverse=True)
+        
+        for country in sorted_countries:
+            if base_name.endswith('_' + country.code):
+                base_name = base_name.rsplit('_', 1)[0]
+                detected_country = country
+                break
+
+        for v_type in VoiceType:
+            if not v_type.tag:
+                continue
+            
+            # 全等匹配或带下划线的前缀匹配
+            if base_name == v_type.code or base_name == "_" + v_type.code:
+                return v_type, detected_country, base_name
+            
+        # 兜底：模糊匹配
+        for v_type in VoiceType:
+            if not v_type.tag:
+                continue
+            if v_type.code in base_name:
+                return v_type, detected_country, base_name
+                
+        return None
 
     def _get_dir_size_str(self, path):
         """计算文件夹大小并格式化（优化版本）"""

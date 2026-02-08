@@ -44,23 +44,23 @@
     --link-vid-normal: #EF4444;
     --link-vid-hover: #EF4444;
 
-    /* 标签 */
-    --tag-tank-bg: #DCFCE7;
-    --tag-tank-text: #16A34A;
-    --tag-air-bg: #F3F4F6;
-    --tag-air-text: #4B5563;
+    /* 标签 (鲜艳优化版) */
+    --tag-tank-bg: #DEFADB;
+    --tag-tank-text: #10B981;
+    --tag-air-bg: #E2E8F0;
+    --tag-air-text: #475569;
     --tag-naval-bg: #E0F2FE;
-    --tag-naval-text: #0284C7;
-    --tag-radio-bg: #FEF9C3;
-    --tag-radio-text: #CA8A04;
-    --tag-missile-bg: #FFE4E8;
-    --tag-missile-text: #DC2626;
-    --tag-music-bg: #F3E8FF;
-    --tag-music-text: #9333EA;
-    --tag-noise-bg: #E0F2F1;
-    --tag-noise-text: #0F766E;
-    --tag-pilot-bg: #E0E7FF;
-    --tag-pilot-text: #4338CA;
+    --tag-naval-text: #0EA5E9;
+    --tag-radio-bg: #FFFBEB;
+    --tag-radio-text: #F59E0B;
+    --tag-missile-bg: #FFE4E6;
+    --tag-missile-text: #F43F5E;
+    --tag-music-bg: #F5F3FF;
+    --tag-music-text: #8B5CF6;
+    --tag-noise-bg: #F0FDFA;
+    --tag-noise-text: #14B8A6;
+    --tag-pilot-bg: #EEF2FF;
+    --tag-pilot-text: #6366F1;
 
     /* --- 日志系统变量定义 --- */
     /* Log System */
@@ -225,29 +225,23 @@
     --mod-ver-text: #FBBF24;
     --mod-author-text: #71717A;
 
-    /* --- 标签系统 (深底浅字) --- */
-    --tag-tank-bg: #14532D;
-    --tag-tank-text: #4ADE80;
-    /* 森林深绿底 + 荧光绿字 */
-    --tag-air-bg: #374151;
-    --tag-air-text: #D1D5DB;
-    /* 铁灰底 + 银白字 */
-    --tag-naval-bg: #1E3A8A;
-    --tag-naval-text: #60A5FA;
-    /* 深海蓝底 + 天蓝字 */
-    --tag-radio-bg: #422006;
-    --tag-radio-text: #FACC15;
-    /* 深褐底 + 金黄字 */
-    --tag-missile-bg: #7F1D1D;
-    --tag-missile-text: #FCA5A5;
-    /* 深红底 + 浅红字 */
-    --tag-music-bg: #581C87;
-    --tag-music-text: #E9D5FF;
-    /* 深紫底 + 浅紫字 */
-    --tag-noise-bg: #134E4A;
-    --tag-noise-text: #5EEAD4;
-    --tag-pilot-bg: #312E81;
-    --tag-pilot-text: #C7D2FE;
+    /* --- 标签系统 (高饱和霓虹版) --- */
+    --tag-tank-bg: rgba(16, 185, 129, 0.2);
+    --tag-tank-text: #34D399;
+    --tag-air-bg: rgba(148, 163, 184, 0.2);
+    --tag-air-text: #CBD5E1;
+    --tag-naval-bg: rgba(14, 165, 233, 0.2);
+    --tag-naval-text: #38BDF8;
+    --tag-radio-bg: rgba(245, 158, 11, 0.2);
+    --tag-radio-text: #FBBF24;
+    --tag-missile-bg: rgba(244, 63, 94, 0.25);
+    --tag-missile-text: #FB7185;
+    --tag-music-bg: rgba(139, 92, 246, 0.25);
+    --tag-music-text: #A78BFA;
+    --tag-noise-bg: rgba(20, 184, 166, 0.2);
+    --tag-noise-text: #2DD4BF;
+    --tag-pilot-bg: rgba(99, 102, 241, 0.25);
+    --tag-pilot-text: #818CF8;
 
     /* --- 交互按钮 --- */
     --action-trash: #71717A;
@@ -2140,9 +2134,20 @@ i[class^="ri-"] {
 
 .tag {
     font-size: 10px;
-    font-weight: 600;
-    padding: 2px 8px;
+    font-weight: 700;
+    padding: 2px 10px;
     border-radius: 100px;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+}
+
+.tag:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
 .tag.tank {

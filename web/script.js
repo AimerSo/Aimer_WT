@@ -1644,29 +1644,31 @@ const app = {
             if (mod.capabilities.pilot) tagsHtml += `<span class="tag pilot">飞行员语音</span>`;
         }
 
-        let langList = [];
+        let fullLangList = [];
         if (mod.language && Array.isArray(mod.language) && mod.language.length > 0) {
-            langList = mod.language;
+            fullLangList = mod.language;
         } else if (mod.language && typeof mod.language === 'string') {
-            // 兼容如果是字符串的情况
-            langList = [mod.language];
+            fullLangList = [mod.language];
         } else {
-            // 如果后端没返回，或者是旧数据
-            if (mod.title.includes("Aimer") || mod.id === "Aimer") {
-                langList = ["中", "美", "俄"];
-            } else {
-                langList = ["多语言"];
-            }
+            fullLangList = (mod.title.includes("Aimer") || mod.id === "Aimer") ? ["中", "美", "俄"] : ["未识别"];
         }
 
-        const langHtml = langList.map(lang => {
-            // 语言样式映射优先使用 UI_CONFIG.langMap
+        // 过滤出主要展示语言 (中/美/英)
+        let displayLangs = fullLangList.filter(lang => ["中", "美", "英"].includes(lang));
+        if (displayLangs.length === 0) {
+            displayLangs = fullLangList.includes("未识别") ? ["未识别"] : ["其他"];
+        }
+
+        const langHtml = displayLangs.map(lang => {
             let cls = "";
             if (typeof UI_CONFIG !== 'undefined' && UI_CONFIG.langMap[lang]) {
                 cls = UI_CONFIG.langMap[lang];
             }
             return `<span class="lang-text ${cls}">${lang}</span>`;
         }).join('<span style="margin:0 2px">/</span>');
+
+        // 拼接悬停显示的完整列表
+        const langTooltip = fullLangList.length > 0 ? `支持语言: ${fullLangList.join(', ')}` : '未识别语言';
 
         const updateDate = mod.date || "未知日期";
 
@@ -1715,15 +1717,20 @@ const app = {
                     <i class="ri-hard-drive-2-line"></i> <span>${mod.size_str}</span>
                     <span style="margin: 0 5px; color:#ddd">|</span>
                     
-                    <i class="ri-translate"></i> 
-                    <span style="margin-left:2px">${langHtml}</span>
+                    <div class="mod-lang-wrap" title="${langTooltip}" style="display:inline-flex; align-items:center; cursor:help;">
+                        <i class="ri-translate"></i> 
+                        <span style="margin-left:2px">${langHtml || '未识别'}</span>
+                    </div>
                 </div>
 
-                <div class="mod-tags">
-                    ${tagsHtml}
+                <div class="mod-meta-row" style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px;">
+                    ${mod.files && mod.files.length > 0 ?
+                mod.files.map(f => `<span class="tag ${f.cls || 'default'}" title="包含模块: ${f.type}">${f.type}</span>`).join('')
+                : tagsHtml
+            }
                 </div>
                 
-                <div style="font-size:11px; color:var(--text-log); opacity:0.6; margin-bottom:8px; display:flex; align-items:center; gap:4px;">
+                <div style="font-size:11px; color:var(--text-log); opacity:0.6; margin: 6px 0 8px; display:flex; align-items:center; gap:4px;">
                     <i class="ri-time-line"></i> 更新于: ${updateDate}
                 </div>
 
