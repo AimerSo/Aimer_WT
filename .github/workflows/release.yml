@@ -154,7 +154,7 @@ jobs:
           REPORT_URL: ${{ secrets.REPORT_URL }}
           TELEMETRY_SALT: ${{ secrets.TELEMETRY_SALT }}
         run: |
-          python build.py
+          python scripts/build.py
 
       - name: Rename Checksum
         shell: bash
