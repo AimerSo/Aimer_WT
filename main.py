@@ -18,13 +18,13 @@ except Exception as _e:
     _WEBVIEW_IMPORT_ERROR = _e
 
 from pathlib import Path
-from config_manager import ConfigManager
-from core_logic import CoreService
-from library_manager import ArchivePasswordCanceled, LibraryManager
-from logger import setup_logger, get_logger, set_ui_callback
-from sights_manager import SightsManager
-from skins_manager import SkinsManager
-from telemetry_manager import init_telemetry, get_hwid
+from services.config_manager import ConfigManager
+from services.core_logic import CoreService
+from services.library_manager import ArchivePasswordCanceled, LibraryManager
+from utils.logger import setup_logger, get_logger, set_ui_callback
+from services.sights_manager import SightsManager
+from services.skins_manager import SkinsManager
+from services.telemetry_manager import init_telemetry, get_hwid
 
 APP_VERSION = "2.1.0"
 AGREEMENT_VERSION = "2026-01-10"

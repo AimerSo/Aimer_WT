@@ -28,11 +28,11 @@ import stat
 import json
 import time
 from pathlib import Path
-from typing import List, Callable, Any
+from typing import List, Callable
 
 # 引入安装清单管理器
-from manifest_manager import ManifestManager
-from logger import get_logger
+from services.manifest_manager import ManifestManager
+from utils.logger import get_logger
 
 log = get_logger(__name__)
 

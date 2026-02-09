@@ -195,7 +195,7 @@ def format_exception(e: Exception, include_traceback: bool = False) -> str:
 
 def _get_log_dir() -> Path:
     """获取日誌存储目录，确保目录存在。"""
-    from utils import get_docs_data_dir
+    from utils.utils import get_docs_data_dir
     base_dir = get_docs_data_dir()
     log_dir = base_dir / "logs"
     try:
