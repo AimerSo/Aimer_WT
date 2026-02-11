@@ -13,6 +13,7 @@ import platform
 from pathlib import Path
 import sys
 from utils.logger import get_logger
+from utils.utils import get_docs_data_dir
 
 log = get_logger(__name__)
 
@@ -32,74 +33,9 @@ class ConfigSaveError(ConfigError):
     pass
 
 
-# 配置文件固定存放在用户配置目录下的 Aimer_WT 资料夹
-def _get_default_config_dir():
-    """
-    获取默认配置文件目录（跨平台支援）
-    - Windows: ~/Documents/Aimer_WT
-    - Linux: ~/.config/Aimer_WT
-    - macOS: ~/Library/Application Support/Aimer_WT
-    
-    Returns:
-        Path: 配置目录路径
-    
-    Raises:
-        ConfigError: 无法创建或访问配置目录时
-    """
-    system = platform.system()
-
-    if system == "Windows":
-        # Windows: 用户文档目录
-        try:
-            import ctypes.wintypes
-            buf = ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
-            # CSIDL_PERSONAL = 5 (My Documents), SHGFP_TYPE_CURRENT = 0
-            if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) != 0:
-                raise OSError("无法通过 Windows API 获取文档路径")
-
-            if not buf.value:
-                raise OSError("获取到的 Windows 文档路径为空")
-
-            config_base = Path(buf.value) / "Aimer_WT"
-        except Exception as e:
-            log.warning(f"获取 Windows 文档目录失败，略过默认搜索路径: {e}")
-            config_base = Path.home() / "Documents" / "Aimer_WT"
-
-    elif system == "Darwin":
-        # macOS: Application Support 目录
-        config_base = Path.home() / "Library" / "Application Support" / "Aimer_WT"
-    else:
-        # Linux/其他: 使用 XDG_CONFIG_HOME 或 ~/.config
-        xdg_config = os.environ.get("XDG_CONFIG_HOME")
-        if xdg_config:
-            config_base = Path(xdg_config) / "Aimer_WT"
-        else:
-            config_base = Path.home() / ".config" / "Aimer_WT"
-
-    # 确保目录存在
-    if not config_base.exists():
-        try:
-            config_base.mkdir(parents=True, exist_ok=True)
-            log.info(f"已创建配置目录: {config_base}")
-        except PermissionError as e:
-            log.warning(f"无法创建配置目录（权限不足），使用程式目录: {e}")
-            # 备用方案：使用程式目录
-            if getattr(sys, 'frozen', False):
-                return Path(sys.executable).parent
-            else:
-                return Path(__file__).parent
-        except OSError as e:
-            log.warning(f"无法创建配置目录（系统错误），使用程式目录: {e}")
-            if getattr(sys, 'frozen', False):
-                return Path(sys.executable).parent
-            else:
-                return Path(__file__).parent
-    return config_base
-
-
 def _get_config_dir():
     """获取配置文件目录。"""
-    return _get_default_config_dir()
+    return get_docs_data_dir()
 
 
 DOCS_DIR = _get_config_dir()
