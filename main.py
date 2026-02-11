@@ -919,7 +919,6 @@ class AppApi:
         t.start()
         return True
 
-
     def refresh_skins_async(self, opts=None):
         """
         先传回基本信息，再异步推送封面数据。
@@ -937,11 +936,11 @@ class AppApi:
             try:
                 default_cover_path = WEB_DIR / "assets" / "card_image_small.png"
                 data = self._skins_mgr.scan_userskins(
-                    game_path, default_cover_path=default_cover_path, 
+                    game_path, default_cover_path=default_cover_path,
                     force_refresh=force_refresh, skip_covers=True
                 )
                 data["valid"] = True
-                
+
                 # 推送基本列表到前端，让界面先渲染出来
                 if self._window:
                     js_data = json.dumps(data, ensure_ascii=False)
@@ -952,7 +951,7 @@ class AppApi:
                     name = it.get("name")
                     preview_path = it.get("preview_path")
                     cover_url = ""
-                    
+
                     if preview_path and Path(preview_path).exists():
                         cover_url = self._skins_mgr._to_data_url(Path(preview_path))
                     elif default_cover_path.exists():
@@ -1711,7 +1710,7 @@ def main() -> int:
                 return None
 
             r = mi.rcWork
-            return (int(r.left), int(r.top), int(r.right), int(r.bottom))
+            return int(r.left), int(r.top), int(r.right), int(r.bottom)
         except Exception:
             log.debug("取得 Windows 工作区失败", exc_info=True)
             return None
@@ -1759,7 +1758,6 @@ def main() -> int:
 
     # 绑定窗口对象到桥接层
     api.set_window(window)
-    
 
     # TODO 需要优化，拖放压缩包时大概率卡死
     def _bind_drag_drop(win):
@@ -1769,7 +1767,6 @@ def main() -> int:
         except Exception:
             log.debug("DOMEventHandler 不可用，略过拖放绑定")
             return
-
 
         def on_drop(e):
             def _async_processor():
@@ -1811,7 +1808,7 @@ def main() -> int:
                         return
 
                     zp = zip_files[0]
-                    
+
                     if active_page == "page-lib":
                         api.import_voice_zip_from_path(zp)
                     elif active_page == "page-camo":
@@ -1821,7 +1818,7 @@ def main() -> int:
                             )
                         except Exception:
                             res_view = "skins"
-                        
+
                         if res_view == "sights":
                             api.import_sights_zip_from_path(zp)
                         else:
