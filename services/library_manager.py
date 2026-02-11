@@ -15,7 +15,6 @@
 - 所有操作记录完整的错误上下文
 """
 import os
-import sys
 import platform
 import shutil
 import subprocess
@@ -23,18 +22,17 @@ import time
 import zipfile
 import json
 import re
-from collections import Counter
 from pathlib import Path
-from typing import Callable, Any
-from logger import get_logger
-from utils import get_app_data_dir
-from wt_sound import VoiceType, Country
+from typing import Any
+from utils.logger import get_logger
+from utils.utils import get_app_data_dir
+from wt.wt_sound import VoiceType, Country
 
 log = get_logger(__name__)
 
 # 定义标准文件夹名称
-DIR_PENDING = "WT待解压区"
-DIR_LIBRARY = "WT语音包库"
+DIR_PENDING = "../WT待解压区"
+DIR_LIBRARY = "../WT语音包库"
 
 
 # 定义压缩包相关异常类
@@ -84,8 +82,8 @@ class LibraryManager:
                  library_dir: str | None = None):
         """初始化 LibraryManager。"""
         self.root_dir = get_app_data_dir()
-        self._details_cache = {} # 缓存单个 mod 的详情
-        self._scan_cache = None   # 缓存整个扫描结果
+        self._details_cache = {}  # 缓存单个 mod 的详情
+        self._scan_cache = None  # 缓存整个扫描结果
         self._last_scan_mtime = 0
 
         # 初始化待解压区与语音包库目录路径
@@ -287,7 +285,7 @@ class LibraryManager:
         try:
             if not self.library_dir.exists():
                 return []
-            
+
             # 检查目录修改时间
             current_mtime = self.library_dir.stat().st_mtime
             if self._scan_cache is not None and self._last_scan_mtime == current_mtime:
@@ -297,7 +295,7 @@ class LibraryManager:
             for item in self.library_dir.iterdir():
                 if item.is_dir():
                     mods.append(item.name)
-            
+
             self._scan_cache = mods
             self._last_scan_mtime = current_mtime
             return mods
@@ -418,12 +416,12 @@ class LibraryManager:
         读取语音包的元数据与资源信息，生成前端展示所需的详情字典。
         """
         mod_dir = self.library_dir / mod_name
-        
+
         try:
             current_mtime = mod_dir.stat().st_mtime
         except Exception:
             current_mtime = 0
-            
+
         cached = self._details_cache.get(mod_name)
         if cached and cached.get("_mtime") == current_mtime:
             return cached
@@ -513,14 +511,14 @@ class LibraryManager:
         # 收集自动检测到的标签和语言
         detected_tags = set()
         detected_langs = set()
-        
+
         if details["files"]:
             for group in details["files"]:
                 # type 是 VoiceType.tag (如 "陆战语音")
                 t = group.get("type")
                 if t:
                     detected_tags.add(t)
-                
+
                 langs = group.get("merged_langs", [])
                 for l in langs:
                     detected_langs.add(l)
@@ -564,7 +562,7 @@ class LibraryManager:
                 details["capabilities"]["noise"] = True
             if any(k in tl for k in ["pilot", "飞行员", "infantry", "步兵"]):
                 details["capabilities"]["pilot"] = True
-            
+
             if t in ["tank", "air", "naval", "radio", "status", "missile", "music", "noise", "pilot"]:
                 details["capabilities"][t] = True
 
@@ -710,7 +708,7 @@ class LibraryManager:
             return "default"
         code = v_type.code.lower()
         tag = (v_type.tag or "").lower()
-        
+
         if any(k in code or k in tag for k in ["ground", "tank", "陆战"]):
             return "tank"
         if any(k in code or k in tag for k in ["air", "aircraft", "空战", "座舱"]):
@@ -759,15 +757,15 @@ class LibraryManager:
                 if matched_data:
                     v_type, v_country, _ = matched_data
                     type_key = v_type.code
-                    
+
                     if type_key not in type_groups:
                         type_groups[type_key] = {
                             "type": v_type.tag,
                             "code": v_type.code,
-                            "cls": self._get_v_type_cls(v_type), # 增加颜色类名
+                            "cls": self._get_v_type_cls(v_type),  # 增加颜色类名
                             "files": [],
                             "count": 0,
-                            "langs": set() 
+                            "langs": set()
                         }
 
                     type_groups[type_key]["files"].append(rel_path_str)
@@ -800,14 +798,14 @@ class LibraryManager:
             base_name = base_name.replace('.bank', '')
         else:
             return None
-            
+
         if base_name.startswith('_'):
             base_name = base_name[1:]
 
         detected_country = None
         # 按照 code 长度倒序排列，优先识别长后缀
         sorted_countries = sorted(list(Country), key=lambda x: len(x.code), reverse=True)
-        
+
         for country in sorted_countries:
             if base_name.endswith('_' + country.code):
                 base_name = base_name.rsplit('_', 1)[0]
@@ -817,18 +815,18 @@ class LibraryManager:
         for v_type in VoiceType:
             if not v_type.tag:
                 continue
-            
+
             # 全等匹配或带下划线的前缀匹配
             if base_name == v_type.code or base_name == "_" + v_type.code:
                 return v_type, detected_country, base_name
-            
+
         # 兜底：模糊匹配
         for v_type in VoiceType:
             if not v_type.tag:
                 continue
             if v_type.code in base_name:
                 return v_type, detected_country, base_name
-                
+
         return None
 
     def _get_dir_size_str(self, path):

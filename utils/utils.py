@@ -12,6 +12,7 @@ from logging import getLogger
 
 log = getLogger(__name__)
 
+
 def get_docs_data_dir() -> Path:
     """
     获取应用数据存储目录（跨平台支援）。
@@ -23,7 +24,7 @@ def get_docs_data_dir() -> Path:
         Path: 应用数据目录路径
     """
     system = platform.system()
-    
+
     if system == "Windows":
         # Windows: 用户文档目录
         try:
@@ -48,6 +49,7 @@ def get_docs_data_dir() -> Path:
             return Path(xdg_config) / "Aimer_WT"
         else:
             return Path.home() / ".config" / "Aimer_WT"
+
 
 def get_app_data_dir() -> Path:
     """

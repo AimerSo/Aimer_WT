@@ -6,7 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
-from logger import get_logger
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.logger import get_logger
 
 log = get_logger(__name__)
 
@@ -23,7 +25,7 @@ def calculate_checksum(file_path, algorithm='sha256'):
 def clean_build_artifacts():
     """清理构建临时文件"""
     log.info("🧹 正在清理临时文件...")
-    
+
     # 删除 build 文件夹
     if os.path.exists('build'):
         try:
@@ -58,20 +60,20 @@ def load_dotenv(path=".env"):
 def build_exe():
     """执行打包任务"""
     log.info("🚀 开始打包程序...")
-    
+
     # 确保 dist 目录存在 (PyInstaller 会自动创建，但为了保险)
-    dist_dir = Path("dist")
+    dist_dir = Path("../dist")
 
     load_dotenv()
-    
+
     # 在打包前，从打包环境的环境变量中读取加密salt和遥测url
     # 如果没有设置，则使用开发默认值
     salt = os.environ.get("TELEMETRY_SALT", "DEVELOPMENT_SALT")
     url = os.environ.get("REPORT_URL", "https://api.example.com/telemetry")
-    
+
     # 生成临时的 app_secrets.py 供编译使用
     # 注意：该文件已被加入 .gitignore，不会被上传到 GitHub
-    secrets_file = Path("app_secrets.py")
+    secrets_file = Path("../app_secrets.py")
     with open(secrets_file, "w", encoding="utf-8") as f:
         f.write("# 由 build.py 自动生成 - 不要把它提交到github\n")
         f.write(f"TELEMETRY_SALT = {repr(salt)}\n")
@@ -79,14 +81,14 @@ def build_exe():
 
     # Os specific separator
     sep = ';' if os.name == 'nt' else ':'
-    
+
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconsole",
         "--onefile",
         "--add-data", f"web{sep}web",  # 将 web 文件夹打包到 exe 内部的 web 目录
         "--name", "WT_Aimer_Voice",
-        "--clean", # 清理 PyInstaller 缓存
+        "--clean",  # 清理 PyInstaller 缓存
         "main.py"
     ]
 
@@ -98,7 +100,7 @@ def build_exe():
         cmd.append("--strip")
 
     log.info(f"执行命令: {' '.join(cmd)}")
-    
+
     try:
         # shell=False ensures arguments are passed correctly on Linux without manual escaping
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -120,7 +122,7 @@ def build_exe():
         sys.exit(1)
     else:
         exe_name = "WT_Aimer_Voice.exe" if os.name == 'nt' else "WT_Aimer_Voice"
-        exe_path = Path("dist") / exe_name
+        exe_path = Path("../dist") / exe_name
         log.info("[OK] 打包成功！")
         log.info(f"输出文件: {exe_path}")
         return True
@@ -134,27 +136,28 @@ def main():
     # 2. 生成校验文件
     # Determine exe name based on OS
     exe_name = "WT_Aimer_Voice.exe" if os.name == 'nt' else "WT_Aimer_Voice"
-    exe_path = Path("dist") / exe_name
-    
+    dist_dir = Path(__file__).parent.parent / "dist"
+    exe_path = dist_dir / exe_name
+
     if not exe_path.exists():
         log.error(f"❌ 未找到生成的 exe 文件！: {exe_path}")
         return
 
     log.info("🔐 正在生成校验文件...")
     checksum = calculate_checksum(exe_path, 'sha256')
-    checksum_file = Path("dist/checksum.txt")
-    
+    checksum_file = dist_dir / Path("checksum.txt")
+
     with open(checksum_file, 'w', encoding='utf-8') as f:
         f.write(f"File: {exe_path.name}\n")
         f.write(f"SHA256: {checksum}\n")
         f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-    
+
     log.info(f"✅ 校验文件已生成: {checksum_file}")
     log.info(f"   SHA256: {checksum}")
 
     # 3. 清理临时文件
     clean_build_artifacts()
-    
+
     log.info("\n🎉 所有任务完成！可执行文件位于 dist 目录。")
 
 
