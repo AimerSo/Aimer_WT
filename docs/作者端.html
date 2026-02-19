@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AimerWT 语音包作者端 - 配置文件生成器</title>
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 React 相关 UMD (更稳健的加载方式) -->
+    <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <!-- 引入 Babel 用于在浏览器解析 JSX (增加错误处理) -->
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.10/babel.min.js"></script>
+    <!-- 引入 Lucide 图标 (使用更可靠的 umd 路径) -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.321.0/dist/umd/lucide.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', 'Microsoft YaHei', sans-serif; margin: 0; padding: 0; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+        
+        /* 防止未加载完成时白屏 */
+        #root:empty::before {
+            content: "正在唤醒小码酱... (加载中)";
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #64748b;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <!-- 增加错误捕捉，方便主人调试 -->
+    <script>
+        window.onerror = function(msg, url, line) {
+            alert("哎呀，小码酱滑倒了！\n错误信息: " + msg + "\n行号: " + line);
+            return false;
+        };
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // 手动映射图标，不再依赖 LucideReact 全局变量，改用 lucide 原生调用
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const ref = React.useRef(null);
+            useEffect(() => {
+                if (ref.current) {
+                    ref.current.innerHTML = '';
+                    const icon = lucide.createIcons({
+                        icons: { [name]: lucide[name] },
+                        attrs: {
+                            strokeWidth: 2,
+                            width: size,
+                            height: size,
+                            class: className
+                        }
+                    });
+                }
+            }, [name, size, className]);
+            return <span ref={ref} className="inline-flex items-center justify-center"></span>;
+        };
+
+        const App = () => {
+            const [formData, setFormData] = useState({
+                title: "",
+                author: "",
+                version: "2.53",
+                date: new Date().toISOString().split('T')[0], // 自动生成当前日期
+                tags: [],
+                language: [],
+                note: "",
+                link_bilibili: "",
+                link_wtlive: "",
+                link_video: ""
+            });
+
+            const [copied, setCopied] = useState(false);
+            const [downloading, setDownloading] = useState(false);
+
+            const availableTags = ["陆战", "空战", "海战", "无线电", "局势播报"];
+            const availableLangs = [
+                { label: "中", value: "中" }, { label: "美", value: "美" },
+                { label: "俄", value: "俄" }, { label: "德", value: "德" },
+                { label: "日", value: "日" }, { label: "法", value: "法" },
+                { label: "意", value: "意" }, { label: "瑞", value: "瑞" },
+                { label: "以", value: "以" }
+            ];
+
+            const normalizeLink = (value) => {
+                const v = String(value || "").trim();
+                if (!v) return "";
+                if (/^https?:\/\//i.test(v)) return v;
+                return "";
+            };
+
+            const generateJSON = () => {
+                const rawVersion = formData.version.trim();
+                const finalVersion = rawVersion.toLowerCase().startsWith('v') 
+                    ? rawVersion.substring(1) 
+                    : (rawVersion || "2.53");
+
+                const output = {
+                    "//_使用说明": "【必读】请填写内容，保存后将文件名修改为 info.json，放入语音包文件夹根目录。此文件由 Aimer Voice 语音包管理工具生成。",
+                    "title": formData.title || "未命名语音包",
+                    "author": formData.author || "无名作者",
+                    "version": finalVersion,
+                    "date": formData.date || new Date().toISOString().split('T')[0],
+                    "//_版本填写指南": `建议填写数字版本号，例如 ${finalVersion}（也可填 v${finalVersion}），卡片将统一显示为 v${finalVersion}`,
+                    "//_日期填写指南": "用于卡片的「更新于」字段。格式建议为 YYYY-MM-DD，例如 2026-01-10。不填则自动使用文件夹修改日期。",
+                    "tags": formData.tags,
+                    "//_标签填写规则": "【显示在卡片底部的胶囊标签】可选值: 陆战, 空战, 海战, 无线电, 局势播报。若不填，软件将根据文件自动识别。",
+                    "language": formData.language,
+                    "//_语言填写规则": "【卡片显示的语言标识】建议填写: 中, 美, 俄, 德, 日, 法, 意, 瑞, 以。最多选择3个。若不填，将显示为 '未识别'。",
+                    "note": formData.note,
+                    "//_自动识别逻辑说明": "若作者未填写 tags，软件将通过以下规则自动点亮标签：",
+                    "//_陆战规则": "包含 _crew_dialogs_ground_*.assets.bank",
+                    "//_无线电规则": "包含 _crew_dialogs_common_*.assets.bank",
+                    "//_空战规则": "包含 aircraft_guns.assets.bank 或 aircraft_gui.assets.bank",
+                    "//_封面图片规范": "【重要】请在同级目录下放入一张封面图，命名必须为 cover.jpg 或 cover.png",
+                    "//_图片尺寸建议": "为了完美适配 UI，请使用【竖屏图片】。推荐比例 2:3，建议分辨率：600x900 像素。请确保单张图片大小不超过 1MB。",
+                    "//_链接填写指南": "以下链接选填。若不填请保留空字符串 \"\"。填写后卡片右侧会点亮对应图标。仅支持 https:// 或 http:// 开头，否则将被忽略。",
+                    "link_bilibili": normalizeLink(formData.link_bilibili),
+                    "link_wtlive": normalizeLink(formData.link_wtlive),
+                    "link_video": normalizeLink(formData.link_video)
+                };
+                return JSON.stringify(output, null, 4);
+            };
+
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                setFormData(prev => ({ ...prev, [name]: value }));
+            };
+
+            const handleCheckboxChange = (name, value) => {
+                setFormData(prev => {
+                    const current = prev[name];
+                    const isSelected = current.includes(value);
+                    if (name === 'language' && !isSelected && current.length >= 3) return prev; 
+                    const updated = isSelected ? current.filter(i => i !== value) : [...current, value];
+                    return { ...prev, [name]: updated };
+                });
+            };
+
+            const copyToClipboard = () => {
+                const text = generateJSON();
+                // 稳健的剪贴板方案：优先使用 modern API，失败则回退
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                    });
+                } else {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = text;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {
+                        document.execCommand('copy');
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                    } catch (err) {
+                        alert("复制失败，请手动选择代码复制 ＞﹏＜");
+                    }
+                    document.body.removeChild(textArea);
+                }
+            };
+
+            const downloadJSON = () => {
+                setDownloading(true);
+                const blob = new Blob([generateJSON()], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'info.json';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                setTimeout(() => setDownloading(false), 1000);
+            };
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 text-slate-900 animate-in fade-in duration-500">
+                    <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* 左侧：表单 */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                            <div className="bg-slate-900 p-6 text-white flex items-center gap-3">
+                                <Icon name="FileJson" className="text-blue-400" />
+                                <h1 className="text-xl font-bold tracking-tight">AimerWT 语音包作者端</h1>
+                            </div>
+                            
+                            <div className="p-6 space-y-6 overflow-y-auto max-h-[80vh] custom-scrollbar">
+                                <section className="space-y-4">
+                                    <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2 border-l-4 border-blue-500 pl-2">基本信息</h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-700">语音包名称</label>
+                                            <input name="title" value={formData.title} onChange={handleInputChange} placeholder="例如: 碧蓝航线联动语音" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-700">作者昵称</label>
+                                            <input name="author" value={formData.author} onChange={handleInputChange} placeholder="输入你的昵称" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-700">版本号</label>
+                                            <input name="version" value={formData.version} onChange={handleInputChange} placeholder="例如: 2.53" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-700">更新日期</label>
+                                            <input type="date" name="date" value={formData.date} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className="space-y-3">
+                                    <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2 border-l-4 border-blue-500 pl-2">适用类型 (多选)</h2>
+                                    <div className="flex flex-wrap gap-2">
+                                        {availableTags.map(tag => (
+                                            <button key={tag} onClick={() => handleCheckboxChange('tags', tag)} className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${formData.tags.includes(tag) ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400"}`}>{tag}</button>
+                                        ))}
+                                    </div>
+                                </section>
+
+                                <section className="space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2 border-l-4 border-blue-500 pl-2">语言标识 (最多选3个)</h2>
+                                        <span className={`text-xs font-bold ${formData.language.length >= 3 ? 'text-amber-500' : 'text-slate-400'}`}>{formData.language.length} / 3</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {availableLangs.map(lang => {
+                                            const isSelected = formData.language.includes(lang.value);
+                                            const isMaxed = formData.language.length >= 3;
+                                            return (
+                                                <button key={lang.value} onClick={() => handleCheckboxChange('language', lang.value)} disabled={!isSelected && isMaxed} className={`w-12 h-10 flex items-center justify-center rounded-lg text-sm font-bold border transition-all ${isSelected ? "bg-slate-900 text-white border-slate-900" : isMaxed ? "bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed" : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"}`}>{lang.label}</button>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
+
+                                <section className="space-y-1">
+                                    <label className="text-sm font-medium text-slate-700">语音包详细介绍</label>
+                                    <textarea name="note" value={formData.note} onChange={handleInputChange} rows={4} placeholder="介绍你的语音包特色..." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none text-sm" />
+                                </section>
+
+                                <section className="space-y-4">
+                                    <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2 border-l-4 border-blue-500 pl-2">外部链接 (可选)</h2>
+                                    <div className="space-y-3">
+                                        {[{ key: 'link_bilibili', label: 'Bilibili' }, { key: 'link_wtlive', label: 'WT Live' }, { key: 'link_video', label: '演示视频' }].map(item => (
+                                            <div key={item.key} className="flex items-center gap-2">
+                                                <span className="text-[10px] font-bold bg-slate-100 px-2 py-1.5 rounded w-20 text-center text-slate-500 uppercase">{item.label}</span>
+                                                <input name={item.key} value={formData[item.key]} onChange={handleInputChange} placeholder="https://..." className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+
+                                <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3 text-amber-800">
+                                    <Icon name="ShieldAlert" className="text-amber-500 shrink-0" />
+                                    <div className="text-[11px] leading-relaxed italic">
+                                        <strong>重要：</strong>生成的 info.json 必须放在文件夹根目录。封面图命名需为 <strong>cover.jpg</strong> 或 <strong>cover.png</strong>。
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 右侧：预览 */}
+                        <div className="flex flex-col gap-4">
+                            <div className="bg-slate-900 rounded-2xl shadow-xl flex-1 flex flex-col overflow-hidden min-h-[400px]">
+                                <div className="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                                        <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                                        <span className="ml-2 text-slate-400 text-xs font-mono">info.json 实时生成</span>
+                                    </div>
+                                    <button onClick={copyToClipboard} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors border border-slate-700">
+                                        {copied ? <><Icon name="Check" size={14} className="text-emerald-400" /> 已复制</> : <><Icon name="Copy" size={14} /> 复制代码</>}
+                                    </button>
+                                </div>
+                                <div className="flex-1 p-6 font-mono text-[13px] overflow-auto custom-scrollbar">
+                                    <pre className="text-blue-300 leading-relaxed whitespace-pre-wrap">
+                                        {generateJSON()}
+                                    </pre>
+                                </div>
+                            </div>
+
+                            <button onClick={downloadJSON} disabled={downloading} className={`w-full py-5 rounded-2xl flex items-center justify-center gap-3 text-lg font-bold transition-all shadow-lg ${downloading ? "bg-emerald-500 text-white" : "bg-blue-600 hover:bg-blue-700 text-white active:scale-[0.98]"}`}>
+                                {downloading ? <><Icon name="Check" size={24} /> 准备就绪</> : <><Icon name="Download" size={24} /> 导出并下载 info.json</>}
+                            </button>
+                            
+                            <div className="text-center">
+                                <p className="text-slate-400 text-[10px]">由 AimerWT 工具组提供技术支持</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

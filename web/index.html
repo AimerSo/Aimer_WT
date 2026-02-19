@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aimer WT</title>
+    <link rel="stylesheet" href="assets/remixicon/remixicon.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css_fix.css">
+    <link rel="stylesheet" href="ai/ai_chat.css">
+    <!-- 新功能模块样式 -->
+    <link rel="stylesheet" href="css/pages/task_library.css">
+    <link rel="stylesheet" href="css/pages/model_library.css">
+    <link rel="stylesheet" href="css/pages/hangar.css">
+    <link rel="stylesheet" href="css/pages/custom_kill.css">
+</head>
+
+<body>
+    <!--
+    功能定位:
+    - 应用前端页面结构与交互入口，包含导航、语音包库、副功能库、设置与各类模态框容器。
+
+    输入输出:
+    - 输入:
+      - 用户交互：按钮点击、文本输入、文件拖拽、模态框确认/取消
+      - 后端推送：main.py 通过 evaluate_js 调用 window.app 与 window.MinimalistLoading
+    - 输出:
+      - 触发前端方法：onclick 调用 app.*（在 web/script.js 中定义）
+      - 触发后端接口：app.* 内部调用 pywebview.api.*（在 main.py 的 AppApi 中实现）
+    - 依赖:
+      - 样式：style.css、css_fix.css
+      - 图标：remixicon
+      - 脚本：loading_voice_package.js（加载组件）、script.js（业务交互）
+
+    实现逻辑:
+    - 页面以多个 .page 容器组织功能区，通过 app.switchTab 控制显隐与懒加载。
+    - 模态框通过添加/移除 .show 控制显示，具体行为由 app.closeModal 等方法管理。
+
+    业务关联:
+    - 上游: 用户在本页面操作触发前端逻辑。
+    - 下游: 前端通过 pywebview.api 调用后端，完成导入、安装、还原、扫描等实际文件操作。
+    -->
+    <!-- 一体化头部 Header -->
+    <header class="app-header pywebview-drag-region">
+        <!-- 1. 左侧 Logo 区域 (可拖拽) -->
+        <div class="header-left">
+            <img src="assets/logo.ico" class="app-logo" alt="Logo">
+            <div class="app-brand-wrapper">
+                <span class="app-brand-text">Aimer WT</span>
+                <span class="app-version-text" style="color: #8B0000;">v3 Beta</span>
+            </div>
+        </div>
+
+        <!-- 2. 中间导航菜单 (不可拖拽) -->
+        <nav class="header-nav">
+            <button class="nav-btn active" id="btn-home" onclick="app.switchTab('home')">
+                <i class="ri-home-4-line"></i> 主页
+            </button>
+            <button class="nav-btn" id="btn-lib" onclick="app.switchTab('lib')">
+                <i class="ri-archive-line"></i> 语音包库
+            </button>
+            <button class="nav-btn" id="btn-camo" onclick="app.switchTab('camo')">
+                <i class="ri-brush-3-line"></i> 副功能库
+            </button>
+            <button class="nav-btn" id="btn-sight" onclick="app.switchTab('sight')">
+                <i class="ri-crosshair-line"></i> 信息库
+            </button>
+            <button class="nav-btn" id="btn-settings" onclick="app.switchTab('settings')">
+                <i class="ri-settings-3-line"></i> 设置
+            </button>
+        </nav>
+
+        <!-- 3. 右侧工具栏 (主题切换 + 窗口控制) -->
+        <div class="header-right">
+            <!-- 主题切换 (月亮) -->
+            <button class="icon-btn theme-toggle" id="btn-theme" onclick="app.toggleTheme()" title="切换主题">
+                <i class="ri-moon-line"></i>
+            </button>
+
+            <!-- 竖线分隔符 -->
+            <div class="header-divider"></div>
+
+            <!-- 窗口控制按钮 -->
+            <div class="window-controls">
+                <div class="win-btn bili-btn" onclick="app.openBiliSpace()" title="访问作者 B 站主页">
+                    <i class="ri-bilibili-line"></i>
+                </div>
+                <div class="win-btn" onclick="app.openGitHubRepo()" title="访问项目 GitHub">
+                    <i class="ri-github-line"></i>
+                </div>
+                <div class="win-btn" id="btn-pin-title" onclick="app.togglePin()" title="置顶窗口">
+                    <i class="ri-pushpin-line"></i>
+                </div>
+                <div class="win-btn" onclick="app.minimizeApp()">
+                    <i class="ri-subtract-line"></i>
+                </div>
+                <div class="win-btn close-btn" onclick="app.closeApp()">
+                    <i class="ri-close-line"></i>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- 拖放文件时的浮层 -->
+        <div id="drop-overlay" class="drop-overlay">
+            <div class="drop-overlay-content">
+                <i class="ri-file-zip-line drop-overlay-icon"></i>
+                <div class="drop-overlay-text">放下并导入语音包</div>
+                <div style="font-size: 14px; color: var(--text-sec);">支持 ZIP / RAR / 7Z 等格式</div>
+            </div>
+        </div>
+
+
+        <div id="page-home" class="page active">
+            <div class="home-grid">
+                <div class="card status-card">
+                    <div class="status-icon" id="status-icon">
+                        <i class="ri-wifi-off-line"></i>
+                    </div>
+                    <div class="status-label">当前连接状态</div>
+                    <div class="status-text waiting" id="status-text">未搜索路径</div>
+                </div>
+
+                <div class="card path-card">
+                    <div class="card-header no-border">
+                        <h2>游戏路径</h2>
+                        <span class="subtitle">Game Path Directory</span>
+                    </div>
+                    <div class="input-row">
+                        <input type="text" id="input-game-path" placeholder="等待选择或自动搜索..." readonly>
+                        <button class="btn secondary" onclick="app.browsePath()">
+                            <i class="ri-folder-open-line"></i> 浏览
+                        </button>
+                        <button class="btn primary" id="btn-auto-search" onclick="app.autoSearch()">
+                            <i class="ri-search-line"></i> 自动搜索
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card notice-card">
+                    <div class="card-header no-border">
+                        <h3 style="display:flex; align-items:center; gap:8px;">
+                            <i class="ri-megaphone-line" style="color:var(--primary)"></i>
+                            公告栏
+                        </h3>
+                    </div>
+                    <div class="notice-content">
+                        <p><strong>软件没有自动更新功能，更新请关注UP动态和投稿</strong></p>
+                        <p>📌 <strong>使用步骤教程：</strong></p>
+                        <ul>
+                            <li>1. <strong>定位游戏：</strong> 在首页点击“自动搜索”或手动“浏览”定位到《战争雷霆》安装目录。</li>
+                            <li>2. <strong>准备文件：</strong> 将下载的语音包 ZIP/RAR 压缩包放入软件目录下的 <code>[待解压区]</code> 文件夹中。</li>
+                            <li>3. <strong>导入包体：</strong> 切换到“语音包库”页面，点击“导入压缩包”按钮，软件会自动解压并识别信息，你也可以自己解压放到语音包库中。</li>
+                            <li>4. <strong>一键加载：</strong> 在库中找到目标语音包，点击“加载”图标。软件会自动配置 <code>config.blk</code> 并安装。</li>
+                            <li>5. <strong>开启 Mod：</strong> 软件会自动检测并开启游戏内的 Mod 支持。若未生效，请检查 <code>config.blk</code> 中是否有
+                                <code>enable_mod:b=yes</code>，如果有问题先联系语音包制作者。
+                            </li>
+                        </ul>
+                        <p>祝您在战场上一路长虹！(๑•̀ㅂ•́)و✧</p>
+                    </div>
+                </div>
+
+                <div class="card log-card">
+                    <div class="card-header no-border">
+                        <h3>运行日志</h3>
+                        <span class="subtitle">System Log</span>
+                        <div style="flex:1"></div>
+                        <button class="btn small secondary" onclick="app.clearLogs()">
+                            <i class="ri-delete-bin-line"></i> 清空
+                        </button>
+                    </div>
+                    <div class="log-container" id="log-container">
+                        <div class="log-line info">[System] 界面 UI 引擎加载完毕...</div>
+                        <div class="log-line sys">[System] 等待用户指令...</div>
+                    </div>
+                    <div class="game-status-bar">
+                        <div class="game-status-left">
+                            <div class="game-status-icon" id="game-status-icon">
+                                <i class="ri-wifi-off-line"></i>
+                            </div>
+                            <div class="game-status-info">
+                                <span class="game-status-label">当前准备状态</span>
+                                <span class="game-status-text waiting" id="game-status-text">未就绪：请先选择路径</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn secondary icon-only" onclick="app.openLaunchSettings()" title="启动设置">
+                                <i class="ri-settings-3-line"></i>
+                            </button>
+                            <button class="btn primary" id="btn-start-game" onclick="app.startGame()">
+                                <i class="ri-play-fill"></i> 开始游戏
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-lib" class="page">
+            <div class="toolbar-v2">
+                <div class="toolbar-v2-content">
+                    <div class="toolbar-v2-left">
+                        <button class="btn-v2 primary" onclick="app.openImportModal()">
+                            <i class="ri-file-zip-line"></i>
+                            <span>导入压缩包</span>
+                        </button>
+                        <div class="btn-v2-group">
+                            <button class="btn-v2" onclick="app.openFolder('library')" title="打开库目录">
+                                <i class="ri-folder-2-line"></i>
+                                <span>库目录</span>
+                            </button>
+                            <button class="btn-v2" onclick="app.openFolder('pending')" title="打开待解压区">
+                                <i class="ri-folder-download-line"></i>
+                                <span>待解压区</span>
+                            </button>
+                            <button class="btn-v2" onclick="app.openFolder('game')" title="打开游戏根目录">
+                                <i class="ri-gamepad-line"></i>
+                                <span>游戏目录</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="toolbar-v2-right">
+                        <div class="search-v2">
+                            <i class="ri-search-2-line"></i>
+                            <input type="text" placeholder="搜索作者或标题..." oninput="app.filterLibrary(this.value)">
+                        </div>
+                        <button class="btn-v2 icon-only" onclick="app.refreshLibrary({manual:true})" title="刷新">
+                            <i class="ri-refresh-line"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lib-scroll-area" id="lib-list">
+                <div class="empty-state">
+                    <i class="ri-inbox-archive-line"></i>
+                    <h3>这里空空如也</h3>
+                    <p>请将 ZIP/RAR 包放入 [待解压区] 并点击左上角导入</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-camo" class="page">
+            <!-- Master-Detail 布局 -->
+            <div class="resource-master-detail">
+                <!-- 左侧垂直导航 -->
+                <div class="resource-nav">
+                    <button class="resource-nav-item active" data-target="skins"
+                        onclick="app.switchResourceView('skins')">
+                        <i class="ri-brush-3-line"></i>
+                        <span>涂装库</span>
+                    </button>
+                    <button class="resource-nav-item" data-target="sights" onclick="app.switchResourceView('sights')">
+                        <i class="ri-crosshair-line"></i>
+                        <span>炮镜库</span>
+                    </button>
+                    <button class="resource-nav-item" data-target="tasks"
+                        onclick="app.switchResourceView('tasks')">
+                        <i class="ri-task-line"></i>
+                        <span>任务库</span>
+                    </button>
+                    <button class="resource-nav-item" data-target="models"
+                        onclick="app.switchResourceView('models')">
+                        <i class="ri-box-3-line"></i>
+                        <span>模型库</span>
+                    </button>
+                    <button class="resource-nav-item" data-target="hangar"
+                        onclick="app.switchResourceView('hangar')">
+                        <i class="ri-plane-line"></i>
+                        <span>机库</span>
+                    </button>
+                    <button class="resource-nav-item resource-nav-item-compact" data-target="custom_kill"
+                        onclick="app.switchResourceView('custom_kill')">
+                        <i class="ri-sparkling-2-line"></i>
+                        <span>自定义击杀</span>
+                    </button>
+                </div>
+
+                <!-- 右侧堆栈容器 -->
+                <div class="resource-content" id="resource_content_container">
+                    <!-- 涂装视图 -->
+                    <div class="resource-view active" id="view-skins">
+                        <div class="resource-view-header">
+                            <h2><i class="ri-brush-3-line"></i> 涂装库</h2>
+                            <div class="resource-view-header-right">
+                                <div class="col-count" id="skins-count">本地: 0</div>
+                                <button class="btn-v2 icon-only" id="btn-refresh-skins"
+                                    onclick="app.refreshSkins({manual:true})" title="刷新涂装库">
+                                    <i class="ri-refresh-line"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- 新布局：左右分栏 -->
+                        <div class="skins-new-layout">
+                            <!-- 左侧：解压模块 -->
+                            <div class="skins-left-panel">
+                                <div class="drop-zone-compact" id="skins-drop-zone">
+                                    <div class="drop-zone-inner">
+                                        <div class="drop-zone-actions">
+                                            <button class="btn-v2 primary" onclick="app.importSkinZipDialog()">
+                                                <i class="ri-upload-2-line"></i>
+                                                <span>选择 ZIP 解压</span>
+                                            </button>
+                                            <button class="btn-v2" onclick="app.openFolder('userskins')">
+                                                <i class="ri-folder-2-line"></i>
+                                                <span>打开 UserSkins</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="drop-tutorial" id="skins-tutorial">
+                                    <div class="drop-tutorial-title">涂装教程</div>
+                                    <div class="drop-tutorial-body">
+                                        <p>涂装文件名尽可能使用英文。</p>
+                                        <p>
+                                            如果你想从 WT LIVE 安装涂装，只需删除文件夹中的所有内容，然后从
+                                            <code>live.warthunder.com</code>
+                                            下载涂装（信息库中有直达链接），并将压缩包的内容（其中包含几个文件）以及迷彩配置文件复制到文件
+                                            <code>.dds</code> 夹 <code>.tga</code> 中 <code>*vehicle_name*.blk</code> 。
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 右侧：预览图网格 -->
+                            <div class="skins-right-panel">
+                                <div class="small-card-grid" id="skins-list">
+                                    <div class="empty-state" style="grid-column: 1 / -1;">
+                                        <i class="ri-brush-3-line"></i>
+                                        <h3>还没有涂装</h3>
+                                        <p>拖入 ZIP 或点击"选择 ZIP 解压"，导入后会自动出现在这里</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 炮镜视图 -->
+                    <div class="resource-view" id="view-sights">
+                        <div class="resource-view-header">
+                            <h2><i class="ri-crosshair-line"></i> 炮镜库</h2>
+                            <div class="resource-view-header-right">
+                                <div class="col-count" id="sights-count">本地: 0</div>
+                                <button class="btn-v2 icon-only" id="btn-refresh-sights"
+                                    onclick="app.refreshSights({manual:true})" title="刷新炮镜库">
+                                    <i class="ri-refresh-line"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- 新布局：左右分栏 -->
+                        <div class="skins-new-layout">
+                            <!-- 左侧：路径设置模块 -->
+                            <div class="skins-left-panel">
+                                <div class="drop-zone-compact" id="sights-drop-zone">
+                                    <div class="drop-zone-inner">
+                                        <div class="drop-zone-actions">
+                                            <!-- UID 选择下拉框 -->
+                                            <div class="uid-selector-wrapper">
+                                                <label class="uid-selector-label">
+                                                    <i class="ri-user-line"></i>
+                                                    选择用户 UID
+                                                </label>
+                                                <div class="uid-selector-row">
+                                                    <div id="sights-uid-select-wrapper" class="uid-select-wrapper"></div>
+                                                    <button class="btn-v2 icon-only"
+                                                        onclick="app.refreshSightsUidList()" title="刷新 UID 列表">
+                                                        <i class="ri-refresh-line"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="uid-selector-divider"></div>
+                                            <button class="btn-v2" id="btn-sights-primary"
+                                                onclick="app.selectSightsPath()">
+                                                <i class="ri-folder-open-line"></i>
+                                                <span>手动选择路径</span>
+                                            </button>
+                                            <button class="btn-v2" id="btn-sights-secondary"
+                                                onclick="app.openSightsFolder()">
+                                                <i class="ri-folder-2-line"></i>
+                                                <span>打开 UserSights</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="drop-tutorial" id="sights-tutorial">
+                                    <div class="drop-tutorial-title">炮镜教程</div>
+                                    <div class="drop-tutorial-body">
+                                        <p>炮镜模块在
+                                            <code>C:\Users\&lt;"user name"&gt;\Documents\My Games\WarThunder\Saves\&lt;"user ID"&gt;\production\UserSights</code>
+                                        </p>
+                                        <p>你可以在商店的个人资料页面找到您的用户 ID 。如果目录中缺少 <code>UserSights</code> 文件夹，请创建它。</p>
+                                        <p>如果你的自定义瞄准镜仅适用于特定车辆，请在 <code>UserSights</code> 文件夹中创建一个以该车辆 ID 命名的子文件夹，例如
+                                            <code>&lt;车辆 ID&gt;</code> <code>germ_flakpanzer_IV_Ostwind</code>。
+                                        </p>
+                                        <p>如果瞄准镜适用于多辆车，请创建一个名为 <code>&lt;车辆 ID&gt;</code> 的子文件夹 <code>all_tanks</code>。
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 右侧：预览图网格 -->
+                            <div class="skins-right-panel">
+                                <div class="small-card-grid" id="sights-list">
+                                    <div class="empty-state" style="grid-column: 1 / -1;">
+                                        <i class="ri-crosshair-line"></i>
+                                        <h3>还没有炮镜</h3>
+                                        <p>请先设置 UserSights 路径</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 任务库视图 -->
+                    <div class="resource-view" id="view-tasks">
+                        <div class="resource-view-header">
+                            <h2><i class="ri-task-line"></i> 任务库</h2>
+                            <div class="resource-view-header-right">
+                                <div class="col-count" id="tasks-count">本地: 0</div>
+                                <button class="btn-v2 icon-only" id="btn-refresh-tasks"
+                                    onclick="app.refreshTasks({manual:true})" title="刷新任务库">
+                                    <i class="ri-refresh-line"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- 左右分栏布局 -->
+                        <div class="skins-new-layout">
+                            <!-- 左侧：操作按钮模块 -->
+                            <div class="skins-left-panel">
+                                <div class="drop-zone-compact" id="tasks-drop-zone">
+                                    <div class="drop-zone-inner">
+                                        <div class="drop-zone-actions">
+                                            <button class="btn-v2 primary" onclick="app.openFolder('task_library')">
+                                                <i class="ri-folder-open-line"></i>
+                                                <span>打开任务库</span>
+                                            </button>
+                                            <button class="btn-v2" onclick="app.openFolder('game')">
+                                                <i class="ri-gamepad-line"></i>
+                                                <span>打开游戏目录</span>
+                                            </button>
+                                            <button class="btn-v2" onclick="app.openFolder('user_missions')">
+                                                <i class="ri-folder-2-line"></i>
+                                                <span>打开 UserMissions</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="drop-tutorial" id="tasks-tutorial">
+                                    <div class="drop-tutorial-title">任务库教程</div>
+                                    <div class="drop-tutorial-body">
+                                        <p>任务库由于条件不同，目前支持展示卡片和手动安装。</p>
+                                        <p>如需要后续更新，请等待后续更新，您可以在项目 Github 贡献代码和功能。</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 右侧：任务列表 -->
+                            <div class="skins-right-panel">
+                                <div class="small-card-grid" id="tasks-list">
+                                    <div class="empty-state" style="grid-column: 1 / -1;">
+                                        <i class="ri-task-line"></i>
+                                        <h3>还没有任务</h3>
+                                        <p>点击左侧"打开任务库"按钮，导入任务文件</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 模型库视图 -->
+                    <div class="resource-view" id="view-models">
+                        <div class="resource-view-header">
+                            <h2><i class="ri-box-3-line"></i> 模型库</h2>
+                            <div class="resource-view-header-right">
+                                <div class="col-count" id="models-count">本地: 0</div>
+                                <button class="btn-v2 icon-only" id="btn-refresh-models"
+                                    onclick="app.refreshModels({manual:true})" title="刷新模型库">
+                                    <i class="ri-refresh-line"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- 左右分栏布局 -->
+                        <div class="skins-new-layout">
+                            <!-- 左侧：操作按钮模块 -->
+                            <div class="skins-left-panel">
+                                <div class="drop-zone-compact" id="models-drop-zone">
+                                    <div class="drop-zone-inner">
+                                        <div class="drop-zone-actions">
+                                            <button class="btn-v2 primary" onclick="app.openFolder('model_library')">
+                                                <i class="ri-folder-open-line"></i>
+                                                <span>打开模型库</span>
+                                            </button>
+                                            <button class="btn-v2" onclick="app.openFolder('game')">
+                                                <i class="ri-gamepad-line"></i>
+                                                <span>打开游戏目录</span>
+                                            </button>
+                                            <button class="btn-v2" onclick="app.openFolder('user_missions')">
+                                                <i class="ri-folder-2-line"></i>
+                                                <span>打开 UserMissions</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="drop-tutorial" id="models-tutorial">
+                                    <div class="drop-tutorial-title">模型库教程</div>
+                                    <div class="drop-tutorial-body">
+                                        <p>模型库由于条件不同，目前支持展示卡片和手动安装。</p>
+                                        <p>如需要后续更新，请等待后续更新，您可以在项目 Github 贡献代码和功能。</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 右侧：模型列表 -->
+                            <div class="skins-right-panel">
+                                <div class="small-card-grid" id="models-list">
+                                    <div class="empty-state" style="grid-column: 1 / -1;">
+                                        <i class="ri-box-3-line"></i>
+                                        <h3>还没有模型</h3>
+                                        <p>点击左侧"打开模型库"按钮，导入模型文件</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 机库视图 -->
+                    <div class="resource-view" id="view-hangar">
+                        <div class="resource-view-header">
+                            <h2><i class="ri-plane-line"></i> 机库</h2>
+                            <div class="resource-view-header-right">
+                                <div class="col-count" id="hangar-count">本地: 0</div>
+                                <button class="btn-v2 icon-only" id="btn-refresh-hangar"
+                                    onclick="app.refreshHangar({manual:true})" title="刷新机库">
+                                    <i class="ri-refresh-line"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- 左右分栏布局 -->
+                        <div class="skins-new-layout">
+                            <!-- 左侧：操作按钮模块 -->
+                            <div class="skins-left-panel">
+                                <div class="drop-zone-compact" id="hangar-drop-zone">
+                                    <div class="drop-zone-inner">
+                                        <div class="drop-zone-actions">
+                                            <button class="btn-v2 primary" onclick="app.openFolder('hangar_library')">
+                                                <i class="ri-folder-open-line"></i>
+                                                <span>打开机库</span>
+                                            </button>
+                                            <button class="btn-v2" onclick="app.openFolder('game')">
+                                                <i class="ri-gamepad-line"></i>
+                                                <span>打开游戏目录</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="drop-tutorial" id="hangar-tutorial">
+                                    <div class="drop-tutorial-title">机库教程</div>
+                                    <div class="drop-tutorial-body">
+                                        <p>机库由于条件不同，目前支持展示卡片和手动安装。</p>
+                                        <p>如需要后续更新，请等待后续更新，您可以在项目 Github 贡献代码和功能。</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 右侧：机库列表 -->
+                            <div class="skins-right-panel">
+                                <div class="small-card-grid" id="hangar-list">
+                                    <div class="empty-state" style="grid-column: 1 / -1;">
+                                        <i class="ri-plane-line"></i>
+                                        <h3>还没有机库配置</h3>
+                                        <p>点击左侧"打开机库"按钮，导入机库配置文件</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-sight" class="page">
+            <div class="info-hub-container">
+                <!-- 顶部统计卡片组 -->
+                <div class="info-stats-grid">
+                    <button class="stat-card stat-card-action" type="button" onclick="app.openSupportMe()">
+                        <div class="stat-icon heart">
+                            <i class="ri-heart-3-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">支持我</div>
+                            <div class="stat-value">请我喝一杯蜜雪冰城</div>
+                        </div>
+                    </button>
+                    <button class="stat-card stat-card-action" type="button"
+                        onclick="app.openExternal('https://qun.qq.com/universal-share/share?ac=1&authKey=%2FDJOR1E72xAQKvLD%2BNQmaZmD7py%2F5PUY7xHORJX4kmmKdabaRF4%2BwIJkp6s8I10U&busi_data=eyJncm91cENvZGUiOiIxMDc4MzQzNjI5IiwidG9rZW4iOiJmSUNpVXErcnNMMVhlemRNR25EbVF5TWJrbmc5bm02UmRIS0c0WHFxemdWQkRzUlVmSkVZQW11NXFkRXZkMXBDIiwidWluIjoiMTA3OTY0OTM2OSJ9&data=4qfEzEByH95wqWw0I5ButymAfP5Aj5bjksqrXyh3uAoIWg5ChDGQ3w6cocqmRaRaGbDRpFunhEYQYBHwC46GHg&svctype=4&tempid=h5_group_info')">
+                        <div class="stat-icon package">
+                            <i class="ri-qq-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">加入群(讨论、反馈BUG)</div>
+                            <div class="stat-value">1078343629</div>
+                        </div>
+                    </button>
+                    <button class="stat-card stat-card-action" type="button"
+                        onclick="app.openExternal('https://hcng65m1o0ph.feishu.cn/docx/SjgSdhEZ4oZDhKxgThdcM8Kon7g?from=from_copylink')">
+                        <div class="stat-icon code">
+                            <i class="ri-file-text-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">使用文档</div>
+                            <div class="stat-value">飞书云文档</div>
+                        </div>
+                    </button>
+                    <button class="stat-card stat-card-action" type="button"
+                        onclick="app.openExternal('https://b23.tv/Z0hfm59')">
+                        <div class="stat-icon gamepad">
+                            <i class="ri-bilibili-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">我的B站主页</div>
+                            <div class="stat-value">AimerSo</div>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- 快速链接区域 -->
+                <div class="quick-links-section">
+                    <div class="section-header">
+                        <h2><i class="ri-links-line"></i> 快速链接</h2>
+                        <span class="section-subtitle">Quick Access</span>
+                    </div>
+                    <div class="links-grid">
+                        <a href="https://warthunder.com/zh" target="_blank" class="link-card game">
+                            <div class="link-card-bg">
+                                <i class="ri-gamepad-line"></i>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-icon">
+                                    <i class="ri-gamepad-line"></i>
+                                </div>
+                                <div class="link-info">
+                                    <div class="link-title">战争雷霆官网</div>
+                                    <div class="link-desc">游戏官方网站</div>
+                                    <div class="link-url">https://warthunder.com/zh/</div>
+                                </div>
+                                <div class="link-arrow">
+                                    <i class="ri-arrow-right-line"></i>
+                                </div>
+                            </div>
+                        </a>
+
+                        <a href="#" class="link-card wtlive" onclick="app.openWorkshopChooser(); return false;">
+                            <div class="link-card-bg">
+                                <i class="ri-live-line"></i>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-icon">
+                                    <i class="ri-live-line"></i>
+                                </div>
+                                <div class="link-info">
+                                    <div class="link-title">WTLive/WTLiker</div>
+                                    <div class="link-desc">MOD 创意工坊</div>
+                                    <div class="link-url">点击选择：WTLive(国际) / WTLiker(国内)</div>
+                                </div>
+                                <div class="link-arrow">
+                                    <i class="ri-arrow-right-line"></i>
+                                </div>
+                            </div>
+                        </a>
+
+                        <a href="https://b23.tv/Z7Hg9md" target="_blank" class="link-card bili">
+                            <div class="link-card-bg">
+                                <i class="ri-bilibili-line"></i>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-icon">
+                                    <i class="ri-bilibili-line"></i>
+                                </div>
+                                <div class="link-info">
+                                    <div class="link-title">哔哩哔哩</div>
+                                    <div class="link-desc">战争雷霆官方账号</div>
+                                    <div class="link-url">https://b23.tv/Z7Hg9md</div>
+                                </div>
+                                <div class="link-arrow">
+                                    <i class="ri-arrow-right-line"></i>
+                                </div>
+                            </div>
+                        </a>
+
+                        <a href="https://github.com/AimerSo/Aimer_WT" target="_blank" class="link-card github">
+                            <div class="link-card-bg">
+                                <i class="ri-github-line"></i>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-icon">
+                                    <i class="ri-github-line"></i>
+                                </div>
+                                <div class="link-info">
+                                    <div class="link-title">GitHub</div>
+                                    <div class="link-desc">本项目的开源代码托管地址</div>
+                                    <div class="link-url">https://github.com/AimerSo/Aimer_WT</div>
+                                </div>
+                                <div class="link-arrow">
+                                    <i class="ri-arrow-right-line"></i>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 鸣谢与关于 -->
+                <div class="about-section">
+                    <div class="card about-card">
+                        <div class="card-header">
+                            <h2><i class="ri-heart-line"></i> 鸣谢名单</h2>
+                            <span class="subtitle">排名不分先后</span>
+                        </div>
+                        <div class="card-content">
+                            <div class="contributors-grid">
+                                <a class="contributor-card" href="https://b23.tv/g5hG7UL"
+                                    onclick="app.openExternal('https://b23.tv/g5hG7UL'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/Thanks/1.beiku.jpg" alt="beiku">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">beiku贝库</div>
+                                        <div class="contributor-role">测试、音效、涂装等技术支持</div>
+                                    </div>
+                                </a>
+                                <a class="contributor-card" href="https://b23.tv/NV7ZSAr"
+                                    onclick="app.openExternal('https://b23.tv/NV7ZSAr'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/Thanks/2.ChifengRED.jpg" alt="赤风RED">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">赤风RED</div>
+                                        <div class="contributor-role">音效技术支持</div>
+                                    </div>
+                                </a>
+                                <a class="contributor-card" href="https://b23.tv/HoVOnla"
+                                    onclick="app.openExternal('https://b23.tv/HoVOnla'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/Thanks/3.LianyingCeciliawillet.jpg" alt="连樱Ceciliawillet">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">连樱Ceciliawillet</div>
+                                        <div class="contributor-role">音效技术支持</div>
+                                    </div>
+                                </a>
+                                <a class="contributor-card" href="https://b23.tv/h3rAHbw"
+                                    onclick="app.openExternal('https://b23.tv/h3rAHbw'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/Thanks/4.Laiyinhansi.jpg" alt="莱茵汉斯喵Channel">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">莱茵汉斯喵Channel</div>
+                                        <div class="contributor-role">涂装技术支持</div>
+                                    </div>
+                                </a>
+                                <a class="contributor-card" href="https://github.com/Findoutsider" onclick="app.openExternal('https://github.com/Findoutsider'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/tanks/5.BiAn.png" alt="BiAn">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">彼岸</div>
+                                        <div class="contributor-role">软件、服务器技术支持</div>
+                                    </div>
+                                </a>
+                                <a class="contributor-card" href="#" onclick="app.openExternal('https://github.com/TNT569'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/tanks/6.TNT569.png" alt="TNT569">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">TNT569</div>
+                                        <div class="contributor-role">软件技术支持</div>
+                                    </div>
+                                </a>
+                                <a class="contributor-card" href="#" onclick="app.openExternal('https://github.com/kyokusakin'); return false;">
+                                    <div class="contributor-avatar">
+                                        <img src="assets/tanks/7.Badwolf_TW.png" alt="Badwolf_TW">
+                                    </div>
+                                    <div>
+                                        <div class="contributor-name">Badwolf_TW</div>
+                                        <div class="contributor-role">软件技术支持</div>
+                                    </div>
+                                </a>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card project-card">
+                        <div class="card-header">
+                            <h2><i class="ri-information-line"></i> 项目信息</h2>
+                            <span class="subtitle">Project Information</span>
+                        </div>
+                        <div class="card-content">
+                            <div class="project-info-list">
+                                <div class="project-info-item">
+                                    <div class="info-icon">
+                                        <i class="ri-code-box-line"></i>
+                                    </div>
+                                    <div class="info-details">
+                                        <div class="info-title">开源协议</div>
+                                        <div class="info-value">GNU General Public License v3.0</div>
+                                    </div>
+                                </div>
+                                <div class="project-info-item">
+                                    <div class="info-icon">
+                                        <i class="ri-terminal-box-line"></i>
+                                    </div>
+                                    <div class="info-details">
+                                        <div class="info-title">技术栈</div>
+                                        <div class="info-value">Python 3.11 + Flask + HTML/CSS/JS</div>
+                                    </div>
+                                </div>
+                                <div class="project-info-item">
+                                    <div class="info-icon">
+                                        <i class="ri-calendar-line"></i>
+                                    </div>
+                                    <div class="info-details">
+                                        <div class="info-title">最后更新</div>
+                                        <div class="info-value">2026 年 2 月 17 日</div>
+                                    </div>
+                                </div>
+                                <div class="project-info-item">
+                                    <div class="info-icon">
+                                        <i class="ri-shield-check-line"></i>
+                                    </div>
+                                    <div class="info-details">
+                                        <div class="info-title">状态</div>
+                                        <div class="info-value">
+                                            <span class="status-badge active">活跃开发中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-settings" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <h2>资源管理</h2>
+                </div>
+                <div class="settings-grid">
+                    <button class="btn big-btn secondary" onclick="app.openFolder('pending')">
+                        <i class="ri-folder-download-line"></i>
+                        打开待解压区
+                    </button>
+                    <button class="btn big-btn secondary" onclick="app.openFolder('library')">
+                        <i class="ri-folder-2-line"></i>
+                        打开语音包库
+                    </button>
+                    <button class="btn big-btn secondary" onclick="app.openFolder('userskins')">
+                        <i class="ri-brush-3-line"></i>
+                        打开涂装库
+                    </button>
+                    <button class="btn big-btn secondary" onclick="app.openSightsFolder()">
+                        <i class="ri-crosshair-line"></i>
+                        打开炮镜库
+                    </button>
+                </div>
+            </div>
+
+            <div class="settings-split-row">
+                <div class="card" id="theme-card">
+                    <div class="card-header">
+                        <h2>个性化</h2>
+                        <span class="subtitle">Appearance & Themes</span>
+                    </div>
+                    <div style="padding: 20px;">
+                        <label style="font-size: 12px; color: var(--text-sec); display: block; margin-bottom: 8px;">
+                            选择界面风格
+                        </label>
+                        <!-- 自定义主题选择下拉菜单 -->
+                        <div class="custom-select-wrapper" id="theme-select-wrapper">
+                            <div class="custom-select-trigger" onclick="app.toggleThemeDropdown()">
+                                <span id="theme-select-text">默认主题 (Default)</span>
+                                <i class="ri-arrow-down-s-line custom-select-arrow"></i>
+                            </div>
+                            <div class="custom-select-dropdown" id="theme-select-dropdown">
+                                <!-- 选项将通过 JS 动态填充 -->
+                            </div>
+                        </div>
+
+                        <div style="height: 1px; background: var(--border-color); margin: 20px 0; opacity: 0.5;"></div>
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <div
+                                    style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-main);">
+                                    加入用户体验改善计划</div>
+                                <div style="font-size: 12px; color: var(--text-sec);">允许发送匿名使用数据以改进软件</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="telemetry-switch"
+                                    onchange="app.toggleTelemetry(this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" id="startup-card">
+                    <div class="card-header">
+                        <h2>启动设置</h2>
+                        <span class="subtitle">Startup Settings</span>
+                    </div>
+                    <div style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+                        <!-- 开机自启动 -->
+                        <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <div
+                                    style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-main);">
+                                    开机自启动</div>
+                                <div style="font-size: 12px; color: var(--text-sec);">系统启动时自动运行本软件</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="autostart-switch"
+                                    onchange="app.toggleAutostart(this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <!-- 托盘模式 -->
+                        <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <div
+                                    style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-main);">
+                                    关闭时最小化到托盘</div>
+                                <div style="font-size: 12px; color: var(--text-sec);">关闭窗口时最小化到系统托盘而非退出</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="tray-mode-switch"
+                                    onchange="app.toggleTrayMode(this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <!-- 关闭确认提示 -->
+                        <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <div
+                                    style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-main);">
+                                    关闭窗口时提示</div>
+                                <div style="font-size: 12px; color: var(--text-sec);">关闭窗口时询问是退出还是最小化到托盘</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="close-confirm-switch"
+                                    onchange="app.toggleCloseConfirm(this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" id="restore-card">
+                    <div class="card-header">
+                        <h2 style="color: var(--status-error);">还原</h2>
+                    </div>
+                    <div style="padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+                        <p style="font-size: 12px; color: var(--text-sec); margin: 0;">
+                            清空 mod 文件夹并禁用语音配置文件开关
+                        </p>
+                        <button class="btn danger full-width" onclick="app.restoreGame()" style="width: 100%;">
+                            <i class="ri-alert-line"></i> 一键还原纯净模式
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card" id="feedback-card">
+                    <div class="card-header">
+                        <h2>反馈</h2>
+                    </div>
+                    <div style="padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+                        <p style="font-size: 12px; color: var(--text-sec); margin: 0;">
+                            BUG反馈，功能建议
+                        </p>
+                        <button class="btn feedback-outline full-width" id="btn-feedback"
+                            onclick="app.openFeedbackModal()" style="width: 100%;">
+                            <i class="ri-feedback-line"></i> 打开反馈
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 分隔區域 -->
+            <div class="settings-section-divider"></div>
+
+            <!-- 語音包庫路徑設置 -->
+            <div class="card" id="library-path-card">
+                <div class="card-header">
+                    <h2>语音包库路径</h2>
+                    <span class="subtitle">Voice Pack Library Location</span>
+                </div>
+                <div class="path-settings-body">
+                    <!-- 待解壓區 -->
+                    <div class="path-field">
+                        <label class="path-label">
+                            <i class="ri-folder-zip-line"></i>
+                            待解压区路径
+                            <span class="path-label-hint">(存放待导入的压缩包)</span>
+                        </label>
+                        <div class="path-input-row">
+                            <div class="path-input-wrapper">
+                                <input type="text" id="pending-dir-input" class="path-input" readonly
+                                    placeholder="使用默认路径">
+                                <button class="path-copy-btn" onclick="app.copyPathToClipboard('pending-dir-input')"
+                                    title="复制路径">
+                                    <i class="ri-file-copy-line"></i>
+                                </button>
+                            </div>
+                            <button class="btn secondary" onclick="app.browsePendingDir()" title="选择自定义路径">
+                                <i class="ri-folder-add-line"></i>
+                            </button>
+                            <button class="btn secondary" onclick="app.openPendingFolder()" title="打开文件夹">
+                                <i class="ri-folder-open-line"></i>
+                            </button>
+                            <button class="btn secondary" onclick="app.resetPendingDir()" title="重置为默认">
+                                <i class="ri-refresh-line"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 語音包庫 -->
+                    <div class="path-field">
+                        <label class="path-label">
+                            <i class="ri-folder-music-line"></i>
+                            语音包库路径
+                            <span class="path-label-hint">(存放已解压的语音包)</span>
+                        </label>
+                        <div class="path-input-row">
+                            <div class="path-input-wrapper">
+                                <input type="text" id="library-dir-input" class="path-input" readonly
+                                    placeholder="使用默认路径">
+                                <button class="path-copy-btn" onclick="app.copyPathToClipboard('library-dir-input')"
+                                    title="复制路径">
+                                    <i class="ri-file-copy-line"></i>
+                                </button>
+                            </div>
+                            <button class="btn secondary" onclick="app.browseLibraryDir()" title="选择自定义路径">
+                                <i class="ri-folder-add-line"></i>
+                            </button>
+                            <button class="btn secondary" onclick="app.openLibraryFolder()" title="打开文件夹">
+                                <i class="ri-folder-open-line"></i>
+                            </button>
+                            <button class="btn secondary" onclick="app.resetLibraryDir()" title="重置为默认">
+                                <i class="ri-refresh-line"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <p class="path-hint">
+                        <i class="ri-information-line"></i>
+                        选择自定义路径后将自动保存并立即生效，已存在的文件不会自动迁移
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="modal-overlay" id="modal-install">
+        <div class="modal-content">
+            <h2>选择要加载的模块</h2>
+            <p class="subtitle" style="margin-bottom: 10px;">已根据文件自动检测可用模块</p>
+
+            <div class="toggle-grid" id="install-toggles">
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn secondary" onclick="app.closeModal('modal-install')">取消</button>
+                <button class="btn primary" id="btn-confirm-install">
+                    <i class="ri-rocket-line"></i> 立即加载
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-confirm">
+        <div class="modal-content">
+            <h2 id="confirm-title" style="margin-top: 0; color: var(--text-main);">操作确认</h2>
+            <p id="confirm-message"
+                style="margin-bottom: 25px; color: var(--text-sec); font-size: 14px; line-height: 1.5;"></p>
+
+            <div class="modal-actions">
+                <button class="btn secondary" id="btn-confirm-cancel">取消</button>
+                <button class="btn danger" id="btn-confirm-ok">
+                    <i class="ri-delete-bin-line"></i> 确认删除
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 关闭确认弹窗 -->
+    <div class="modal-overlay" id="modal-close-confirm">
+        <div class="modal-content" style="max-width: 400px;">
+            <h2 style="margin-top: 0; color: var(--text-main);">
+                <i class="ri-question-line" style="color: var(--primary);"></i> 确认关闭
+            </h2>
+            <p style="margin-bottom: 20px; color: var(--text-sec); font-size: 14px; line-height: 1.5;">
+                您想要退出程序还是最小化到系统托盘？
+            </p>
+
+            <div style="margin-bottom: 20px; padding: 12px; background: var(--bg-sec); border-radius: 8px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-sec);">
+                    <input type="checkbox" id="close-confirm-remember" style="cursor: pointer;">
+                    <span>不再提示我，记住我的选择</span>
+                </label>
+                <p style="margin: 8px 0 0 24px; font-size: 11px; color: var(--text-sec); opacity: 0.8;">
+                    可在 设置 > 启动设置 中重新开启此提示
+                </p>
+            </div>
+
+            <div class="modal-actions" style="justify-content: space-between;">
+                <button class="btn secondary" onclick="app.handleCloseAction('cancel')">取消</button>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn secondary" onclick="app.handleCloseAction('tray')">
+                        <i class="ri-apps-line"></i> 最小化到托盘
+                    </button>
+                    <button class="btn danger" onclick="app.handleCloseAction('exit')">
+                        <i class="ri-shut-down-line"></i> 退出程序
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-feedback">
+        <div class="modal-content">
+            <h2 style="margin-top: 0; color: var(--text-main);">反馈</h2>
+            <div class="form-group" style="margin-top: 15px;">
+                <label>联系方式</label>
+                <input type="text" id="feedback-contact" maxlength="40" placeholder="QQ 或邮箱">
+                <div class="input-hint" id="feedback-contact-count">0/40</div>
+            </div>
+            <div class="form-group" style="margin-top: 15px;">
+                <label>反馈建议</label>
+                <textarea id="feedback-content" class="feedback-textarea" maxlength="200"
+                    placeholder="请输入你的建议或遇到的问题"></textarea>
+                <div class="input-hint" id="feedback-content-count">0/200</div>
+            </div>
+            <div class="modal-actions" style="justify-content: flex-end; gap: 12px; margin-top: 18px;">
+                <button class="btn secondary" onclick="app.closeModal('modal-feedback')">取消</button>
+                <button class="btn primary" onclick="app.closeModal('modal-feedback')">提交</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-archive-password">
+        <div class="modal-content" style="max-width: 420px;">
+            <h2 id="archive-password-title" style="margin-top: 0; color: var(--text-main);">请输入解压密码</h2>
+            <p id="archive-password-file" style="margin-bottom: 8px; color: var(--text-sec); font-size: 13px;"></p>
+            <p id="archive-password-hint" style="margin-bottom: 16px; color: var(--status-error); font-size: 12px;"></p>
+
+            <div class="form-group">
+                <label>密码</label>
+                <input type="password" id="archive-password-input" placeholder="请输入密码"
+                    onkeydown="app.onArchivePasswordKeydown(event)">
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn secondary" onclick="app.cancelArchivePassword()">取消</button>
+                <button class="btn primary" onclick="app.submitArchivePassword()">
+                    <i class="ri-lock-unlock-line"></i> 解压
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 导入方式选择模态框 -->
+    <div class="modal-overlay" id="modal-import">
+        <div class="modal-content" style="max-width: 500px;">
+            <h2>导入语音包</h2>
+            <p class="subtitle" style="margin-bottom: 25px;">请选择一种导入方式</p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <button class="btn big-btn secondary square-btn" onclick="app.importSelectedZip()">
+                    <i class="ri-folder-open-line"></i>
+                    <div class="btn-text">
+                        <div class="title">选择文件导入</div>
+                        <div class="desc">浏览本地压缩包</div>
+                    </div>
+                </button>
+
+                <button class="btn big-btn primary square-btn" onclick="app.importPendingZips()">
+                    <i class="ri-file-zip-line"></i>
+                    <div class="btn-text">
+                        <div class="title">一键批量导入</div>
+                        <div class="desc">扫描 [待解压区]</div>
+                    </div>
+                </button>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 25px;">
+                <button class="btn secondary" onclick="app.closeModal('modal-import')" style="width: 100%;">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-copy-country">
+        <div class="modal-content" style="max-width: 440px;">
+            <h2 id="copy-country-title">复制国籍文件</h2>
+            <p class="subtitle">输入国家缩写，新增对应国籍文件</p>
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label>国家缩写</label>
+                <input type="text" id="copy-country-code" placeholder="例如 jp / us">
+                <p class="input-hint">
+                    <i class="ri-information-line"></i> 仅支持 2-10 位英文字母
+                </p>
+            </div>
+
+            <div class="modal-actions" style="justify-content: space-between;">
+                <button class="btn secondary" onclick="app.closeModal('modal-copy-country')">取消</button>
+                <div style="display:flex; gap:12px;">
+                    <button class="btn primary" onclick="app.confirmCopyCountryFiles('ground')">
+                        <i class="ri-file-copy-line"></i> 复制陆战车组
+                    </button>
+                    <button class="btn primary" onclick="app.confirmCopyCountryFiles('radio')">
+                        <i class="ri-file-copy-line"></i> 复制无线电
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 涂装编辑模态框 -->
+    <div class="modal-overlay" id="modal-edit-skin">
+        <div class="modal-content" style="max-width: 420px;">
+            <h2>编辑涂装</h2>
+            <p class="subtitle">修改显示名称与封面</p>
+
+            <div class="edit-skin-form">
+                <div class="skin-cover-edit" onclick="app.requestUpdateSkinCover()">
+                    <img id="edit-skin-cover" src="" alt="封面预览">
+                    <div class="cover-overlay">
+                        <i class="ri-camera-line"></i>
+                        <span>更换封面</span>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label>文件夹名称 (即显示名称)</label>
+                    <input type="text" id="edit-skin-name" placeholder="请输入新的名称">
+                    <p class="input-hint">
+                        <i class="ri-information-line"></i> 请勿包含特殊字符 \ / : * ? " &lt; &gt; | <br>
+                        修改名称会同步修改本地文件夹名。
+                    </p>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn secondary" onclick="app.closeModal('modal-edit-skin')">取消</button>
+                <button class="btn primary" onclick="app.saveSkinEdit()">
+                    <i class="ri-save-line"></i> 保存修改
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-edit-sight">
+        <div class="modal-content" style="max-width: 420px;">
+            <h2>编辑炮镜</h2>
+            <p class="subtitle">修改显示名称与封面</p>
+
+            <div class="edit-skin-form">
+                <div class="skin-cover-edit" onclick="app.requestUpdateSightCover()">
+                    <img id="edit-sight-cover" src="" alt="封面预览">
+                    <div class="cover-overlay">
+                        <i class="ri-camera-line"></i>
+                        <span>更换封面</span>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label>文件夹名称 (即显示名称)</label>
+                    <input type="text" id="edit-sight-name" placeholder="请输入新的名称">
+                    <p class="input-hint">
+                        <i class="ri-information-line"></i> 请勿包含特殊字符 \ / : * ? " &lt; &gt; | <br>
+                        修改名称会同步修改本地文件夹名。
+                    </p>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn secondary" onclick="app.closeModal('modal-edit-sight')">取消</button>
+                <button class="btn primary" onclick="app.saveSightEdit()">
+                    <i class="ri-save-line"></i> 保存修改
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-crop-cover">
+        <div class="modal-content crop-modal">
+            <h2>裁剪封面</h2>
+            <p class="subtitle">拖动图片调整位置，使用滚轮/滑块缩放</p>
+
+            <div class="crop-stage" id="crop-stage">
+                <canvas id="crop-canvas" width="640" height="360"></canvas>
+                <div class="crop-frame"></div>
+            </div>
+
+            <div class="crop-controls">
+                <label class="crop-zoom">
+                    <span>缩放</span>
+                    <input id="crop-zoom" type="range" min="0.2" max="3" step="0.01" value="1">
+                </label>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn secondary" onclick="app.closeModal('modal-crop-cover')">取消</button>
+                <button class="btn primary" onclick="app.applyCroppedCover()">
+                    <i class="ri-check-line"></i> 使用此封面
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-support-me" onclick="if(event.target===this)app.closeModal('modal-support-me')">
+        <div class="modal-content" style="max-width: 780px; padding: 30px; position: relative;">
+            <button class="modal-close-x" onclick="app.closeModal('modal-support-me')">
+                <i class="ri-close-line"></i>
+            </button>
+            <h2 style="margin-top: 0;">支持开发者</h2>
+            <p class="subtitle" style="margin-bottom: 8px;">非常感谢给我钱！你的支持是我持续更新的动力</p>
+            <p class="subtitle" style="margin-bottom: 20px; font-size: 13px; color: var(--text-sec);">还可以帮我减轻服务器和大模型API的成本！</p>
+
+            <div class="support-qr-row">
+                <div class="support-qr-item" onclick="app.openImagePreview('assets/aifadian.png', '爱发电')">
+                    <div class="support-qr-img-wrap">
+                        <img src="assets/aifadian.png" alt="爱发电">
+                        <div class="support-qr-overlay">
+                            <i class="ri-zoom-in-line"></i>
+                        </div>
+                    </div>
+                    <span class="support-qr-name">爱发电</span>
+                </div>
+                <div class="support-qr-item" onclick="app.openImagePreview('assets/laomi.png', '微信赞赏')">
+                    <div class="support-qr-img-wrap">
+                        <img src="assets/laomi.png" alt="微信赞赏">
+                        <div class="support-qr-overlay">
+                            <i class="ri-zoom-in-line"></i>
+                        </div>
+                    </div>
+                    <span class="support-qr-name">微信赞赏</span>
+                </div>
+            </div>
+
+            <div class="support-free-section">
+                <p class="support-free-title"><i class="ri-information-line"></i> 如果你是学生请不要花钱打赏我，你可以选择以下方式支持我</p>
+                <p class="support-free-desc">以下方式对我的帮助也很大：</p>
+                <div class="support-free-list">
+                    <div class="support-free-item">
+                        <i class="ri-star-fill" style="color: #FFB800;"></i>
+                        <a href="https://github.com/AimerSo/Aimer_WT" target="_blank" class="support-link-text github" onclick="app.openExternal('https://github.com/AimerSo/Aimer_WT'); return false;">在 GitHub 给项目点个 Star，帮助更多人发现（可点击跳转）</a>
+                    </div>
+                    <div class="support-free-item">
+                        <i class="ri-bilibili-fill" style="color: #FB7299;"></i>
+                        <a href="https://b23.tv/Z0hfm59" target="_blank" class="support-link-text bilibili" onclick="app.openExternal('https://b23.tv/Z0hfm59'); return false;">在哔哩哔哩关注我，获取最新动态和教程（可点击跳转）</a>
+                    </div>
+                    <div class="support-free-item">
+                        <i class="ri-server-fill" style="color: var(--primary);"></i>
+                        <span>GitHub Star 可帮我申请开源项目服务器资源</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 24px; gap: 12px; justify-content: center;">
+                <a href="https://github.com/AimerSo/Aimer_WT" target="_blank" class="btn secondary support-action-btn" onclick="app.openExternal('https://github.com/AimerSo/Aimer_WT'); return false;" style="text-decoration: none;">
+                    <i class="ri-github-fill"></i> GitHub 点星
+                </a>
+                <a href="https://b23.tv/Z0hfm59" target="_blank" class="btn secondary support-action-btn" onclick="app.openExternal('https://b23.tv/Z0hfm59'); return false;" style="text-decoration: none;">
+                    <i class="ri-bilibili-fill"></i> B站关注
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图片预览弹窗 -->
+    <div class="modal-overlay" id="modal-image-preview" onclick="if(event.target===this)app.closeModal('modal-image-preview')">
+        <div class="modal-content" style="max-width: 500px; padding: 20px;">
+            <h3 id="image-preview-title" style="margin-top: 0; margin-bottom: 16px;">图片预览</h3>
+            <div class="image-preview-wrap">
+                <img id="image-preview-img" src="" alt="预览">
+            </div>
+            <div class="modal-actions" style="margin-top: 20px;">
+                <button class="btn primary" onclick="app.closeModal('modal-image-preview')">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WTLive / WTLiker 站点选择模态框 -->
+    <div class="modal-overlay" id="modal-workshop">
+        <div class="modal-content" style="max-width: 500px;">
+            <h2>选择创意工坊站点</h2>
+            <p class="subtitle" style="margin-bottom: 25px;">请选择要打开的站点</p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <button class="btn big-btn secondary square-btn" onclick="app.openWorkshop('live')">
+                    <i class="ri-global-line"></i>
+                    <div class="btn-text">
+                        <div class="title">WTLive (国际)</div>
+                        <div class="desc">live.warthunder.com</div>
+                    </div>
+                </button>
+
+                <button class="btn big-btn primary square-btn" onclick="app.openWorkshop('liker')">
+                    <i class="ri-home-5-line"></i>
+                    <div class="btn-text">
+                        <div class="title">WTLiker (国内)</div>
+                        <div class="desc">wtliker.com</div>
+                    </div>
+                </button>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 25px;">
+                <button class="btn secondary" onclick="app.closeModal('modal-workshop')"
+                    style="width: 100%;">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-launch-settings">
+        <div class="modal-content" style="max-width: 500px;">
+            <h2>启动设置</h2>
+            <p class="subtitle" style="margin-bottom: 25px;">选择点击“开始游戏”时的启动方式</p>
+
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div class="option-card" id="option-launch-launcher" onclick="app.saveLaunchSettings('launcher')">
+                    <div class="option-card-icon">
+                        <i class="ri-rocket-2-line"></i>
+                    </div>
+                    <div class="option-card-content">
+                        <div class="option-card-title">官方启动器</div>
+                        <div class="option-card-desc">使用 Launcher.exe 启动（默认）</div>
+                    </div>
+                    <div class="option-card-check">
+                        <i class="ri-check-line" style="font-size: 20px; color: var(--primary); display: none;"></i>
+                    </div>
+                </div>
+
+                <div class="option-card" id="option-launch-steam" onclick="app.saveLaunchSettings('steam')">
+                    <div class="option-card-icon">
+                        <i class="ri-steam-line"></i>
+                    </div>
+                    <div class="option-card-content">
+                        <div class="option-card-title">Steam 启动</div>
+                        <div class="option-card-desc">调用 Steam 协议启动，支持时长统计</div>
+                    </div>
+                    <div class="option-card-check">
+                        <i class="ri-check-line" style="font-size: 20px; color: var(--primary); display: none;"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 25px;">
+                <button class="btn secondary" onclick="app.closeModal('modal-launch-settings')" style="width: 100%;">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 用户协议模态框 -->
+    <div class="modal-overlay" id="modal-disclaimer" style="z-index: 9999;">
+        <div class="modal-content disclaimer-modal">
+            <h2 class="disclaimer-title">免责声明</h2>
+
+            <div class="disclaimer-divider"></div>
+
+            <div id="disclaimer-text" class="disclaimer-content">
+                <p>本人开发这款工具的初衷是希望能让大家更方便的体验个性化语音的乐趣。在开发过程中，我已经倾尽全力去完善每一个功能，并进行了多次测试，力求让它运行得更稳定、更安全。</p>
+                <p>但毕竟我只是一个人在利用业余时间开发。能力也有限，面对千差万别的电脑环境和游戏更新，我没办法保证它在每一个细节上都完美无缺。即便我非常希望它能成为对你有用的工具，也必须说明：由于个人技术和精力的局限性，我无法
+                    100% 保证程序在所有情况下都不出 Bug，也无法预见它是否会与你的系统或其他软件产生冲突（比如极其罕见的蓝屏、文件丢失或损坏）。</p>
+                <p>所以，请你在使用前务必阅读下方的法律条款，并建议你养成备份原文件的好习惯，感谢。</p>
+
+                <h3>免责声明</h3>
+                <p><strong>重要提示：在使用本软件前，请仔细阅读以下免责声明。使用本软件即表示您已充分理解并同意本声明的所有条款。</strong></p>
+
+                <h4>1. 软件性质</h4>
+                <p>本软件为第三方开发的非官方工具，与《战争雷霆》游戏开发商 Gaijin Entertainment 及其关联公司无任何关联。本软件按 GNU General Public License v3.0
+                    (GPL v3) 协议开源发布，仅作为个人学习交流目的而开发。</p>
+
+                <h4>2. GPL v3 许可声明</h4>
+                <p>本程序是自由软件：您可以自由地重新分发和/或修改它，依据 GNU 通用公共许可证（GPL
+                    v3）的条款，由自由软件基金会发布。本程序发布的目的是希望它有用，但不提供任何担保；甚至没有对适销性或特定用途适用性的暗示担保。有关详细信息，请参阅 GNU 通用公共许可证。</p>
+
+                <h4>3. 使用风险</h4>
+                <ul>
+                    <li>用户使用本软件所产生的一切后果由用户自行承担。</li>
+                    <li>修改游戏文件可能导致游戏出现异常、崩溃或无法正常运行。</li>
+                    <li>使用本软件可能违反游戏服务条款，可能导致游戏账号受到限制或封禁。</li>
+                    <li>开发者不对因使用本软件导致的任何直接或间接损失负责。</li>
+                </ul>
+
+                <h4>4. 数据安全</h4>
+                <ul>
+                    <li>建议用户在使用本软件前备份游戏文件及重要数据。</li>
+                    <li>本软件不保证数据的完整性、准确性或可用性。</li>
+                    <li>因软件故障、误操作或其他原因导致的数据丢失，开发者不承担责任。</li>
+                </ul>
+
+                <h4>5. 软件免责</h4>
+                <ul>
+                    <li>本软件按"现状"提供，不提供任何明示或暗示的保证。</li>
+                    <li>开发者不保证软件无错误、无漏洞或持续可用。</li>
+                    <li>开发者保留随时停止维护、更新或分发本软件的权利，且无需提前通知。</li>
+                </ul>
+
+                <h4>6. 法律责任</h4>
+                <ul>
+                    <li>用户应自行承担使用本软件的法律风险。</li>
+                    <li>如因使用本软件引发任何法律纠纷，由用户自行解决，开发者概不负责。</li>
+                    <li><strong>用户在分发或使用本软件时，应遵守 GPL v3 协议及相关法律法规。</strong></li>
+                </ul>
+
+                <h4>7. 语音包内容</h4>
+                <ul>
+                    <li>本软件仅提供语音包等资源的管理功能，不制作、分发语音包内容。</li>
+                    <li>用户导入的语音包内容及其版权归属原作者。</li>
+                    <li>用户应确保使用的语音包内容合法合规，不侵犯他人权益。</li>
+                </ul>
+                <h4>8. 隐私说明</h4>
+                <ul>
+                    <li>软件已更新遥测功能，用于收集软件使用情况，以改进软件性能和用户体验。</li>
+                    <li>遥测数据不包含任何用户隐私数据，且仅用于软件改进，不会用于其他目的。</li>
+                    <li>用户可以随时在软件设置中关闭遥测功能。</li>
+                </ul>
+                <h4>9. 免责更新</h4>
+                <p>开发者保留随时修改本免责声明的权利，修改后的声明自发布之日起生效。</p>
+                <p class="text-muted" style="margin-top: 20px; text-align: right;">最后更新日期：2026年1月10日</p>
+            </div>
+
+            <div class="disclaimer-divider"></div>
+
+            <div class="disclaimer-footer">
+                <div id="disclaimer-timer-hint"></div>
+                <div class="disclaimer-actions-row">
+                    <button class="btn-disclaimer reject" onclick="app.disclaimerReject()">拒绝</button>
+                    <button class="btn-disclaimer agree" id="btn-disclaimer-agree" disabled
+                        onclick="app.disclaimerAgree()">同意</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-error" class="toast-error">
+        <div class="toast-error-content">
+            <i class="ri-error-warning-line toast-error-icon"></i>
+            <div class="toast-error-text">
+                <div class="toast-error-title">错误</div>
+                <div class="toast-error-message"></div>
+            </div>
+            <button class="toast-error-close" id="toast-error-close">
+                <i class="ri-close-line"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="toast-warn" class="toast-warn">
+        <div class="toast-warn-content">
+            <i class="ri-alert-line toast-warn-icon"></i>
+            <div class="toast-warn-text">
+                <div class="toast-warn-title">警告</div>
+                <div class="toast-warn-message"></div>
+            </div>
+            <button class="toast-warn-close" id="toast-warn-close">
+                <i class="ri-close-line"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="toast-info" class="toast-info">
+        <div class="toast-info-content">
+            <i class="ri-information-line toast-info-icon"></i>
+            <div class="toast-info-text">
+                <div class="toast-info-title">提示</div>
+                <div class="toast-info-message"></div>
+            </div>
+            <button class="toast-info-close" id="toast-info-close">
+                <i class="ri-close-line"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- 自定义提示弹窗 (替代原生 alert) -->
+    <div class="modal-overlay" id="modal-alert">
+        <div class="modal-content" style="text-align: center;">
+            <div id="alert-icon" style="margin-bottom: 16px;">
+                <i class="ri-information-line" style="font-size: 48px; color: var(--primary);"></i>
+            </div>
+            <h2 id="alert-title" style="margin: 0 0 12px 0; color: var(--text-main);">提示</h2>
+            <p id="alert-message"
+                style="margin-bottom: 24px; color: var(--text-sec); font-size: 14px; line-height: 1.6;"></p>
+
+            <div class="modal-actions" style="justify-content: center; gap: 12px;">
+                <button class="btn secondary" id="alert-link-btn" style="display: none;"
+                    onclick="app.openExternal(this.dataset.url); app.closeModal('modal-alert')">
+                    <i class="ri-download-cloud-2-line"></i> 前往下载
+                </button>
+                <button class="btn primary" onclick="app.closeModal('modal-alert')" style="min-width: 120px;">
+                    <i class="ri-check-line"></i> 知道了
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="tooltip" class="tooltip"></div>
+
+    <script src="loading_voice_package.js"></script>
+    <script src="components/AppDropdownMenu.js"></script>
+    <!-- 新功能模块脚本 -->
+    <script src="js/pages/task_library.js"></script>
+    <script src="js/pages/model_library.js"></script>
+    <script src="js/pages/hangar.js"></script>
+    <script src="js/pages/custom_kill.js"></script>
+    <script src="script.js"></script>
+    
+    <!-- AI助手模块 -->
+    <script src="ai/config.js"></script>
+    <script src="ai/prompts.js"></script>
+    <script src="ai/ai_vocabulary_mappings.js"></script>
+    <script src="ai/providers/base.js"></script>
+    <script src="ai/providers/openai.js"></script>
+    <script src="ai/providers/claude.js"></script>
+    <script src="ai/providers/siliconflow.js"></script>
+    <script src="ai/providers/zhipu.js?v=1"></script>
+    <script src="ai/providers/proxy.js"></script>
+    <script src="ai/providers/index.js"></script>
+    <script src="ai/context/log_collector.js"></script>
+    <script src="ai/context/tutorial_detector.js"></script>
+    <script src="ai/context/index.js"></script>
+    <script src="ai/disclaimer.js"></script>
+    <script src="ai/token_tracker.js"></script>
+    <script src="ai/ai_chat.js"></script>
+    <script src="ai/index.js"></script>
+</body>
+
+</html>

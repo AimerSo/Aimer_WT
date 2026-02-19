@@ -1,0 +1,57 @@
+# Runtime-generated / local state
+logs/
+*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Packaging / build artifacts (PyInstaller, etc.)
+build/
+dist/
+*.spec
+
+# App data (large / local content)
+WT待解压区/
+WT语音包库/
+
+# Local config (often contains personal game path)
+settings.json
+app_secrets.py
+.env
+*.db
+telemetry
+AimerWT_Telemetry/
+web/ai/server/
+build.bat
+test
+
+# User Data / Large Files
+WT待解压区/*
+!WT待解压区/.gitkeep
+WT语音包库/*
+!WT语音包库/.gitkeep
+
+# Redundant / Test Files
+telemetry_manager.py
+wt_sound.py
+AimerWT v2 Beta作者端.html
+web/themes/test.json
+
+# Themes (Only keep default.json & THEME_GUIDE.md)
+web/themes/*.json
+!web/themes/default.json
+
