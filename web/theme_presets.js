@@ -84,7 +84,28 @@ const THEME_SCHEMA = {
     "modl": "--modal-overlay-bg",  // 遮罩层颜色
 
     // --- [K] 窗口控制 (Window Controls) ---
-    "wcb":  "--win-btn-hover-bg"   // 窗口按钮悬停背景
+    "wcb":  "--win-btn-hover-bg",  // 窗口按钮悬停背景
+
+    // --- [L] 细节优化 (Details) ---
+    "sbw": "--scrollbar-width",    // 滚动条宽度
+    "sbr": "--scrollbar-radius",   // 滚动条圆角
+    "avc1":"--app-version-color-1",// 版本文字渐变起
+    "avc2":"--app-version-color-2",// 版本文字渐变止
+    "avt": "--app-version-text",   // 版本号颜色
+    "bls1":"--bili-shadow-1",      // B站呼吸灯阴影1
+    "bls2":"--bili-shadow-2",      // B站呼吸灯阴影2
+    "scge":"--status-card-bg-gradient-end", // 状态卡片背景渐变末端
+    "pge": "--primary-gradient-end",// 主按钮渐变末端
+    "ps":  "--primary-shadow",     // 主按钮阴影
+    "psh": "--primary-shadow-hover", // 主按钮悬停阴影
+    "chgs":"--card-header-gradient-start", // 卡片标题背景渐变起
+    "nbas":"--nav-btn-active-shadow", // 导航激活阴影
+    "nbais":"--nav-btn-active-icon-shadow", // 导航激活图标阴影
+    "nbab":"--nav-btn-after-bg",   // 导航激活背景装饰
+    "nbhs":"--nav-btn-hover-shadow",// 导航悬停阴影
+    
+    // --- [M] 品牌文字 (Brand Text) ---
+    "btg": "--brand-text-gradient"   // 品牌文字渐变色
 };
 
 // =============================================================================
@@ -139,7 +160,25 @@ const DEFAULT_LIGHT = {
     "--input-bg": "#FFFFFF",
     "--input-border": "#E2E8F0",
     "--modal-overlay-bg": "rgba(0, 0, 0, 0.5)",
-    "--win-btn-hover-bg": "rgba(0, 0, 0, 0.05)"
+    "--win-btn-hover-bg": "rgba(0, 0, 0, 0.05)",
+
+    "--scrollbar-width": "6px",
+    "--scrollbar-radius": "3px",
+    "--app-version-color-1": "#2C3E50",
+    "--app-version-color-2": "#7F8C8D",
+    "--app-version-text": "#F59E0B",
+    "--bili-shadow-1": "rgba(0, 174, 236, 0.3)",
+    "--bili-shadow-2": "rgba(251, 114, 153, 0.8)",
+    "--status-card-bg-gradient-end": "rgba(255, 153, 0, 0.03)",
+    "--primary-gradient-end": "#ffb347",
+    "--primary-shadow": "rgba(255, 153, 0, 0.25)",
+    "--primary-shadow-hover": "rgba(255, 153, 0, 0.35)",
+    "--card-header-gradient-start": "rgba(251, 191, 36, 0.08)",
+    "--nav-btn-active-shadow": "rgba(255, 153, 0, 0.15)",
+    "--nav-btn-active-icon-shadow": "rgba(255, 153, 0, 0.3)",
+    "--nav-btn-after-bg": "rgba(255, 153, 0, 0.3)",
+    "--nav-btn-hover-shadow": "rgba(0, 0, 0, 0.1)",
+    "--brand-text-gradient": "linear-gradient(135deg, #2C3E50 0%, #7F8C8D 100%)"
 };
 
 // 2. 默认深色 (Dark) - 锌色系专业深色模式 (Zinc Palette) 
@@ -190,5 +229,23 @@ const DEFAULT_DARK = {
     "--input-bg": "#09090B", 
     "--input-border": "#3F3F46", 
     "--modal-overlay-bg": "rgba(0, 0, 0, 0.8)", 
-    "--win-btn-hover-bg": "rgba(255, 255, 255, 0.1)" 
+    "--win-btn-hover-bg": "rgba(255, 255, 255, 0.1)",
+
+    "--scrollbar-width": "6px",
+    "--scrollbar-radius": "3px",
+    "--app-version-color-1": "#F4F4F5",
+    "--app-version-color-2": "#A1A1AA",
+    "--app-version-text": "#F59E0B",
+    "--bili-shadow-1": "rgba(0, 174, 236, 0.3)",
+    "--bili-shadow-2": "rgba(251, 114, 153, 0.8)",
+    "--status-card-bg-gradient-end": "rgba(251, 191, 36, 0.05)",
+    "--primary-gradient-end": "#ffb347",
+    "--primary-shadow": "rgba(255, 153, 0, 0.25)",
+    "--primary-shadow-hover": "rgba(251, 191, 36, 0.3)",
+    "--card-header-gradient-start": "rgba(251, 191, 36, 0.08)",
+    "--nav-btn-active-shadow": "rgba(251, 191, 36, 0.25)",
+    "--nav-btn-active-icon-shadow": "rgba(251, 191, 36, 0.5)",
+    "--nav-btn-after-bg": "rgba(251, 191, 36, 0.4)",
+    "--nav-btn-hover-shadow": "rgba(0, 0, 0, 0.3)",
+    "--brand-text-gradient": "linear-gradient(135deg, #F4F4F5 0%, #A1A1AA 100%)"
 };

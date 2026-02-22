@@ -55,12 +55,17 @@ class ConfigManager:
     # 默认配置模板
     DEFAULT_CONFIG = {
         "game_path": "",
+        "launch_mode": "launcher",
         "theme_mode": "Light",
         "is_first_run": True,
         "agreement_version": "",
         "sights_path": "",
         "pending_dir": "",
-        "library_dir": ""
+        "library_dir": "",
+        "telemetry_enabled": True,
+        "autostart_enabled": False,
+        "tray_mode": False,
+        "close_confirm": True
     }
 
     def __init__(self):
@@ -218,6 +223,26 @@ class ConfigManager:
         self.config["theme_mode"] = mode
         return self.save_config()
 
+    def get_launch_mode(self) -> str:
+        """读取启动方式（launcher/steam/aces）。"""
+        return self.config.get("launch_mode", "launcher")
+
+    def set_launch_mode(self, mode: str) -> bool:
+        """
+        更新启动方式并写入 settings.json。
+        
+        Args:
+            mode: 启动方式 ("launcher" / "steam" / "aces")
+            
+        Returns:
+            bool: 是否成功保存
+        """
+        if mode not in ("launcher", "steam", "aces"):
+            log.warning(f"无效的启动方式: {mode}，使用 launcher")
+            mode = "launcher"
+        self.config["launch_mode"] = mode
+        return self.save_config()
+
     def get_active_theme(self) -> str:
         """读取当前选择的主题文件名（自定义主题的配置项）。"""
         return self.config.get("active_theme", "default.json")
@@ -347,4 +372,67 @@ class ConfigManager:
           - enabled: bool，是否开启。
         """
         self.config["telemetry_enabled"] = bool(enabled)
+        self.save_config()
+
+    def get_autostart_enabled(self):
+        """
+        功能定位:
+        - 读取开机自启动状态。
+        输入输出:
+        - 参数: 无
+        - 返回: bool，默认 False。
+        """
+        return bool(self.config.get("autostart_enabled", False))
+
+    def set_autostart_enabled(self, enabled):
+        """
+        功能定位:
+        - 更新开机自启动状态。
+        输入输出:
+        - 参数:
+          - enabled: bool，是否开启。
+        """
+        self.config["autostart_enabled"] = bool(enabled)
+        self.save_config()
+
+    def get_tray_mode(self):
+        """
+        功能定位:
+        - 读取托盘模式状态（关闭时最小化到托盘）。
+        输入输出:
+        - 参数: 无
+        - 返回: bool，默认 False。
+        """
+        return bool(self.config.get("tray_mode", False))
+
+    def set_tray_mode(self, enabled):
+        """
+        功能定位:
+        - 更新托盘模式状态。
+        输入输出:
+        - 参数:
+          - enabled: bool，是否开启。
+        """
+        self.config["tray_mode"] = bool(enabled)
+        self.save_config()
+
+    def get_close_confirm(self):
+        """
+        功能定位:
+        - 读取关闭确认提示状态。
+        输入输出:
+        - 参数: 无
+        - 返回: bool，默认 True。
+        """
+        return bool(self.config.get("close_confirm", True))
+
+    def set_close_confirm(self, enabled):
+        """
+        功能定位:
+        - 更新关闭确认提示状态。
+        输入输出:
+        - 参数:
+          - enabled: bool，是否开启。
+        """
+        self.config["close_confirm"] = bool(enabled)
         self.save_config()

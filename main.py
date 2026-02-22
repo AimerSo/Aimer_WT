@@ -11,6 +11,10 @@ import time
 import platform
 import subprocess
 
+# ==================== 控制台编码设置（已移至 utils.logger）====================
+# 详细逻辑请参考 utils/logger.py 中的 _setup_console_encoding 函数
+
+
 try:
     import webview
 except Exception as _e:
@@ -24,6 +28,11 @@ from services.library_manager import ArchivePasswordCanceled, LibraryManager
 from utils.logger import setup_logger, get_logger, set_ui_callback
 from services.sights_manager import SightsManager
 from services.skins_manager import SkinsManager
+from services.task_manager import TaskManager
+from services.model_manager import ModelManager
+from services.hangar_manager import HangarManager
+from services.tray_manager import tray_manager
+from services.autostart_manager import autostart_manager
 from services.telemetry_manager import init_telemetry, get_hwid
 
 APP_VERSION = "2.1.0"
@@ -149,12 +158,14 @@ def _parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--allow-fallback", action="store_true")
     parser.add_argument("--perf", action="store_true")
+    parser.add_argument("--silent", action="store_true", help="静默启动，只显示托盘")
+    parser.add_argument("--tray-only", action="store_true", help="仅启动托盘，不显示主窗口")
 
     try:
         args, _unknown = parser.parse_known_args(argv)
         return args
     except Exception:
-        return argparse.Namespace(allow_fallback=False, perf=False)
+        return argparse.Namespace(allow_fallback=False, perf=False, silent=False, tray_only=False)
 
 
 class AppApi:
@@ -192,11 +203,26 @@ class AppApi:
 
         self._skins_mgr = SkinsManager()
         self._sights_mgr = SightsManager()
+        self._task_mgr = TaskManager()
+        self._model_mgr = ModelManager()
+        self._hangar_mgr = HangarManager()
         self._logic = CoreService()
+
+        # ========== 本地测试配置 ==========
+        # 设置为 True 启用本地遥测测试（连接 localhost:8080）
+        # 正常上线时设置为 False，使用正式服务器
+        LOCAL_TELEMETRY_TEST = False
+        # ==================================
 
         # 初始化遥测系统
         if self._cfg_mgr.get_telemetry_enabled():
-            tm = init_telemetry(APP_VERSION)
+            if LOCAL_TELEMETRY_TEST:
+                # 本地测试模式：连接本地服务器
+                tm = init_telemetry(APP_VERSION, "http://localhost:8080/telemetry")
+                self._logger.info("[遥测] 本地测试模式已启用，连接 localhost:8080")
+            else:
+                # 正式模式：使用默认服务器
+                tm = init_telemetry(APP_VERSION)
             tm.set_server_message_callback(self.on_server_message)
             tm.set_user_command_callback(self.on_user_command)
             tm.set_log_callback(self._logger)
@@ -249,11 +275,12 @@ class AppApi:
                     self._last_alert_content = full_alert_key
 
             # 3. 公告栏常驻内容 (Notice - 发现有效内容则覆盖首页公告)
-            if config.get("notice_active"):
-                notice_content = config.get("notice_content", "")
-                if notice_content and (self._last_notice_content != notice_content):
-                    self._window.evaluate_js(safe_js_call("updateNoticeBar", notice_content))
-                    self._last_notice_content = notice_content
+            # [暂时禁用] 我整不明白了 byAimer
+            # if config.get("notice_active"):
+            #     notice_content = config.get("notice_content", "")
+            #     if notice_content and (self._last_notice_content != notice_content):
+            #         self._window.evaluate_js(safe_js_call("updateNoticeBar", notice_content))
+            #         self._last_notice_content = notice_content
 
             # 4. 更新提示 (内容变化时才提示)
             if config.get("update_active"):
@@ -421,6 +448,7 @@ class AppApi:
         path = self._cfg_mgr.get_game_path()
         theme = self._cfg_mgr.get_theme_mode()
         sights_path = self._cfg_mgr.get_sights_path()
+        launch_mode = self._cfg_mgr.get_launch_mode()
 
         # 验证路径
         is_valid = False
@@ -446,8 +474,12 @@ class AppApi:
             "active_theme": self._cfg_mgr.get_active_theme(),
             "installed_mods": self._logic.get_installed_mods(),
             "sights_path": sights_path,
+            "launch_mode": launch_mode,
             "hwid": get_hwid(),
-            "telemetry_enabled": self._cfg_mgr.get_telemetry_enabled()
+            "telemetry_enabled": self._cfg_mgr.get_telemetry_enabled(),
+            "autostart_enabled": self._cfg_mgr.get_autostart_enabled(),
+            "tray_mode": self._cfg_mgr.get_tray_mode(),
+            "close_confirm": self._cfg_mgr.get_close_confirm()
         }
 
     def save_theme_selection(self, filename):
@@ -457,6 +489,72 @@ class AppApi:
     def set_theme(self, mode):
         # 保存前端选择的主题模式（Light/Dark）到配置。
         self._cfg_mgr.set_theme_mode(mode)
+
+    def set_launch_mode(self, mode):
+        """
+        功能定位:
+        - 保存前端选择的启动方式。
+        输入输出:
+        - 参数: mode，启动方式 (launcher/steam/aces)。
+        - 返回: bool，是否保存成功。
+        """
+        return self._cfg_mgr.set_launch_mode(mode)
+
+    def start_game(self):
+        """
+        功能定位:
+        - 依据配置启动 War Thunder。
+        输入输出:
+        - 参数: 无。
+        - 返回: bool，是否启动成功。
+        """
+        game_path = self._cfg_mgr.get_game_path()
+        if not game_path or not os.path.exists(game_path):
+            self._logger.error("[ERROR] 无法启动游戏：路径无效")
+            return False
+
+        mode = self._cfg_mgr.get_launch_mode()
+        game_root = Path(game_path)
+
+        if mode == "steam":
+            try:
+                self._logger.info("[INFO] 正在通过 Steam 启动 War Thunder ...")
+                os.startfile("steam://rungameid/236390")
+                return True
+            except Exception as e:
+                self._logger.warning(f"[WARN] Steam 启动失败: {e}，尝试使用启动器...")
+
+        launcher_exe = game_root / "launcher.exe"
+        aces_exe_64 = game_root / "win64" / "aces.exe"
+        aces_exe_32 = game_root / "win32" / "aces.exe"
+        target_exe = None
+
+        if mode == "aces":
+            if aces_exe_64.exists():
+                target_exe = aces_exe_64
+            elif aces_exe_32.exists():
+                target_exe = aces_exe_32
+            elif launcher_exe.exists():
+                target_exe = launcher_exe
+        else:
+            if launcher_exe.exists():
+                target_exe = launcher_exe
+            elif aces_exe_64.exists():
+                target_exe = aces_exe_64
+            elif aces_exe_32.exists():
+                target_exe = aces_exe_32
+
+        if target_exe:
+            try:
+                self._logger.info(f"[INFO] 正在启动游戏: {target_exe.name} ...")
+                os.startfile(str(target_exe), cwd=str(game_root))
+                return True
+            except Exception as e:
+                self._logger.error(f"[ERROR] 启动失败: {e}")
+                return False
+
+        self._logger.error("[ERROR] 未找到游戏可执行文件 (launcher.exe / aces.exe)")
+        return False
 
     def get_telemetry_status(self):
         """
@@ -489,6 +587,105 @@ class AppApi:
         else:
             tm.stop()
             self._logger.info("[SYS] 遥测服务已停用")
+
+    def get_autostart_status(self):
+        """
+        功能定位:
+        - 获取开机自启动状态。
+        输入输出:
+        - 返回: dict，包含 enabled 和 configured 状态。
+        """
+        return {
+            "enabled": autostart_manager.is_enabled(),
+            "configured": self._cfg_mgr.get_autostart_enabled()
+        }
+
+    def set_autostart_status(self, enabled):
+        """
+        功能定位:
+        - 设置开机自启动状态。
+        输入输出:
+        - 参数:
+          - enabled: bool，是否开启。
+        - 返回: bool，操作是否成功。
+        """
+        # 静默启动（只显示托盘）
+        success = autostart_manager.toggle(enabled, silent=True)
+        if success:
+            self._cfg_mgr.set_autostart_enabled(enabled)
+            self._logger.info(f"[SYS] 开机自启动已{'开启' if enabled else '关闭'}")
+        else:
+            self._logger.error(f"[SYS] 设置开机自启动失败")
+        return success
+
+    def get_tray_mode_status(self):
+        """
+        功能定位:
+        - 获取托盘模式状态。
+        输入输出:
+        - 返回: bool，是否启用托盘模式。
+        """
+        return self._cfg_mgr.get_tray_mode()
+
+    def set_tray_mode_status(self, enabled):
+        """
+        功能定位:
+        - 设置托盘模式状态。
+        输入输出:
+        - 参数:
+          - enabled: bool，是否开启。
+        """
+        self._cfg_mgr.set_tray_mode(enabled)
+        self._logger.info(f"[SYS] 托盘模式已{'开启' if enabled else '关闭'}")
+
+    def get_close_confirm_status(self):
+        """
+        功能定位:
+        - 获取关闭确认提示状态。
+        输入输出:
+        - 返回: bool，是否启用关闭确认提示。
+        """
+        return self._cfg_mgr.get_close_confirm()
+
+    def set_close_confirm_status(self, enabled):
+        """
+        功能定位:
+        - 设置关闭确认提示状态。
+        输入输出:
+        - 参数:
+          - enabled: bool，是否开启。
+        """
+        self._cfg_mgr.set_close_confirm(enabled)
+        self._logger.info(f"[SYS] 关闭确认提示已{'开启' if enabled else '关闭'}")
+
+    def minimize_to_tray(self):
+        """
+        功能定位:
+        - 最小化窗口到系统托盘。
+        输入输出:
+        - 无返回值。
+        """
+        if self._window:
+            try:
+                self._window.hide()
+                self._logger.info("[SYS] 窗口已最小化到托盘")
+            except Exception as e:
+                self._logger.error(f"[SYS] 最小化到托盘失败: {e}")
+
+    def exit_app(self):
+        """
+        功能定位:
+        - 退出应用程序。
+        输入输出:
+        - 无返回值。
+        """
+        self._logger.info("[SYS] 用户请求退出程序")
+        try:
+            if self._window:
+                self._window.destroy()
+        except Exception:
+            pass
+        os._exit(0)
 
     def browse_folder(self):
         # 打开目录选择对话框，获取用户选择的游戏根目录并进行校验与保存。
@@ -656,6 +853,24 @@ class AppApi:
                 os.startfile(str(userskins_dir))
             except Exception as e:
                 log.error(f"打开 UserSkins 失败: {e}")
+        elif folder_type == "user_missions":
+            path = self._cfg_mgr.get_game_path()
+            valid, _ = self._logic.validate_game_path(path)
+            if not valid:
+                log.warning("未设置有效游戏路径，无法打开 UserMissions")
+                return
+            user_missions_dir = Path(path) / "UserMissions"
+            try:
+                user_missions_dir.mkdir(parents=True, exist_ok=True)
+                os.startfile(str(user_missions_dir))
+            except Exception as e:
+                log.error(f"打开 UserMissions 失败: {e}")
+        elif folder_type == "task_library":
+            self._task_mgr.open_task_library_folder()
+        elif folder_type == "model_library":
+            self._model_mgr.open_model_library_folder()
+        elif folder_type == "hangar_library":
+            self._hangar_mgr.open_hangar_library_folder()
 
         # 未列入允许名单的 folder_type 不执行任何操作
 
@@ -1594,6 +1809,50 @@ class AppApi:
         self._lib_mgr.open_library_folder()
 
 
+def _setup_tray(window):
+    """
+    设置系统托盘。
+    
+    功能定位:
+    - 根据配置初始化托盘图标和菜单
+    - 绑定窗口显示/隐藏事件
+    """
+    if not tray_manager.is_available():
+        log.info("[TRAY] pystray 不可用，跳过托盘初始化")
+        return
+
+    def on_show():
+        """托盘菜单：显示窗口"""
+        try:
+            window.show()
+            window.evaluate_js("if(window.app && app.onWindowShown) app.onWindowShown();")
+        except Exception as e:
+            log.error(f"[TRAY] 显示窗口失败: {e}")
+
+    def on_exit():
+        """托盘菜单：退出程序"""
+        log.info("[TRAY] 用户通过托盘退出程序")
+        tray_manager.stop()
+        try:
+            window.destroy()
+        except Exception:
+            pass
+        os._exit(0)
+
+    # 设置托盘
+    success = tray_manager.setup(
+        window=window,
+        on_show=on_show,
+        on_exit=on_exit
+    )
+
+    if success:
+        tray_manager.start()
+        log.info("[TRAY] 系统托盘已初始化")
+    else:
+        log.warning("[TRAY] 系统托盘初始化失败")
+
+
 def on_app_started():
     # 在窗口创建完成后执行启动后处理，包括关闭 PyInstaller 启动图并让前端进入可交互状态。
     # 延时以预留页面加载与渲染时间
@@ -1734,6 +1993,9 @@ def main() -> int:
     except Exception:
         log.warning("计算窗口居中坐标失败，改用默认窗口位置", exc_info=True)
 
+    # 检查是否静默启动
+    silent_mode = getattr(cli, "silent", False) or getattr(cli, "tray_only", False)
+
     # 创建窗口实例（x/y 指定启动位置）
     try:
         window = webview.create_window(
@@ -1750,6 +2012,7 @@ def main() -> int:
             text_select=False,
             frameless=True,
             easy_drag=False,
+            hidden=silent_mode,  # 静默启动时隐藏窗口
         )
     except Exception as e:
         log.exception("建立视窗失败")
@@ -1854,6 +2117,9 @@ def main() -> int:
             on_app_started()
         except Exception:
             log.exception("on_app_started 失败")
+
+        # 初始化托盘管理器
+        _setup_tray(win)
 
     # 启动
     icon_path = str(WEB_DIR / "assets" / "logo.ico")

@@ -1,0 +1,126 @@
+/**
+ * 机库样式
+ * 功能定位: 机库页面的样式定义
+ *
+ * 业务关联:
+ *   - 对应: js/pages/hangar.js
+ *   - 容器: #view-hangar
+ */
+
+/* 机库视图容器 */
+#view-hangar {
+    padding: 0;
+    overflow: hidden;
+}
+
+/* 机库布局 - 复用涂装库布局 */
+#view-hangar .skins-new-layout {
+    display: flex;
+    gap: 20px;
+    padding: 12px 20px 20px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* 左侧面板 */
+#view-hangar .skins-left-panel {
+    width: 380px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+}
+
+/* 右侧面板 */
+#view-hangar .skins-right-panel {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* 机库 drop-zone-compact 样式 */
+#view-hangar .drop-zone-compact {
+    position: relative;
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    padding: 24px 16px;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.01), rgba(0, 0, 0, 0.03));
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#view-hangar .drop-zone-compact:hover {
+    border-color: var(--primary);
+    background: linear-gradient(180deg, rgba(255, 153, 0, 0.02), rgba(255, 153, 0, 0.05));
+}
+
+#view-hangar .drop-zone-compact .drop-zone-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    text-align: left;
+    gap: 10px;
+}
+
+/* 机库操作按钮区域 */
+#hangar-drop-zone .drop-zone-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 0;
+    width: 100%;
+}
+
+#hangar-drop-zone .drop-zone-actions .btn-v2 {
+    width: 100%;
+    justify-content: center;
+}
+
+/* 机库按钮悬停样式 - 移除变色，只保留简单反馈 */
+#hangar-drop-zone .drop-zone-actions .btn-v2:hover {
+    background: var(--bg-card);
+    color: var(--text-main);
+    border-color: var(--border-color);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+#hangar-drop-zone .drop-zone-actions .btn-v2.primary:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 153, 0, 0.3);
+}
+
+#hangar-drop-zone .drop-zone-actions .btn-v2:active {
+    transform: translateY(0);
+}
+
+/* 机库列表网格 */
+#hangar-list {
+    padding: 0;
+    margin-top: 0;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* 深色模式适配 */
+[data-theme="dark"] #view-hangar .drop-zone-compact {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0.03));
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] #view-hangar .drop-zone-compact:hover {
+    border-color: var(--primary);
+    background: linear-gradient(180deg, rgba(255, 153, 0, 0.05), rgba(255, 153, 0, 0.1));
+}
+
+[data-theme="dark"] #view-hangar .drop-tutorial {
+    background: #27272A;
+    border-color: #3F3F46;
+}

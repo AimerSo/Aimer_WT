@@ -442,8 +442,12 @@ class LibraryManager:
             "version": "1.0",
             "date": default_date,
             "note": "无详细介绍",
+            "version_note": [],
             "link_bilibili": "",
+            "link_qq_group": "",
             "link_wtlive": "",
+            "link_liker": "",
+            "link_feedback": "",
             "link_video": "",
             "tags": [],  # 存储标籤列表 ["tank", "radio"]
             "language": [],  # 存储语言列表 ["中", "美"]
@@ -495,8 +499,9 @@ class LibraryManager:
             try:
                 data = self._load_json_with_fallback(found_info_file)
                 if isinstance(data, dict):
-                    for key in ["title", "author", "version", "date", "note", "link_bilibili", "link_wtlive",
-                                "link_video", "tags", "language"]:
+                    for key in ["title", "author", "version", "date", "note", "version_note", "link_bilibili",
+                                "link_qq_group", "link_wtlive", "link_liker", "link_feedback", "link_video", "tags",
+                                "language"]:
                         if key in data:
                             details[key] = data[key]
                 else:

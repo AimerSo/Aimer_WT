@@ -283,14 +283,27 @@
    4. 资源视图样式
    ======================== */
 .resource-view {
-    display: none;
+    display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(12px);
+    transition: opacity 0.12s ease-out,
+        transform 0.12s ease-out,
+        visibility 0s linear 0.12s;
 }
 
 .resource-view.active {
-    display: flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: all;
+    transform: translateX(0);
+    transition: opacity 0.22s ease-out,
+        transform 0.22s ease-out,
+        visibility 0s linear 0s;
 }
 
 .resource-master-detail,
@@ -323,7 +336,8 @@
     flex-shrink: 0;
 }
 
-#view-skins #skins-list {
+#view-skins #skins-list,
+#view-sights #sights-list {
     padding: 0 20px 20px;
     flex: 1;
     overflow-y: auto;
@@ -756,7 +770,8 @@
 
 .path-hint {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
+    justify-content: center;
     gap: 6px;
     font-size: 11px;
     color: var(--text-sec);
@@ -765,6 +780,7 @@
     background: rgba(255, 153, 0, 0.05);
     border-radius: 8px;
     line-height: 1.5;
+    text-align: center;
 }
 
 .path-hint i {
@@ -880,6 +896,30 @@
 
 .form-group input:focus {
     border-color: var(--primary);
+}
+
+.form-group textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    background: var(--bg-card);
+    color: var(--text-main);
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 140px;
+}
+
+.form-group textarea:focus {
+    border-color: var(--primary);
+}
+
+.feedback-textarea {
+    max-height: 220px;
+    overflow-y: auto;
 }
 
 .input-hint {
@@ -1395,13 +1435,6 @@ a.contributor-card {
 /* 右侧面板样式调整 */
 .skins-right-panel .small-card-grid {
     padding: 0;
-    margin-top: 0;
-    overflow-y: auto;
-    flex: 1;
-}
-
-.sights-list-container {
-    padding: 20px;
     margin-top: 0;
     overflow-y: auto;
     flex: 1;

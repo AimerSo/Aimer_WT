@@ -1,0 +1,133 @@
+/**
+ * 任务库样式
+ * 功能定位: 任务库页面的样式定义
+ *
+ * 业务关联:
+ *   - 对应: js/pages/task_library.js
+ *   - 容器: #view-tasks
+ */
+
+/* 任务库内容区域 */
+.task-library-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+/* 任务库视图容器 */
+#view-tasks {
+    padding: 0;
+    overflow: hidden;
+}
+
+/* 任务库布局 - 复用涂装库布局 */
+#view-tasks .skins-new-layout {
+    display: flex;
+    gap: 20px;
+    padding: 12px 20px 20px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* 左侧面板 */
+#view-tasks .skins-left-panel {
+    width: 380px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+}
+
+/* 右侧面板 */
+#view-tasks .skins-right-panel {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* 任务库 drop-zone-compact 样式 - 与涂装库保持一致 */
+#view-tasks .drop-zone-compact {
+    position: relative;
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    padding: 24px 16px;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.01), rgba(0, 0, 0, 0.03));
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#view-tasks .drop-zone-compact:hover {
+    border-color: var(--primary);
+    background: linear-gradient(180deg, rgba(255, 153, 0, 0.02), rgba(255, 153, 0, 0.05));
+}
+
+#view-tasks .drop-zone-compact .drop-zone-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    text-align: left;
+    gap: 10px;
+}
+
+/* 任务库操作按钮区域 */
+#tasks-drop-zone .drop-zone-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 0;
+    width: 100%;
+}
+
+#tasks-drop-zone .drop-zone-actions .btn-v2 {
+    width: 100%;
+    justify-content: center;
+}
+
+/* 任务库按钮悬停样式 - 移除变色，只保留简单反馈 */
+#tasks-drop-zone .drop-zone-actions .btn-v2:hover {
+    background: var(--bg-card);
+    color: var(--text-main);
+    border-color: var(--border-color);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+#tasks-drop-zone .drop-zone-actions .btn-v2.primary:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 153, 0, 0.3);
+}
+
+#tasks-drop-zone .drop-zone-actions .btn-v2:active {
+    transform: translateY(0);
+}
+
+/* 任务列表网格 */
+#tasks-list {
+    padding: 0;
+    margin-top: 0;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* 深色模式适配 */
+[data-theme="dark"] #view-tasks .drop-zone-compact {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0.03));
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] #view-tasks .drop-zone-compact:hover {
+    border-color: var(--primary);
+    background: linear-gradient(180deg, rgba(255, 153, 0, 0.05), rgba(255, 153, 0, 0.1));
+}
+
+[data-theme="dark"] #view-tasks .drop-tutorial {
+    background: #27272A;
+    border-color: #3F3F46;
+}
