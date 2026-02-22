@@ -212,7 +212,19 @@ jobs:
           MSG=$(git log -1 --pretty=%s)
           TAG="${{ needs.prepare.outputs.tag_name }}"
           echo "title=$TAG - $MSG" >> "$GITHUB_OUTPUT"
-
+      - name: Resolve changelog file by tag
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.prepare.outputs.tag_name }}"   # 例如 v3
+          FILE="changelog_${TAG}.md"                    # => changelog_v3.md
+          if [ ! -f "$FILE" ]; then
+            echo "找不到更新日志文件: $FILE"
+            exit 1
+          fi
+          echo "notes_file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "Using changelog file: $FILE"
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -220,5 +232,5 @@ jobs:
           name: ${{ steps.release_name.outputs.title }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.notes_file }}
           files: dist/*
