@@ -95,10 +95,11 @@ class CoreService:
             log.warning(f"游戏路径校验失败: 不是目录 - {path}")
             return False, "路径不是目录"
         
-        config_blk = path / "config.blk"
-        if not config_blk.exists():
-            log.warning(f"游戏路径校验失败: 缺少 config.blk - {path}")
-            return False, "缺少 config.blk"
+        valid_markers = ["config.blk", "beac_wt_mlauncher.exe", "gaijin_downloader.exe"]
+        has_marker = any((path / marker).exists() for marker in valid_markers)
+        if not has_marker:
+            log.warning(f"游戏路径校验失败: 缺少有效标识文件 - {path}")
+            return False, "缺少游戏标识文件"
         
         self.game_root = path
         # 初始化安装清单管理器（用于记录本次安装文件与冲突检测）
@@ -321,7 +322,10 @@ class CoreService:
         """
         try:
             path = Path(path)
-            return path.exists() and path.is_dir() and (path / "config.blk").exists()
+            if not (path.exists() and path.is_dir()):
+                return False
+            valid_markers = ["config.blk", "beac_wt_mlauncher.exe", "gaijin_downloader.exe"]
+            return any((path / marker).exists() for marker in valid_markers)
         except Exception:
             return False
 

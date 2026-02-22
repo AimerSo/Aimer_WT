@@ -86,6 +86,7 @@ const DEFAULT_THEME = {
  */
 const app = {
     currentGamePath: "",
+    currentLaunchMode: "launcher",
     currentModId: null, // 当前正在操作的 mod
     currentTheme: null, // 当前主题对象
     currentThemeData: null, // 当前主题原始数据
@@ -134,23 +135,77 @@ const app = {
     },
 
     // --- Theme Logic ---
+    themeListData: [],
+
     async loadThemeList() {
-        const select = document.getElementById('theme-select');
-        if (!select) return;
-        select.innerHTML = '<option value="default.json">默认主题 (System Default)</option>';
+        const dropdown = document.getElementById('theme-select-dropdown');
+        const textEl = document.getElementById('theme-select-text');
+        if (!dropdown) return;
+
+        this.themeListData = [{ filename: 'default.json', name: '默认主题', version: '', author: 'System' }];
 
         try {
             const themes = await pywebview.api.get_theme_list();
             themes.forEach(t => {
-                if (t.filename === 'default.json') return;
-                const opt = document.createElement('option');
-                opt.value = t.filename;
-                opt.textContent = `${t.name} (v${t.version}) - by ${t.author}`;
-                select.appendChild(opt);
+                if (t.filename !== 'default.json') {
+                    this.themeListData.push(t);
+                }
             });
+            this.renderThemeDropdown();
         } catch (e) {
             console.error("Failed to load themes", e);
         }
+    },
+
+    renderThemeDropdown() {
+        const dropdown = document.getElementById('theme-select-dropdown');
+        const textEl = document.getElementById('theme-select-text');
+        if (!dropdown) return;
+
+        dropdown.innerHTML = '';
+        this.themeListData.forEach(theme => {
+            const option = document.createElement('div');
+            option.className = 'custom-select-option';
+            option.dataset.value = theme.filename;
+            option.textContent = theme.filename === 'default.json'
+                ? '默认主题 (System Default)'
+                : `${theme.name} (v${theme.version}) - by ${theme.author}`;
+            option.onclick = () => this.selectTheme(theme.filename);
+            dropdown.appendChild(option);
+        });
+    },
+
+    toggleThemeDropdown() {
+        const wrapper = document.getElementById('theme-select-wrapper');
+        if (!wrapper) return;
+
+        const isActive = wrapper.classList.contains('active');
+
+        document.querySelectorAll('.custom-select-wrapper').forEach(el => {
+            el.classList.remove('active');
+        });
+
+        if (!isActive) {
+            wrapper.classList.add('active');
+        }
+    },
+
+    selectTheme(filename) {
+        const textEl = document.getElementById('theme-select-text');
+        const theme = this.themeListData.find(t => t.filename === filename);
+        if (textEl && theme) {
+            textEl.textContent = filename === 'default.json'
+                ? '默认主题 (System Default)'
+                : `${theme.name} (v${theme.version}) - by ${theme.author}`;
+        }
+
+        document.querySelectorAll('#theme-select-dropdown .custom-select-option').forEach(opt => {
+            opt.classList.toggle('selected', opt.dataset.value === filename);
+        });
+
+        document.getElementById('theme-select-wrapper')?.classList.remove('active');
+
+        this.onThemeChange(filename);
     },
 
     async onThemeChange(filename) {
@@ -160,7 +215,7 @@ const app = {
             pywebview.api.save_theme_selection(filename);
         } else {
             app.showAlert("错误", "主题文件损坏或格式错误！");
-            document.getElementById('theme-select').value = "default.json";
+            this.selectTheme("default.json");
             // 尝试载入预设主题
             const defaultTheme = await pywebview.api.load_theme_content("default.json");
             if (defaultTheme) {
@@ -887,6 +942,14 @@ const app = {
         return ok;
     },
 
+    openModal(modalId) {
+        const el = document.getElementById(modalId);
+        if (!el) return;
+        if (el.classList.contains('show')) return;
+        el.classList.remove('hiding');
+        el.classList.add('show');
+    },
+
     closeModal(modalId) {
         const el = document.getElementById(modalId);
         if (!el) return;
@@ -902,6 +965,31 @@ const app = {
 
         el.addEventListener('animationend', finalize, { once: true });
         setTimeout(finalize, 250);
+    },
+
+    openFeedbackModal() {
+        const modal = document.getElementById('modal-feedback');
+        if (!modal) return;
+        modal.classList.remove('hiding');
+        modal.classList.add('show');
+        const contact = document.getElementById('feedback-contact');
+        const content = document.getElementById('feedback-content');
+        if (contact) contact.value = '';
+        if (content) content.value = '';
+        this.updateFeedbackCount();
+    },
+
+    updateFeedbackCount() {
+        const contact = document.getElementById('feedback-contact');
+        const content = document.getElementById('feedback-content');
+        const contactCount = document.getElementById('feedback-contact-count');
+        const contentCount = document.getElementById('feedback-content-count');
+        if (contact && contactCount) {
+            contactCount.textContent = `${contact.value.length}/40`;
+        }
+        if (content && contentCount) {
+            contentCount.textContent = `${content.value.length}/200`;
+        }
     },
 
     _setupModalDragLock() {
@@ -929,6 +1017,43 @@ const app = {
 
         const observer = new MutationObserver(update);
         modals.forEach(m => observer.observe(m, { attributes: true, attributeFilter: ['class'] }));
+    },
+
+    _setupModalOverlayClose() {
+        if (this._modalOverlayCloseBound) return;
+        this._modalOverlayCloseBound = true;
+
+        document.addEventListener('click', (e) => {
+            const target = e.target;
+            if (!(target instanceof Element)) return;
+            if (!target.classList.contains('modal-overlay')) return;
+            if (!target.classList.contains('show')) return;
+            const modalId = target.id;
+            if (!modalId) return;
+
+            e.stopPropagation();
+
+            if (modalId === 'modal-confirm' && typeof this._confirmCleanup === 'function') {
+                try {
+                    this._confirmCleanup(false);
+                } catch (err) {
+                    this.closeModal(modalId);
+                }
+                return;
+            }
+
+            if (modalId === 'modal-archive-password') {
+                this.cancelArchivePassword();
+                return;
+            }
+
+            if (modalId === 'modal-mod-preview' && typeof this.closeModPreview === 'function') {
+                this.closeModPreview();
+                return;
+            }
+
+            this.closeModal(modalId);
+        }, true);
     },
 
     confirm(title, messageHtml, isDanger = false, okText = null) {
@@ -1369,7 +1494,7 @@ const app = {
     },
 
     closeApp() {
-        pywebview.api.close_window();
+        this.handleWindowClose();
     },
 
     // --- 路径搜索逻辑 ---
@@ -1377,15 +1502,26 @@ const app = {
         const input = document.getElementById('input-game-path');
         const statusIcon = document.getElementById('status-icon');
         const statusText = document.getElementById('status-text');
+        const gameStatusText = document.getElementById('game-status-text');
+        const gameStatusIcon = document.getElementById('game-status-icon');
 
         input.value = path || "";
         this.currentGamePath = path;
 
+        const modeText = this.currentLaunchMode === 'steam' ? '[Steam端启动]' : '[战雷客户端启动]';
         if (valid) {
             statusIcon.innerHTML = '<i class="ri-link"></i>';
             statusIcon.className = 'status-icon active';
             statusText.textContent = '连接正常';
             statusText.className = 'status-text success';
+            if (gameStatusIcon) {
+                gameStatusIcon.innerHTML = '<i class="ri-link"></i>';
+                gameStatusIcon.className = 'game-status-icon active';
+            }
+            if (gameStatusText) {
+                gameStatusText.innerHTML = `<span style="color: var(--status-success)">连接正常</span><span style="color: var(--text-sec)">：随时可以开始游戏 ${modeText}</span>`;
+                gameStatusText.className = 'game-status-text ready';
+            }
 
             try {
                 if (window.pywebview && pywebview.api && pywebview.api.get_installed_mods) {
@@ -1400,17 +1536,105 @@ const app = {
             statusIcon.className = 'status-icon';
             statusText.textContent = '未设置路径';
             statusText.className = 'status-text waiting';
+            if (gameStatusIcon) {
+                gameStatusIcon.innerHTML = '<i class="ri-wifi-off-line"></i>';
+                gameStatusIcon.className = 'game-status-icon';
+            }
+            if (gameStatusText) {
+                gameStatusText.textContent = '未就绪：请先选择路径';
+                gameStatusText.className = 'game-status-text waiting';
+            }
             this.installedModIds = [];
         } else {
             statusIcon.innerHTML = '<i class="ri-error-warning-line"></i>';
             statusIcon.className = 'status-icon';
             statusText.textContent = '路径无效';
             statusText.className = 'status-text error';
+            if (gameStatusIcon) {
+                gameStatusIcon.innerHTML = '<i class="ri-error-warning-line"></i>';
+                gameStatusIcon.className = 'game-status-icon error';
+            }
+            if (gameStatusText) {
+                gameStatusText.textContent = '未就绪：路径无效';
+                gameStatusText.className = 'game-status-text error';
+            }
             this.installedModIds = [];
         }
 
         if (this.modCache && this.modCache.length > 0) {
             this.renderList(this.modCache);
+        }
+    },
+
+    startGame() {
+        if (!this.currentGamePath) {
+            this.showAlert('提示', '请先在主页设置游戏路径！');
+            return;
+        }
+        if (!window.pywebview?.api?.start_game) {
+            this.showAlert('错误', '后端连接未就绪，请稍候再试或重启程序', 'error');
+            return;
+        }
+        pywebview.api.start_game().then(success => {
+            if (success) {
+                this.notifyToast('SUCCESS', '游戏启动指令已发送');
+            }
+        }).catch((e) => {
+            const message = e && e.message ? e.message : String(e || '');
+            this.showAlert('错误', `启动失败：${message}`, 'error');
+        });
+    },
+
+    openLaunchSettings() {
+        const modal = document.getElementById('modal-launch-settings');
+        if (!modal) return;
+
+        const launcherCard = document.getElementById('option-launch-launcher');
+        const steamCard = document.getElementById('option-launch-steam');
+        const setActive = (card, active) => {
+            if (!card) return;
+            card.classList.toggle('active', active);
+            const check = card.querySelector('.option-card-check i');
+            if (check) check.style.display = active ? 'block' : 'none';
+        };
+
+        const mode = this.currentLaunchMode || 'launcher';
+        setActive(launcherCard, mode === 'launcher');
+        setActive(steamCard, mode === 'steam');
+
+        modal.classList.remove('hiding');
+        modal.classList.add('show');
+    },
+
+    async saveLaunchSettings(mode) {
+        if (!mode) return;
+        this.currentLaunchMode = mode;
+
+        const launcherCard = document.getElementById('option-launch-launcher');
+        const steamCard = document.getElementById('option-launch-steam');
+        const setActive = (card, active) => {
+            if (!card) return;
+            card.classList.toggle('active', active);
+            const check = card.querySelector('.option-card-check i');
+            if (check) check.style.display = active ? 'block' : 'none';
+        };
+
+        setActive(launcherCard, mode === 'launcher');
+        setActive(steamCard, mode === 'steam');
+
+        if (window.pywebview?.api?.set_launch_mode) {
+            try {
+                await pywebview.api.set_launch_mode(mode);
+            } catch (e) {
+                const message = e && e.message ? e.message : String(e || '');
+                this.showAlert('错误', `保存启动设置失败：${message}`, 'error');
+            }
+        }
+        this.closeModal('modal-launch-settings');
+        const gameStatusText = document.getElementById('game-status-text');
+        if (gameStatusText && gameStatusText.classList.contains('ready')) {
+            const modeText = mode === 'steam' ? '[Steam端启动]' : '[战雷客户端启动]';
+            gameStatusText.innerHTML = `<span style="color: var(--status-success)">连接正常</span><span style="color: var(--text-sec)">：随时可以开始游戏 ${modeText}</span>`;
         }
     },
 
@@ -1448,6 +1672,166 @@ const app = {
         }
     },
 
+    async toggleAutostart(checked) {
+        const toggle = document.getElementById('autostart-switch');
+        if (!window.pywebview?.api?.set_autostart_status) {
+            toggle.checked = !checked;
+            this.showAlert('错误', '后端连接未就绪', 'error');
+            return;
+        }
+        try {
+            const success = await pywebview.api.set_autostart_status(checked);
+            if (!success) {
+                toggle.checked = !checked;
+                this.showAlert('错误', '设置开机自启动失败，请检查权限', 'error');
+            }
+        } catch (e) {
+            toggle.checked = !checked;
+            console.error('toggleAutostart failed:', e);
+            this.showAlert('错误', '设置失败: ' + e.message, 'error');
+        }
+    },
+
+    async toggleTrayMode(checked) {
+        const toggle = document.getElementById('tray-mode-switch');
+        if (!window.pywebview?.api?.set_tray_mode_status) {
+            toggle.checked = !checked;
+            this.showAlert('错误', '后端连接未就绪', 'error');
+            return;
+        }
+        try {
+            await pywebview.api.set_tray_mode_status(checked);
+            // 更新本地状态
+            this._trayMode = checked;
+        } catch (e) {
+            toggle.checked = !checked;
+            console.error('toggleTrayMode failed:', e);
+            this.showAlert('错误', '设置失败: ' + e.message, 'error');
+        }
+    },
+
+    async toggleCloseConfirm(checked) {
+        const toggle = document.getElementById('close-confirm-switch');
+        if (!window.pywebview?.api?.set_close_confirm_status) {
+            toggle.checked = !checked;
+            this.showAlert('错误', '后端连接未就绪', 'error');
+            return;
+        }
+        try {
+            await pywebview.api.set_close_confirm_status(checked);
+            // 更新本地状态
+            this._closeConfirm = checked;
+        } catch (e) {
+            toggle.checked = !checked;
+            console.error('toggleCloseConfirm failed:', e);
+            this.showAlert('错误', '设置失败: ' + e.message, 'error');
+        }
+    },
+
+    /**
+     * 处理窗口关闭事件
+     * 根据配置决定是直接关闭、最小化到托盘，还是显示确认弹窗
+     */
+    handleWindowClose() {
+        // 如果托盘模式已开启，直接最小化到托盘
+        if (this._trayMode) {
+            this.minimizeToTray();
+            return;
+        }
+
+        // 如果关闭确认已禁用，直接退出
+        if (!this._closeConfirm) {
+            this.exitApp();
+            return;
+        }
+
+        // 显示关闭确认弹窗
+        this.showCloseConfirmModal();
+    },
+
+    /**
+     * 显示关闭确认弹窗
+     */
+    showCloseConfirmModal() {
+        // 重置复选框
+        const rememberCheckbox = document.getElementById('close-confirm-remember');
+        if (rememberCheckbox) {
+            rememberCheckbox.checked = false;
+        }
+        this.openModal('modal-close-confirm');
+    },
+
+    /**
+     * 处理关闭确认弹窗的按钮点击
+     * @param {string} action - 'cancel' | 'tray' | 'exit'
+     */
+    async handleCloseAction(action) {
+        if (action === 'cancel') {
+            this.closeModal('modal-close-confirm');
+            return;
+        }
+
+        // 检查是否勾选了"不再提示"
+        const rememberCheckbox = document.getElementById('close-confirm-remember');
+        const remember = rememberCheckbox && rememberCheckbox.checked;
+
+        if (remember) {
+            // 用户选择了记住选择
+            if (action === 'tray') {
+                // 记住选择：开启托盘模式，关闭确认提示
+                await this.toggleTrayMode(true);
+                await this.toggleCloseConfirm(false);
+                // 更新UI开关状态
+                const traySwitch = document.getElementById('tray-mode-switch');
+                const confirmSwitch = document.getElementById('close-confirm-switch');
+                if (traySwitch) traySwitch.checked = true;
+                if (confirmSwitch) confirmSwitch.checked = false;
+            } else if (action === 'exit') {
+                // 记住选择：关闭托盘模式，关闭确认提示
+                await this.toggleTrayMode(false);
+                await this.toggleCloseConfirm(false);
+                // 更新UI开关状态
+                const traySwitch = document.getElementById('tray-mode-switch');
+                const confirmSwitch = document.getElementById('close-confirm-switch');
+                if (traySwitch) traySwitch.checked = false;
+                if (confirmSwitch) confirmSwitch.checked = false;
+            }
+        }
+
+        this.closeModal('modal-close-confirm');
+
+        if (action === 'tray') {
+            this.minimizeToTray();
+        } else if (action === 'exit') {
+            this.exitApp();
+        }
+    },
+
+    /**
+     * 最小化到托盘
+     */
+    minimizeToTray() {
+        if (window.pywebview?.api?.minimize_to_tray) {
+            pywebview.api.minimize_to_tray();
+        } else {
+            // 降级处理：直接隐藏窗口
+            console.log('[App] 最小化到托盘（降级处理）');
+        }
+    },
+
+    /**
+     * 退出程序
+     */
+    exitApp() {
+        console.log('[App] 用户选择退出程序');
+        if (window.pywebview?.api?.exit_app) {
+            pywebview.api.exit_app();
+        } else {
+            // 降级处理
+            window.close();
+        }
+    },
+
     autoSearch() {
         if (!window.pywebview?.api?.start_auto_search) {
             console.error('API not ready: start_auto_search');
@@ -1456,7 +1840,12 @@ const app = {
         }
         document.getElementById('btn-auto-search').disabled = true;
         document.getElementById('status-text').textContent = '搜索中...';
-        document.getElementById('status-icon').textContent = '⏳';
+        document.getElementById('status-icon').innerHTML = '<i class="ri-loader-4-line"></i>';
+        const gameStatusIcon = document.getElementById('game-status-icon');
+        if (gameStatusIcon) {
+            gameStatusIcon.innerHTML = '<i class="ri-loader-4-line"></i>';
+            gameStatusIcon.className = 'game-status-icon searching';
+        }
         try {
             pywebview.api.start_auto_search();
         } catch (e) {
@@ -1896,7 +2285,7 @@ const app = {
     },
 
     openFolder(type) {
-        if (type === 'game' || type === 'userskins') {
+        if (type === 'game' || type === 'userskins' || type === 'user_missions') {
             if (!this.currentGamePath) {
                 app.showAlert("提示", "请先在主页设置游戏路径！");
                 this.switchTab('home');
@@ -1904,6 +2293,68 @@ const app = {
             }
         }
         pywebview.api.open_folder(type);
+    },
+
+    refreshHangar(opts) {
+        const listEl = document.getElementById('hangar-list');
+        const countEl = document.getElementById('hangar-count');
+        if (!listEl || !countEl) return;
+
+        const refreshBtn = document.getElementById('btn-refresh-hangar');
+        if (this._hangarRefreshing) return;
+        this._hangarRefreshing = true;
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('is-loading');
+        }
+        countEl.textContent = '刷新中...';
+
+        setTimeout(() => {
+            this._hangarRefreshing = false;
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.classList.remove('is-loading');
+            }
+            countEl.textContent = '本地: 0';
+            listEl.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1;">
+                    <i class="ri-plane-line"></i>
+                    <h3>还没有机库配置</h3>
+                    <p>点击左侧"打开机库"按钮，导入机库配置文件</p>
+                </div>
+            `;
+        }, 300);
+    },
+
+    refreshModels(opts) {
+        const listEl = document.getElementById('models-list');
+        const countEl = document.getElementById('models-count');
+        if (!listEl || !countEl) return;
+
+        const refreshBtn = document.getElementById('btn-refresh-models');
+        if (this._modelsRefreshing) return;
+        this._modelsRefreshing = true;
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('is-loading');
+        }
+        countEl.textContent = '刷新中...';
+
+        setTimeout(() => {
+            this._modelsRefreshing = false;
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.classList.remove('is-loading');
+            }
+            countEl.textContent = '本地: 0';
+            listEl.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1;">
+                    <i class="ri-box-3-line"></i>
+                    <h3>还没有模型</h3>
+                    <p>点击左侧"打开模型库"按钮，导入模型文件</p>
+                </div>
+            `;
+        }, 300);
     },
 
     openBiliSpace() {
@@ -1934,6 +2385,19 @@ const app = {
     openSupportMe() {
         const modal = document.getElementById('modal-support-me');
         if (!modal) return;
+        modal.classList.remove('hiding');
+        modal.classList.add('show');
+    },
+
+    openImagePreview(src, title) {
+        const modal = document.getElementById('modal-image-preview');
+        const img = document.getElementById('image-preview-img');
+        const titleEl = document.getElementById('image-preview-title');
+        if (!modal || !img) return;
+        
+        img.src = src;
+        if (titleEl) titleEl.textContent = title || '图片预览';
+        
         modal.classList.remove('hiding');
         modal.classList.add('show');
     },
@@ -2311,6 +2775,15 @@ app.init = async function () {
         });
     }
 
+    const feedbackContact = document.getElementById('feedback-contact');
+    const feedbackContent = document.getElementById('feedback-content');
+    if (feedbackContact) {
+        feedbackContact.addEventListener('input', () => this.updateFeedbackCount());
+    }
+    if (feedbackContent) {
+        feedbackContent.addEventListener('input', () => this.updateFeedbackCount());
+    }
+
     // 核心初始化逻辑，抽取为独立函数以便重用
     const doInit = async () => {
         // 防止重複执行核心初始化
@@ -2322,6 +2795,7 @@ app.init = async function () {
         console.log("PyWebview ready, starting core init...");
 
         this._setupModalDragLock();
+        this._setupModalOverlayClose();
 
         // 1. 优先检查免责声明
         await app.checkDisclaimer();
@@ -2339,6 +2813,7 @@ app.init = async function () {
             theme: "Light",
             installed_mods: [],
         };
+        this.currentLaunchMode = state.launch_mode || 'launcher';
         this.updatePathUI(state.game_path, state.path_valid);
 
         if (state.installed_mods && Array.isArray(state.installed_mods)) {
@@ -2368,8 +2843,7 @@ app.init = async function () {
         // 加载主题列表并应用上次的选择
         await this.loadThemeList();
         const activeTheme = state.active_theme || 'default.json';
-        const select = document.getElementById('theme-select');
-        if (select) select.value = activeTheme;
+        this.selectTheme(activeTheme);
 
         // 加载主题内容（包括 default.json）
         const themeData = await pywebview.api.load_theme_content(activeTheme);
@@ -2404,6 +2878,28 @@ app.init = async function () {
         if (telSwitch) {
             telSwitch.checked = !!state.telemetry_enabled;
         }
+
+        // 设置开机自启动开关状态
+        const autostartSwitch = document.getElementById('autostart-switch');
+        if (autostartSwitch) {
+            autostartSwitch.checked = !!state.autostart_enabled;
+        }
+
+        // 设置托盘模式开关状态
+        const trayModeSwitch = document.getElementById('tray-mode-switch');
+        if (trayModeSwitch) {
+            trayModeSwitch.checked = !!state.tray_mode;
+        }
+
+        // 设置关闭确认开关状态
+        const closeConfirmSwitch = document.getElementById('close-confirm-switch');
+        if (closeConfirmSwitch) {
+            closeConfirmSwitch.checked = state.close_confirm !== false; // 默认开启
+        }
+
+        // 保存状态到本地变量供关闭逻辑使用
+        this._trayMode = !!state.tray_mode;
+        this._closeConfirm = state.close_confirm !== false; // 默认开启
     };
 
     // 防止重複註册 pywebviewready 监听器
@@ -2440,13 +2936,61 @@ window.app = app;
 // 资源库 Master-Detail 导航
 // ===========================
 
+// ===========================
+// 资源页面注册系统
+// ===========================
+app.resourcePages = {};
+app.currentResourcePage = null;
+
+/**
+ * 注册资源页面
+ * @param {string} name - 页面标识名
+ * @param {Object} pageModule - 页面对象，需包含 init/show/hide/destroy 方法
+ */
+app.registerResourcePage = function (name, pageModule) {
+    this.resourcePages[name] = pageModule;
+    console.log(`[App] 注册资源页面: ${name}`);
+};
+
 app.switchResourceView = function (target) {
     // 更新导航按钮状态
     document.querySelectorAll('.resource-nav-item').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.target === target);
     });
 
-    // 切换视图
+    // 检查是否是新模块系统注册的页面
+    const registeredPage = this.resourcePages[target];
+    if (registeredPage) {
+        // 隐藏当前页面
+        if (this.currentResourcePage && this.currentResourcePage !== registeredPage) {
+            if (this.currentResourcePage.hide) {
+                this.currentResourcePage.hide();
+            }
+            // 隐藏所有原生视图
+            document.querySelectorAll('.resource-view').forEach(view => {
+                view.classList.remove('active');
+            });
+        }
+
+        // 初始化并显示新页面（如果未初始化）
+        if (!registeredPage._initialized) {
+            registeredPage.init();
+            registeredPage._initialized = true;
+        }
+        registeredPage.show();
+        this.currentResourcePage = registeredPage;
+        return;
+    }
+
+    // 原有逻辑：隐藏当前注册的页面（如果有）
+    if (this.currentResourcePage) {
+        if (this.currentResourcePage.hide) {
+            this.currentResourcePage.hide();
+        }
+        this.currentResourcePage = null;
+    }
+
+    // 切换原生视图
     document.querySelectorAll('.resource-view').forEach(view => {
         view.classList.toggle('active', view.id === `view-${target}`);
     });
@@ -2506,35 +3050,60 @@ app.loadSightsView = function () {
 
 // 刷新 UID 列表
 app.refreshSightsUidList = async function () {
-    const select = document.getElementById('sights-uid-select');
-    if (!select) return;
+    const wrapper = document.getElementById('sights-uid-select-wrapper');
+    if (!wrapper) return;
 
     if (!window.pywebview?.api?.discover_usersights_paths) {
-        select.innerHTML = '<option value="">-- API 未就绪 --</option>';
+        if (this.sightsUidDropdown) {
+            this.sightsUidDropdown.setOptions([{ value: '', label: '-- API 未就绪 --' }]);
+        }
         return;
     }
 
     try {
-        select.innerHTML = '<option value="">-- 搜索中... --</option>';
+        // 初始化或更新下拉菜单
+        if (!this.sightsUidDropdown) {
+            this.sightsUidDropdown = new AppDropdownMenu({
+                id: 'sights-uid-select',
+                containerId: 'sights-uid-select-wrapper',
+                placeholder: '-- 搜索中... --',
+                options: [{ value: '', label: '-- 搜索中... --' }],
+                size: 'sm',
+                onChange: (value) => this.onSightsUidChange(value)
+            });
+        } else {
+            this.sightsUidDropdown.setOptions([{ value: '', label: '-- 搜索中... --' }]);
+        }
+
         const paths = await pywebview.api.discover_usersights_paths();
         this._sightsUidList = paths || [];
 
         if (this._sightsUidList.length === 0) {
-            select.innerHTML = '<option value="">-- 未找到 UID --</option>';
+            this.sightsUidDropdown.setOptions([{ value: '', label: '-- 未找到 UID --' }]);
             return;
         }
 
         // 构建选项
-        let html = '<option value="">-- 选择 UID --</option>';
+        const options = [{ value: '', label: '-- 选择 UID --' }];
+        let currentValue = '';
         for (const item of this._sightsUidList) {
             const status = item.exists ? '✓' : '(新建)';
-            const selected = this.sightsPath && this.sightsPath.includes(item.uid) ? 'selected' : '';
-            html += `<option value="${item.uid}" ${selected}>${item.uid} ${status}</option>`;
+            const label = `${item.uid} ${status}`;
+            options.push({ value: item.uid, label: label });
+            if (this.sightsPath && this.sightsPath.includes(item.uid)) {
+                currentValue = item.uid;
+            }
         }
-        select.innerHTML = html;
+
+        this.sightsUidDropdown.setOptions(options);
+        if (currentValue) {
+            this.sightsUidDropdown.setValue(currentValue, false);
+        }
     } catch (e) {
         console.error('刷新 UID 列表失败:', e);
-        select.innerHTML = '<option value="">-- 搜索失败 --</option>';
+        if (this.sightsUidDropdown) {
+            this.sightsUidDropdown.setOptions([{ value: '', label: '-- 搜索失败 --' }]);
+        }
     }
 };
 
@@ -3096,3 +3665,484 @@ app.setupGlobalDragDrop = function () {
     });
 };
 
+(function () {
+    const MODAL_ID = 'modal-mod-preview';
+    const LIST_ID = 'lib-list';
+    const QQ_GROUP_URL = 'https://qun.qq.com/universal-share/share?ac=1&authKey=%2FDJOR1E72xAQKvLD%2BNQmaZmD7py%2F5PUY7xHORJX4kmmKdabaRF4%2BwIJkp6s8I10U&busi_data=eyJncm91cENvZGUiOiIxMDc4MzQzNjI5IiwidG9rZW4iOiJmSUNpVXErcnNMMVhlemRNR25EbVF5TWJrbmc5bm02UmRIS0c0WHFxemdWQkRzUlVmSkVZQW11NXFkRXZkMXBDIiwidWluIjoiMTA3OTY0OTM2OSJ9&data=4qfEzEByH95wqWw0I5ButymAfP5Aj5bjksqrXyh3uAoIWg5ChDGQ3w6cocqmRaRaGbDRpFunhEYQYBHwC46GHg&svctype=4&tempid=h5_group_info';
+    const WTLIKER_URL = 'https://wtliker.com/';
+    const WT_LIVE_URL = 'https://live.warthunder.com/';
+
+    function getApp() {
+        return window.app || null;
+    }
+
+    function escapeHtml(value) {
+        const app = getApp();
+        if (app && typeof app._escapeHtml === 'function') return app._escapeHtml(value);
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function normalizeVersion(value) {
+        let version = String(value || '1.0').trim();
+        if (version.toLowerCase().startsWith('v')) version = version.slice(1);
+        return version || '1.0';
+    }
+
+    function normalizeLanguages(mod) {
+        if (Array.isArray(mod?.language) && mod.language.length > 0) return mod.language.map(String);
+        if (typeof mod?.language === 'string' && mod.language.trim()) return [mod.language.trim()];
+        return ['多语言'];
+    }
+
+    function buildLangHtml(mod) {
+        return normalizeLanguages(mod).map((lang) => {
+            let cls = '';
+            if (typeof window.UI_CONFIG !== 'undefined' && window.UI_CONFIG?.langMap?.[lang]) {
+                cls = window.UI_CONFIG.langMap[lang];
+            }
+            return `<span class="lang-text ${cls}">${escapeHtml(lang)}</span>`;
+        }).join('<span class="mod-preview-lang-sep">/</span>');
+    }
+
+    function normalizeUserTags(mod) {
+        if (!Array.isArray(mod?.tags)) return [];
+        return mod.tags
+            .map((t) => typeof t === 'string' ? t.trim() : String(t || '').trim())
+            .filter(Boolean);
+    }
+
+    function buildCapabilityTags(mod) {
+        const caps = mod?.capabilities || {};
+        const tags = [];
+
+        if (typeof UI_CONFIG !== 'undefined' && UI_CONFIG?.tagMap) {
+            Object.entries(UI_CONFIG.tagMap).forEach(([key, conf]) => {
+                if (!caps[key]) return;
+                tags.push({
+                    text: conf?.text || key,
+                    cls: conf?.cls || '',
+                });
+            });
+            return tags;
+        }
+
+        const fallback = [
+            ['tank', 'tank', '陆战'],
+            ['air', 'air', '空战'],
+            ['naval', 'naval', '海战'],
+            ['radio', 'radio', '无线电/队友'],
+            ['missile', 'missile', '导弹音效'],
+            ['music', 'music', '音乐包'],
+            ['noise', 'noise', '降噪包'],
+            ['pilot', 'pilot', '飞行员语音'],
+        ];
+        fallback.forEach(([capKey, cls, text]) => {
+            if (caps[capKey]) tags.push({ text, cls });
+        });
+        return tags;
+    }
+
+    function buildTagHtml(mod) {
+        const fromInfo = normalizeUserTags(mod);
+        const normalizeTagText = (value) => String(value || '')
+            .replace(/\s+/g, '')
+            .replace(/[／]/g, '/')
+            .toLowerCase();
+        const resolveTagClass = (text) => {
+            const keyText = normalizeTagText(text);
+            if (typeof UI_CONFIG !== 'undefined' && UI_CONFIG?.tagMap) {
+                const entry = Object.values(UI_CONFIG.tagMap).find((conf) => (
+                    normalizeTagText(conf?.text) === keyText || normalizeTagText(conf?.cls) === keyText
+                ));
+                if (entry?.cls) return entry.cls;
+            }
+            const alias = [
+                { cls: 'tank', words: ['陆战', '坦克'] },
+                { cls: 'air', words: ['空战', '空军'] },
+                { cls: 'naval', words: ['海战', '海军'] },
+                { cls: 'radio', words: ['无线电', '局势'] },
+                { cls: 'missile', words: ['导弹'] },
+                { cls: 'music', words: ['音乐'] },
+                { cls: 'noise', words: ['降噪'] },
+                { cls: 'pilot', words: ['飞行员'] }
+            ];
+            for (const item of alias) {
+                if (item.words.some((word) => keyText.includes(normalizeTagText(word)))) {
+                    return item.cls;
+                }
+            }
+            return '';
+        };
+        if (fromInfo.length > 0) {
+            return fromInfo
+                .map((text) => {
+                    const cls = resolveTagClass(text);
+                    return `<span class="tag ${escapeHtml(cls)}">${escapeHtml(text)}</span>`;
+                })
+                .join('');
+        }
+        return buildCapabilityTags(mod)
+            .map((item) => `<span class="tag ${escapeHtml(item.cls)}">${escapeHtml(item.text)}</span>`)
+            .join('');
+    }
+
+    function resolveDescription(mod) {
+        return String(mod?.full_desc || mod?.description || mod?.note || '暂无详细介绍').trim();
+    }
+
+    function splitVersionNoteText(raw) {
+        return String(raw || '')
+            .split(/\n{2,}/)
+            .map((block) => block.trim())
+            .filter(Boolean)
+            .map((block) => {
+                const lines = block.split('\n');
+                const firstLine = String(lines[0] || '').trim();
+                const isPureVersion = /^v?\d+(?:\.\d+)*$/i.test(firstLine);
+                if (isPureVersion) {
+                    const version = `v${normalizeVersion(firstLine)}`;
+                    const note = lines.slice(1).join('\n').trim();
+                    return { version, note };
+                }
+                return { version: '', note: block };
+            })
+            .filter((item) => item.version || item.note);
+    }
+
+    function resolveVersionNoteEntries(mod) {
+        if (Array.isArray(mod?.version_note)) {
+            const entries = mod.version_note
+                .map((item) => {
+                    const rawVersion = String(item?.version || '').trim();
+                    const version = rawVersion ? `v${normalizeVersion(rawVersion)}` : '';
+                    const note = String(item?.note || '').trim();
+                    if (!version && !note) return null;
+                    return { version, note };
+                })
+                .filter(Boolean);
+            if (entries.length) return entries;
+        }
+
+        const raw = String(mod?.version_note || mod?.changelog || '').trim();
+        if (raw) return splitVersionNoteText(raw);
+
+        const version = `v${normalizeVersion(mod?.version)}`;
+        return [{ version, note: '暂无详细更新日志。' }];
+    }
+
+    function buildVersionNoteHtml(mod) {
+        const entries = resolveVersionNoteEntries(mod);
+        if (!entries.length) {
+            return '<span class="mod-preview-empty">暂无详细更新日志。</span>';
+        }
+        return entries.map((item) => {
+            const versionText = String(item?.version || '').trim();
+            const noteText = String(item?.note || '').trim();
+            const versionHtml = versionText ? `<div class="mod-preview-note-version">${escapeHtml(versionText)}</div>` : '';
+            const noteHtml = noteText ? `<div class="mod-preview-note-text">${escapeHtml(noteText)}</div>` : '';
+            const content = (versionHtml || noteHtml)
+                ? `${versionHtml}${noteHtml}`
+                : `<div class="mod-preview-note-text">暂无详细更新日志。</div>`;
+            return `<div class="mod-preview-note-item">${content}</div>`;
+        }).join('');
+    }
+
+    function findModById(modId) {
+        const app = getApp();
+        const list = Array.isArray(app?.modCache) ? app.modCache : [];
+        const key = String(modId ?? '');
+        return list.find((item) => String(item?.id ?? '') === key) || null;
+    }
+
+    function ensureModal() {
+        let overlay = document.getElementById(MODAL_ID);
+        if (overlay) return overlay;
+
+        overlay = document.createElement('div');
+        overlay.id = MODAL_ID;
+        overlay.className = 'modal-overlay mod-preview-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content mod-preview-modal-v2">
+                <div class="mod-preview-topbar">
+                    <div class="mod-preview-title-wrap">
+                        <div class="mod-preview-title" id="mod-preview-title"></div>
+                        <span class="mod-preview-version" id="mod-preview-version"></span>
+                    </div>
+                    <div class="mod-preview-subline">
+                        <span><i class="ri-user-3-line"></i> <span id="mod-preview-author"></span></span>
+                        <span class="dot"></span>
+                        <span><i class="ri-time-line"></i> <span id="mod-preview-date"></span></span>
+                    </div>
+                    <button class="mod-preview-close-btn" type="button" title="关闭">
+                        <i class="ri-close-line"></i>
+                    </button>
+                </div>
+
+                <div class="mod-preview-body">
+                    <div class="mod-preview-left">
+                        <div class="mod-preview-cover-box">
+                            <img class="mod-preview-cover" id="mod-preview-cover" src="" alt="语音包封面">
+                        </div>
+                        <div class="mod-preview-attrs">
+                            <h4>文件属性</h4>
+                            <div class="row"><span><i class="ri-hard-drive-2-line"></i> 文件大小</span><b id="mod-preview-size"></b></div>
+                            <div class="row"><span><i class="ri-translate"></i> 语言支持</span><b id="mod-preview-lang"></b></div>
+                            <div class="row"><span><i class="ri-price-tag-3-line"></i> 标签数量</span><b id="mod-preview-tag-count"></b></div>
+                        </div>
+                        <div class="mod-preview-compat">
+                            <i class="ri-checkbox-circle-line"></i>
+                            <div>
+                                <strong>兼容性良好</strong>
+                                <p>适配当前版本 War Thunder</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mod-preview-right">
+                        <section class="mod-preview-card">
+                            <h4><i class="ri-price-tag-3-line"></i> 包含内容</h4>
+                            <div class="mod-preview-tags-scroll" id="mod-preview-tags"></div>
+                        </section>
+
+                        <section class="mod-preview-card">
+                            <h4><i class="ri-information-line"></i> 详细介绍</h4>
+                            <div class="mod-preview-desc" id="mod-preview-desc"></div>
+                        </section>
+
+                        <div class="mod-preview-bottom-grid">
+                            <section class="mod-preview-card">
+                                <h4><i class="ri-refresh-line"></i> 版本说明</h4>
+                                <div class="mod-preview-note-log" id="mod-preview-version-note"></div>
+                            </section>
+
+                            <section class="mod-preview-card">
+                                <h4><i class="ri-links-line"></i> 关注与反馈</h4>
+                                <div class="mod-preview-link-grid">
+                                    <button class="mod-preview-link-btn bili" type="button" data-link-action="bili"><i class="ri-bilibili-line"></i> Bilibili 主页</button>
+                                    <button class="mod-preview-link-btn qq" type="button" data-link-action="qq"><i class="ri-qq-line"></i> 加入粉丝群</button>
+                                    <button class="mod-preview-link-btn wt" type="button" data-link-action="wtlive"><i class="ri-global-line"></i> WT Live</button>
+                                    <button class="mod-preview-link-btn liker" type="button" data-link-action="liker"><i class="ri-heart-3-line"></i> WT Liker</button>
+                                    <button class="mod-preview-link-btn feedback" type="button" data-link-action="feedback"><i class="ri-mail-send-line"></i> 联系作者反馈</button>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mod-preview-footer">
+                    <div class="mod-preview-id" id="mod-preview-id"></div>
+                    <div class="mod-preview-footer-actions">
+                        <button class="btn secondary" type="button" data-action="delete"><i class="ri-delete-bin-line"></i> 删除</button>
+                        <button class="btn secondary" type="button" data-action="audition"><i class="ri-play-circle-line"></i> 试听语音</button>
+                        <button class="btn primary" type="button" data-action="apply"><i class="ri-check-line"></i> 应用语音包</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closePreview();
+        });
+        const closeBtn = overlay.querySelector('.mod-preview-close-btn');
+        if (closeBtn) closeBtn.addEventListener('click', closePreview);
+
+        return overlay;
+    }
+
+    function openExternal(url) {
+        const safeUrl = String(url || '').trim();
+        if (!safeUrl) return;
+        try {
+            window.open(safeUrl, '_blank', 'noopener');
+        } catch (e) {
+            const app = getApp();
+            if (app && typeof app.showAlert === 'function') {
+                app.showAlert('错误', '打开链接失败', 'error');
+            }
+        }
+    }
+
+    function bindFooterActions(overlay, mod) {
+        const app = getApp();
+        const applyBtn = overlay.querySelector('[data-action="apply"]');
+        const deleteBtn = overlay.querySelector('[data-action="delete"]');
+        const auditionBtn = overlay.querySelector('[data-action="audition"]');
+
+        if (applyBtn) {
+            applyBtn.onclick = () => {
+                closePreview();
+                if (app && typeof app.openInstallModal === 'function') {
+                    app.openInstallModal(mod.id);
+                }
+            };
+        }
+        if (deleteBtn) {
+            deleteBtn.onclick = () => {
+                closePreview();
+                if (app && typeof app.deleteMod === 'function') {
+                    app.deleteMod(mod.id);
+                }
+            };
+        }
+        if (auditionBtn) {
+            auditionBtn.onclick = () => {
+                const video = String(mod?.link_video || '').trim();
+                if (video) {
+                    openExternal(video);
+                    return;
+                }
+                if (app && typeof app.notifyToast === 'function') {
+                    app.notifyToast('WARN', '该语音包暂未配置试听链接');
+                }
+            };
+        }
+    }
+
+    function bindLinkActions(overlay, mod) {
+        const getLink = (action) => {
+            if (action === 'bili') return String(mod?.link_bilibili || '').trim();
+            if (action === 'qq') return String(mod?.link_qq_group || '').trim();
+            if (action === 'wtlive') return String(mod?.link_wtlive || '').trim();
+            if (action === 'liker') return String(mod?.link_liker || '').trim();
+            if (action === 'feedback') return String(mod?.link_feedback || '').trim();
+            return '';
+        };
+
+        overlay.querySelectorAll('[data-link-action]').forEach((btn) => {
+            const action = btn.dataset.linkAction;
+            const url = getLink(action);
+            const enabled = Boolean(url);
+            btn.classList.toggle('disabled', !enabled);
+            btn.disabled = !enabled;
+            btn.onclick = () => {
+                if (!enabled) return;
+                return openExternal(url);
+            };
+        });
+    }
+
+    function openPreview(mod) {
+        const overlay = ensureModal();
+        const title = String(mod?.title || '未命名语音包');
+        const author = String(mod?.author || '未知作者');
+        const date = String(mod?.date || '未知日期');
+        const sizeText = String(mod?.size_str || '未知大小');
+        const cover = String(mod?.cover_url || 'assets/card_image.png');
+        const version = normalizeVersion(mod?.version);
+        const desc = resolveDescription(mod);
+        const versionNoteHtml = buildVersionNoteHtml(mod);
+        const tagHtml = buildTagHtml(mod);
+        const tagCount = normalizeUserTags(mod).length || buildCapabilityTags(mod).length;
+
+        const idText = String(mod?.id || '');
+        const idShow = /^\d+$/.test(idText) ? idText.padStart(6, '0') : idText;
+
+        const titleEl = overlay.querySelector('#mod-preview-title');
+        const versionEl = overlay.querySelector('#mod-preview-version');
+        const authorEl = overlay.querySelector('#mod-preview-author');
+        const dateEl = overlay.querySelector('#mod-preview-date');
+        const coverEl = overlay.querySelector('#mod-preview-cover');
+        const sizeEl = overlay.querySelector('#mod-preview-size');
+        const langEl = overlay.querySelector('#mod-preview-lang');
+        const tagCountEl = overlay.querySelector('#mod-preview-tag-count');
+        const tagsEl = overlay.querySelector('#mod-preview-tags');
+        const descEl = overlay.querySelector('#mod-preview-desc');
+        const versionNoteEl = overlay.querySelector('#mod-preview-version-note');
+        const idEl = overlay.querySelector('#mod-preview-id');
+
+        if (titleEl) titleEl.textContent = title;
+        if (versionEl) versionEl.textContent = `v${version}`;
+        if (authorEl) authorEl.textContent = author;
+        if (dateEl) dateEl.textContent = date;
+        if (coverEl) coverEl.src = cover;
+        if (sizeEl) sizeEl.textContent = sizeText;
+        if (langEl) langEl.innerHTML = buildLangHtml(mod);
+        if (tagCountEl) tagCountEl.textContent = `${tagCount} 个`;
+        if (tagsEl) tagsEl.innerHTML = tagHtml || '<span class="mod-preview-empty">暂无标签</span>';
+        if (descEl) descEl.textContent = desc;
+        if (versionNoteEl) versionNoteEl.innerHTML = versionNoteHtml;
+        if (idEl) idEl.textContent = `ID: ${idShow || '-'}`;
+
+        bindFooterActions(overlay, mod);
+        bindLinkActions(overlay, mod);
+
+        overlay.classList.remove('hiding');
+        overlay.classList.add('show');
+    }
+
+    function closePreview() {
+        const app = getApp();
+        if (app && typeof app.closeModal === 'function') {
+            app.closeModal(MODAL_ID);
+            return;
+        }
+        const el = document.getElementById(MODAL_ID);
+        if (!el) return;
+        el.classList.remove('show');
+        el.classList.remove('hiding');
+    }
+
+    function shouldIgnoreClick(target) {
+        return !!target.closest(
+            '.mod-actions-col, .action-icon, .action-btn-load, .mod-copy-action, .mod-note, button, a'
+        );
+    }
+
+    function bindCardPreviewClick() {
+        const list = document.getElementById(LIST_ID);
+        if (!list || list.dataset.previewBound === '1') return;
+        list.dataset.previewBound = '1';
+
+        list.addEventListener('click', (e) => {
+            if (e.button !== 0) return;
+            if (shouldIgnoreClick(e.target)) return;
+            const card = e.target.closest('.mod-card');
+            if (!card || !list.contains(card)) return;
+
+            const mod = findModById(card.dataset.id || '');
+            if (!mod) return;
+            openPreview(mod);
+        });
+    }
+
+    function init() {
+        const app = getApp();
+        if (!app) {
+            setTimeout(init, 60);
+            return;
+        }
+
+        app.openModPreview = (modOrId) => {
+            const mod = (typeof modOrId === 'object') ? modOrId : findModById(modOrId);
+            if (!mod) return;
+            openPreview(mod);
+        };
+        app.closeModPreview = closePreview;
+
+        bindCardPreviewClick();
+        if (!app._cardPreviewObserver) {
+            const observer = new MutationObserver(bindCardPreviewClick);
+            observer.observe(document.body, { childList: true, subtree: true });
+            app._cardPreviewObserver = observer;
+        }
+
+        document.addEventListener('click', (e) => {
+            const wrapper = document.getElementById('theme-select-wrapper');
+            if (wrapper && !wrapper.contains(e.target)) {
+                wrapper.classList.remove('active');
+            }
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init, { once: true });
+    } else {
+        init();
+    }
+})();

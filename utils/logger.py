@@ -8,10 +8,12 @@
 - 支援 UI 回调以将日誌同步到前端
 - 提供上下文记录器 (ContextLogger) 用于追踪操作流程
 - 异常日誌自动包含堆栈追踪
+- 多编码兼容：自动适配系统编码 (UTF-8/Big5/GBK等)
 """
 
 from __future__ import annotations
 
+import locale
 import logging
 import sys
 import threading
@@ -31,6 +33,100 @@ _ui_emit_guard = threading.local()
 # 类型变数用于装饰器
 P = ParamSpec('P')
 T = TypeVar('T')
+
+
+def _get_system_encoding() -> str:
+    """
+    获取系统首选编码，支持多地区编码兼容。
+    
+    优先级:
+    1. Windows 系统 ANSI 代码页 (如 Big5/GBK/Shift_JIS)
+    2. 区域设置编码
+    3. 默认 UTF-8
+    
+    Returns:
+        系统编码名称
+    """
+    encoding = None
+    
+    if sys.platform == "win32":
+        # Windows: 获取当前 ANSI 代码页
+        try:
+            import ctypes
+            # GetACP() 获取当前系统 ANSI 代码页
+            code_page = ctypes.windll.kernel32.GetACP()
+            encoding = f"cp{code_page}"
+        except Exception:
+            pass
+    
+    # 回退到区域设置编码
+    if not encoding:
+        try:
+            encoding = locale.getpreferredencoding(False)
+        except Exception:
+            pass
+    
+    # 最终回退到 UTF-8
+    return encoding or "utf-8"
+
+
+def _setup_console_encoding() -> None:
+    """
+    设置控制台编码，确保多编码环境兼容。
+    优先尝试设置 UTF-8 环境，失败则回退到系统编码。
+    """
+    if sys.platform != "win32":
+        return
+    
+    import io
+    import ctypes
+    
+    # 1. 优先尝试强制设置控制台为 UTF-8 (cp65001)
+    try:
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleCP(65001)
+        kernel32.SetConsoleOutputCP(65001)
+        
+        # 既然控制台已设为 UTF-8，Python 输出流也必须设为 UTF-8
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer, 
+            encoding='utf-8', 
+            errors='replace'
+        )
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer, 
+            encoding='utf-8', 
+            errors='replace'
+        )
+        return
+    except Exception:
+        pass
+
+    # 2. 如果强制 UTF-8 失败，回退到系统编码检测逻辑
+    system_encoding = _get_system_encoding()
+    
+    # 尝试使用系统编码，如果失败则尝试其他常见编码
+    for encoding in [system_encoding, "utf-8", "gbk", "big5", "shift_jis"]:
+        try:
+            # 测试编码是否可用
+            "测试".encode(encoding)
+            sys.stdout = io.TextIOWrapper(
+                sys.stdout.buffer, 
+                encoding=encoding, 
+                errors="replace"
+            )
+            sys.stderr = io.TextIOWrapper(
+                sys.stderr.buffer, 
+                encoding=encoding, 
+                errors="replace"
+            )
+            return
+        except (LookupError, UnicodeEncodeError):
+            continue
+
+
+# 初始化控制台编码
+_setup_console_encoding()
 
 
 def set_ui_callback(callback: Callable[[str, logging.LogRecord], None] | None) -> None:
