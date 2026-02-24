@@ -2101,6 +2101,7 @@ def main() -> int:
             return
 
     def _on_start(win):
+        # TODO 需要优化，拖放压缩包时大概率卡死
         # try:
         #     _bind_drag_drop(win)
         # except Exception:
