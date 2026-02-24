@@ -1,0 +1,227 @@
+/* 自定义文本模块 */
+#view-custom_text {
+    padding: 0;
+    overflow: hidden;
+}
+
+.custom-text-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.custom-text-select {
+    height: 34px;
+    min-width: 130px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    padding: 0 10px;
+}
+
+.custom-text-wrap {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 14px;
+    padding: 12px 20px 20px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.custom-text-groups {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-card);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.custom-text-groups-head {
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--text-sec);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.custom-text-groups-search-wrap {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.custom-text-group-search {
+    width: 100%;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    padding: 7px 9px;
+}
+
+.custom-text-groups-list {
+    overflow: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.custom-text-group-item {
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-main);
+    border-radius: 8px;
+    padding: 8px 10px;
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    cursor: pointer;
+}
+
+.custom-text-group-item.active {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.custom-text-main {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-card);
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.custom-text-toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.custom-text-search {
+    flex: 1;
+    min-width: 220px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    padding: 8px 10px;
+}
+
+.custom-text-summary {
+    color: var(--text-sec);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.custom-text-table {
+    padding: 10px;
+    overflow: auto;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.custom-text-row {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 10px;
+    align-items: start;
+}
+
+.custom-text-id {
+    font-family: Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-sec);
+    background: color-mix(in srgb, var(--bg-body) 70%, transparent);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px;
+    word-break: break-all;
+}
+
+.custom-text-input {
+    width: 100%;
+    min-height: 54px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    padding: 8px 10px;
+    resize: vertical;
+}
+
+/* 更明显、易拖拽的滚动条 */
+.custom-text-groups-list,
+.custom-text-table,
+.custom-text-input {
+    scrollbar-width: auto;
+    scrollbar-color: rgba(255, 153, 0, 0.75) rgba(127, 127, 127, 0.16);
+}
+
+.custom-text-groups-list::-webkit-scrollbar,
+.custom-text-table::-webkit-scrollbar {
+    width: 12px;
+}
+
+.custom-text-input::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+.custom-text-groups-list::-webkit-scrollbar-track,
+.custom-text-table::-webkit-scrollbar-track,
+.custom-text-input::-webkit-scrollbar-track {
+    background: rgba(127, 127, 127, 0.14);
+    border-radius: 10px;
+}
+
+.custom-text-groups-list::-webkit-scrollbar-thumb,
+.custom-text-table::-webkit-scrollbar-thumb,
+.custom-text-input::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(255, 176, 64, 0.95), rgba(255, 136, 0, 0.9));
+    border-radius: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.6);
+}
+
+.custom-text-groups-list::-webkit-scrollbar-thumb:hover,
+.custom-text-table::-webkit-scrollbar-thumb:hover,
+.custom-text-input::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(255, 194, 102, 0.98), rgba(255, 145, 25, 0.95));
+}
+
+[data-theme="dark"] .custom-text-groups-list::-webkit-scrollbar-track,
+[data-theme="dark"] .custom-text-table::-webkit-scrollbar-track,
+[data-theme="dark"] .custom-text-input::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .custom-text-groups-list::-webkit-scrollbar-thumb,
+[data-theme="dark"] .custom-text-table::-webkit-scrollbar-thumb,
+[data-theme="dark"] .custom-text-input::-webkit-scrollbar-thumb {
+    border-color: rgba(22, 22, 24, 0.85);
+}
+
+.custom-text-empty {
+    color: var(--text-sec);
+    text-align: center;
+    padding: 20px;
+}
+
+@media (max-width: 980px) {
+    .custom-text-wrap {
+        grid-template-columns: 1fr;
+        overflow: auto;
+    }
+    .custom-text-row {
+        grid-template-columns: 1fr;
+    }
+}
