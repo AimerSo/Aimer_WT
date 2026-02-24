@@ -51,7 +51,7 @@ const MinimalistLoading = {
                 inset: 0;
                 background-color: rgba(15, 23, 42, 0.6);
                 backdrop-filter: blur(6px);
-                z-index: 9999;
+                z-index: 30050;
                 display: flex;
                 align-items: center;
                 justify-content: center;

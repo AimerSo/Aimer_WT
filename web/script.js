@@ -3991,18 +3991,460 @@ app.setupGlobalDragDrop = function () {
             };
         }
         if (auditionBtn) {
-            auditionBtn.onclick = () => {
-                const video = String(mod?.link_video || '').trim();
-                if (video) {
-                    openExternal(video);
-                    return;
-                }
-                if (app && typeof app.notifyToast === 'function') {
-                    app.notifyToast('WARN', '该语音包暂未配置试听链接');
+            auditionBtn.onclick = async () => {
+                try {
+                    if (!window.pywebview?.api?.start_mod_audition_scan || !window.pywebview?.api?.get_mod_audition_categories_snapshot) {
+                        if (app && typeof app.showAlert === 'function') {
+                            app.showAlert('错误', '后端试听接口不可用', 'error');
+                        }
+                        return;
+                    }
+
+                    auditionBtn.disabled = true;
+                    const oldHtml = auditionBtn.innerHTML;
+                    auditionBtn.innerHTML = '<i class="ri-loader-2-line"></i> 初始化试听...';
+                    const currentState = window.__auditionPickerState;
+                    const currentModId = String(mod.id || '');
+                    if (currentState && currentState.modId === currentModId) {
+                        // 同一语音包重复点击：不重复开窗和重复初始化
+                        auditionBtn.innerHTML = oldHtml;
+                        auditionBtn.disabled = false;
+                        if (app && typeof app.showInfoToast === 'function') {
+                            app.showInfoToast('提示', '该语音包试听窗口已打开');
+                        }
+                        return;
+                    }
+                    if (currentState && typeof currentState.close === 'function') {
+                        currentState.close(true);
+                    }
+                    openAuditionPicker(mod, []);
+                    await pywebview.api.start_mod_audition_scan(mod.id);
+                    const snap = await pywebview.api.get_mod_audition_categories_snapshot(mod.id);
+                    auditionBtn.innerHTML = oldHtml;
+                    auditionBtn.disabled = false;
+
+                    if (!snap || !snap.success) {
+                        const msg = (snap && snap.msg) ? snap.msg : '试听初始化失败';
+                        if (app && typeof app.showAlert === 'function') {
+                            app.showAlert('错误', msg, 'error');
+                        }
+                        return;
+                    }
+                    if (window.__auditionPickerState && typeof window.__auditionPickerState.update === 'function') {
+                        window.__auditionPickerState.update(snap);
+                    }
+                } catch (e) {
+                    if (auditionBtn) {
+                        auditionBtn.disabled = false;
+                        auditionBtn.innerHTML = '<i class="ri-play-circle-line"></i> 试听语音';
+                    }
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('错误', `试听失败: ${e.message || e}`, 'error');
+                    }
                 }
             };
         }
     }
+
+    function formatDuration(sec) {
+        const n = Number(sec || 0);
+        if (!Number.isFinite(n) || n <= 0) return '0:00';
+        const m = Math.floor(n / 60);
+        const s = Math.floor(n % 60);
+        return `${m}:${String(s).padStart(2, '0')}`;
+    }
+
+    function openAuditionPicker(mod, categories) {
+        const app = getApp();
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay show';
+        overlay.style.zIndex = '10002';
+        let categoriesData = Array.isArray(categories) ? [...categories] : [];
+
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:980px;width:min(94vw,980px);padding:20px;max-height:86vh;display:flex;flex-direction:column;">
+                <h3 style="margin:0 0 12px 0;">选择试听分类</h3>
+                <div style="display:flex;gap:8px;margin-bottom:10px;">
+                    <input id="audition-search" type="text" placeholder="搜索分类名 / code" style="flex:1;padding:10px;border:1px solid var(--border-color);border-radius:10px;">
+                    <span id="audition-count" style="align-self:center;color:var(--text-secondary);font-size:13px;line-height:1;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;white-space:nowrap;">等待解析...</span>
+                </div>
+                <div style="margin-bottom:10px;">
+                    <div id="audition-progress-text" style="font-size:13px;color:var(--text-secondary);margin-bottom:6px;">准备中...</div>
+                    <div style="height:8px;background:var(--bg-card-soft, rgba(127,127,127,0.2));border-radius:999px;overflow:hidden;border:1px solid var(--border-color);">
+                        <div id="audition-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--primary),#ffb347);transition:width .2s ease;"></div>
+                    </div>
+                </div>
+                <select id="audition-select" size="22" style="width:100%;flex:1;min-height:320px;font-family:Consolas, monospace;padding:10px;border:1px solid var(--border-color);border-radius:10px;"></select>
+                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;">
+                    <button class="btn secondary" type="button" id="audition-pause-btn">暂停解析</button>
+                    <button class="btn secondary" type="button" id="audition-close-btn">关闭</button>
+                    <button class="btn primary" type="button" id="audition-play-btn"><i class="ri-play-circle-line"></i> 随机试听该分类</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const selectEl = overlay.querySelector('#audition-select');
+        const searchEl = overlay.querySelector('#audition-search');
+        const countEl = overlay.querySelector('#audition-count');
+        const progressTextEl = overlay.querySelector('#audition-progress-text');
+        const progressBarEl = overlay.querySelector('#audition-progress-bar');
+        const playBtn = overlay.querySelector('#audition-play-btn');
+        const closeBtn = overlay.querySelector('#audition-close-btn');
+        const pauseBtn = overlay.querySelector('#audition-pause-btn');
+        let snapshotStatusText = '准备中...';
+
+        const close = (switching = false) => {
+            if (window.__aimerAuditionAudio) {
+                try {
+                    window.__aimerAuditionAudio.pause();
+                    window.__aimerAuditionAudio.currentTime = 0;
+                    window.__aimerAuditionAudio.src = '';
+                } catch (e) {
+                }
+            }
+            if (window.pywebview?.api?.stop_mod_audition_scan) {
+                pywebview.api.stop_mod_audition_scan(mod.id).catch(() => {});
+            }
+            if (window.pywebview?.api?.clear_audition_cache) {
+                pywebview.api.clear_audition_cache(mod.id).catch(() => {});
+            }
+            if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            if (window.__auditionPickerState && window.__auditionPickerState.modId === String(mod.id || '')) {
+                window.__auditionPickerState = null;
+            }
+            if (!switching && app && typeof app.showInfoToast === 'function') {
+                app.showInfoToast('提示', '已关闭试听窗口');
+            }
+        };
+
+        const rebuildOptions = (keyword) => {
+            const q = String(keyword || '').trim().toLowerCase();
+            let visible = 0;
+            const html = categoriesData.map((it, idx) => {
+                const name = String(it.name || '');
+                const code = String(it.code || '');
+                const hit = !q || name.toLowerCase().includes(q) || code.toLowerCase().includes(q);
+                if (!hit) return '';
+                visible += 1;
+                const label = `${escapeHtml(name)} (${Number(it.count || 0)} 条) [${escapeHtml(code)}]`;
+                return `<option value="${idx}">${label}</option>`;
+            }).join('');
+            selectEl.innerHTML = html;
+            if (progressTextEl) {
+                const base = snapshotStatusText || '解析中...';
+                if (visible !== categoriesData.length) {
+                    progressTextEl.textContent = `${base} · 当前筛选 ${visible}/${categoriesData.length} 类`;
+                } else {
+                    progressTextEl.textContent = base;
+                }
+            }
+        };
+
+        const updateFromSnapshot = (snap) => {
+            if (!snap) return;
+            if (Array.isArray(snap.categories)) categoriesData = snap.categories;
+            if (countEl) {
+                const p = Number(snap.progress || 0);
+                const msg = String(snap.message || '');
+                countEl.textContent = `${categoriesData.length} 类 / ${Number(snap.count || 0)} 条`;
+                if (progressTextEl) {
+                    snapshotStatusText = `${msg || '解析中'} (${p}%)`;
+                    progressTextEl.textContent = snapshotStatusText;
+                }
+                if (progressBarEl) {
+                    progressBarEl.style.width = `${Math.max(0, Math.min(100, p))}%`;
+                }
+                if (snap.done) {
+                    if (snap.error) {
+                        snapshotStatusText = `解析结束：${snap.error}`;
+                        if (progressTextEl) progressTextEl.textContent = snapshotStatusText;
+                    } else {
+                        snapshotStatusText = `解析完成：${categoriesData.length} 类，${Number(snap.count || 0)} 条语音`;
+                        if (progressTextEl) progressTextEl.textContent = snapshotStatusText;
+                    }
+                }
+            }
+            rebuildOptions(searchEl ? searchEl.value : '');
+            if (pauseBtn) {
+                if (snap.done) {
+                    pauseBtn.disabled = true;
+                    pauseBtn.textContent = '解析已完成';
+                } else {
+                    pauseBtn.disabled = false;
+                    pauseBtn.textContent = snap.paused ? '继续解析' : '暂停解析';
+                }
+            }
+        };
+
+        if (searchEl) {
+            searchEl.addEventListener('input', (e) => {
+                rebuildOptions(e.target.value);
+            });
+        }
+
+        const playSelected = async () => {
+            try {
+                if (!selectEl || !selectEl.value) {
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('提示', '请先选择一个分类', 'warn');
+                    }
+                    return;
+                }
+                if (!window.pywebview?.api?.audition_mod_random_by_type) {
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('错误', '后端试听接口不可用', 'error');
+                    }
+                    return;
+                }
+
+                const selected = categoriesData[Number(selectEl.value)];
+                if (!selected) return;
+
+                const selectedCode = String(selected.code || '').toLowerCase();
+                if (selectedCode === 'preview') {
+                    if (!window.pywebview?.api?.list_mod_audition_items_by_type) {
+                        if (app && typeof app.showAlert === 'function') {
+                            app.showAlert('错误', '后端手动试听接口不可用', 'error');
+                        }
+                        return;
+                    }
+                    playBtn.disabled = true;
+                    const oldHtml = playBtn.innerHTML;
+                    playBtn.innerHTML = '<i class="ri-loader-2-line"></i> 加载试听条目...';
+                    const listRes = await pywebview.api.list_mod_audition_items_by_type(mod.id, selected.code);
+                    playBtn.disabled = false;
+                    playBtn.innerHTML = oldHtml;
+                    if (!listRes || !listRes.success || !Array.isArray(listRes.items) || listRes.items.length === 0) {
+                        const msg = (listRes && listRes.msg) ? listRes.msg : '未获取到可试听条目';
+                        if (app && typeof app.showAlert === 'function') {
+                            app.showAlert('错误', msg, 'error');
+                        }
+                        return;
+                    }
+                    openManualPreviewPicker(mod, selected, listRes.items);
+                    return;
+                }
+
+                playBtn.disabled = true;
+                const oldHtml = playBtn.innerHTML;
+                playBtn.innerHTML = '<i class="ri-loader-2-line"></i> 随机抽取中...';
+                const res = await pywebview.api.audition_mod_random_by_type(
+                    mod.id,
+                    selected.code,
+                    12
+                );
+                playBtn.disabled = false;
+                playBtn.innerHTML = oldHtml;
+
+                if (!res || !res.success || !res.audio_url) {
+                    const msg = (res && res.msg) ? res.msg : '试听失败';
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('错误', msg, 'error');
+                    }
+                    return;
+                }
+
+                if (!window.__aimerAuditionAudio) {
+                    window.__aimerAuditionAudio = new Audio();
+                }
+                const player = window.__aimerAuditionAudio;
+                player.pause();
+                player.currentTime = 0;
+                player.src = res.audio_url;
+                await player.play();
+                if (app && typeof app.showInfoToast === 'function') {
+                    const picked = String(res.picked_name || '随机语音');
+                    const typeName = String(res.voice_type_name || selected.name || selected.code);
+                    app.showInfoToast('试听中', `分类[${typeName}] 随机播放：${picked}`);
+                }
+            } catch (e) {
+                playBtn.disabled = false;
+                playBtn.innerHTML = '<i class="ri-play-circle-line"></i> 随机试听该分类';
+                if (app && typeof app.showAlert === 'function') {
+                    app.showAlert('错误', `试听失败: ${e.message || e}`, 'error');
+                }
+            }
+        };
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
+        if (closeBtn) closeBtn.addEventListener('click', close);
+        if (pauseBtn) {
+            pauseBtn.addEventListener('click', async () => {
+                try {
+                    if (!window.pywebview?.api?.set_mod_audition_scan_paused) {
+                        if (app && typeof app.showAlert === 'function') {
+                            app.showAlert('错误', '后端暂停接口不可用', 'error');
+                        }
+                        return;
+                    }
+                    const willPause = pauseBtn.textContent.includes('暂停');
+                    pauseBtn.disabled = true;
+                    const res = await pywebview.api.set_mod_audition_scan_paused(mod.id, willPause);
+                    if (!res || !res.success) {
+                        if (app && typeof app.showAlert === 'function') {
+                            app.showAlert('错误', (res && res.msg) ? res.msg : '操作失败', 'error');
+                        }
+                        pauseBtn.disabled = false;
+                        return;
+                    }
+                    pauseBtn.textContent = res.paused ? '继续解析' : '暂停解析';
+                    pauseBtn.disabled = false;
+                } catch (e) {
+                    pauseBtn.disabled = false;
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('错误', `操作失败: ${e.message || e}`, 'error');
+                    }
+                }
+            });
+        }
+        if (playBtn) playBtn.addEventListener('click', playSelected);
+        if (selectEl) {
+            selectEl.addEventListener('dblclick', playSelected);
+        }
+
+        window.__auditionPickerState = {
+            modId: String(mod.id || ''),
+            update: updateFromSnapshot,
+            close,
+        };
+        updateFromSnapshot({ categories: categoriesData, progress: 0, message: '等待解析', done: false, count: 0 });
+    }
+
+    function openManualPreviewPicker(mod, category, items) {
+        const app = getApp();
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay show';
+        overlay.style.zIndex = '10003';
+
+        const optionsHtml = items.map((it, idx) => {
+            const nm = escapeHtml(String(it.name || `stream_${it.stream_index}`));
+            const bk = escapeHtml(String(it.bank_file || 'unknown.bank'));
+            const d = formatDuration(it.duration_sec);
+            return `<option value="${idx}">#${idx + 1} ${nm} (${d}) [${bk}]</option>`;
+        }).join('');
+
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:980px;width:min(94vw,980px);padding:20px;max-height:86vh;display:flex;flex-direction:column;">
+                <h3 style="margin:0 0 12px 0;">手动选择试听语音 - ${escapeHtml(String(category?.name || '试听'))}</h3>
+                <div style="display:flex;gap:8px;margin-bottom:10px;">
+                    <input id="manual-preview-search" type="text" placeholder="搜索语音名 / bank 文件名" style="flex:1;padding:10px;border:1px solid var(--border-color);border-radius:10px;">
+                    <span id="manual-preview-count" style="align-self:center;color:var(--text-secondary);font-size:13px;line-height:1;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;white-space:nowrap;">共 ${items.length} 条</span>
+                </div>
+                <select id="manual-preview-select" size="22" style="width:100%;flex:1;min-height:320px;font-family:Consolas, monospace;padding:10px;border:1px solid var(--border-color);border-radius:10px;">${optionsHtml}</select>
+                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;">
+                    <button class="btn secondary" type="button" id="manual-preview-close-btn">关闭</button>
+                    <button class="btn primary" type="button" id="manual-preview-play-btn"><i class="ri-play-circle-line"></i> 播放选中语音</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const selectEl = overlay.querySelector('#manual-preview-select');
+        const searchEl = overlay.querySelector('#manual-preview-search');
+        const countEl = overlay.querySelector('#manual-preview-count');
+        const playBtn = overlay.querySelector('#manual-preview-play-btn');
+        const closeBtn = overlay.querySelector('#manual-preview-close-btn');
+        let viewItems = [...items];
+
+        const close = () => {
+            if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        };
+
+        const rebuild = (keyword) => {
+            const q = String(keyword || '').trim().toLowerCase();
+            const filtered = items.filter((it) => {
+                const n = String(it.name || '').toLowerCase();
+                const b = String(it.bank_file || '').toLowerCase();
+                return !q || n.includes(q) || b.includes(q);
+            });
+            viewItems = filtered;
+            selectEl.innerHTML = filtered.map((it, idx) => {
+                const nm = escapeHtml(String(it.name || `stream_${it.stream_index}`));
+                const bk = escapeHtml(String(it.bank_file || 'unknown.bank'));
+                const d = formatDuration(it.duration_sec);
+                return `<option value="${idx}">#${idx + 1} ${nm} (${d}) [${bk}]</option>`;
+            }).join('');
+            if (countEl) countEl.textContent = `显示 ${filtered.length} / ${items.length} 条`;
+        };
+
+        const playSelected = async () => {
+            try {
+                if (!selectEl || !selectEl.value) {
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('提示', '请先选择一条语音', 'warn');
+                    }
+                    return;
+                }
+                if (!window.pywebview?.api?.audition_mod_stream) {
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('错误', '后端播放接口不可用', 'error');
+                    }
+                    return;
+                }
+                const selected = viewItems[Number(selectEl.value)];
+                if (!selected) return;
+
+                playBtn.disabled = true;
+                const oldHtml = playBtn.innerHTML;
+                playBtn.innerHTML = '<i class="ri-loader-2-line"></i> 解析中...';
+                const res = await pywebview.api.audition_mod_stream(
+                    mod.id,
+                    selected.bank_rel,
+                    selected.chunk_index,
+                    selected.stream_index,
+                    12
+                );
+                playBtn.disabled = false;
+                playBtn.innerHTML = oldHtml;
+                if (!res || !res.success || !res.audio_url) {
+                    const msg = (res && res.msg) ? res.msg : '试听失败';
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('错误', msg, 'error');
+                    }
+                    return;
+                }
+                if (!window.__aimerAuditionAudio) {
+                    window.__aimerAuditionAudio = new Audio();
+                }
+                const player = window.__aimerAuditionAudio;
+                player.pause();
+                player.currentTime = 0;
+                player.src = res.audio_url;
+                await player.play();
+                if (app && typeof app.showInfoToast === 'function') {
+                    app.showInfoToast('试听中', `正在播放：${selected.name || ('#' + selected.stream_index)}`);
+                }
+            } catch (e) {
+                playBtn.disabled = false;
+                playBtn.innerHTML = '<i class="ri-play-circle-line"></i> 播放选中语音';
+                if (app && typeof app.showAlert === 'function') {
+                    app.showAlert('错误', `试听失败: ${e.message || e}`, 'error');
+                }
+            }
+        };
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
+        if (closeBtn) closeBtn.addEventListener('click', close);
+        if (playBtn) playBtn.addEventListener('click', playSelected);
+        if (selectEl) selectEl.addEventListener('dblclick', playSelected);
+        if (searchEl) searchEl.addEventListener('input', (e) => rebuild(e.target.value));
+    }
+
+    app.onAuditionScanUpdate = function (modId, payload) {
+        try {
+            const st = window.__auditionPickerState;
+            if (!st || !payload) return;
+            if (String(st.modId || '') !== String(modId || '')) return;
+            if (typeof st.update === 'function') st.update(payload);
+        } catch (e) {
+            console.error('onAuditionScanUpdate error:', e);
+        }
+    };
 
     function bindLinkActions(overlay, mod) {
         const getLink = (action) => {

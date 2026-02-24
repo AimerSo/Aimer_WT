@@ -92,6 +92,12 @@ def build_exe():
         "main.py"
     ]
 
+    # 可选打包 tools 目录（例如 vgmstream-cli 及其依赖）
+    if os.path.isdir("tools"):
+        cmd.extend(["--add-data", f"tools{sep}tools"])
+    else:
+        log.warning("未发现 tools 目录，跳过工具文件打包")
+
     # Add icon if exists and on Windows/Mac (Linux mostly ignores or handles differently)
     if os.name == 'nt':
         cmd.extend(["--icon", "web/assets/logo.ico"])

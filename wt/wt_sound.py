@@ -42,6 +42,7 @@ class Country(Enum):
 class VoiceType(Enum):
     # (code, chinese_name, tag)
     # tag: 前端显示的简化标签
+    PREVIEW = ("preview", "试听语音", "试听")
     MASTERBANK = ("masterbank", "主音库", "降噪包")
     DIALOGS_CHAT = ("dialogs_chat", "无线电对话", "无线电对话")
     EVENT = ("event", "事件", None)

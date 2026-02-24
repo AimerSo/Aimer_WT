@@ -22,6 +22,7 @@ except Exception as _e:
     _WEBVIEW_IMPORT_ERROR = _e
 
 from pathlib import Path
+from collections import defaultdict
 from services.config_manager import ConfigManager
 from services.core_logic import CoreService
 from services.library_manager import ArchivePasswordCanceled, LibraryManager
@@ -31,6 +32,7 @@ from services.skins_manager import SkinsManager
 from services.task_manager import TaskManager
 from services.model_manager import ModelManager
 from services.hangar_manager import HangarManager
+from services.bank_preview_service import BankPreviewService
 from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
 from services.telemetry_manager import init_telemetry, get_hwid
@@ -206,7 +208,10 @@ class AppApi:
         self._task_mgr = TaskManager()
         self._model_mgr = ModelManager()
         self._hangar_mgr = HangarManager()
+        self._bank_preview_mgr = BankPreviewService(BASE_DIR)
         self._logic = CoreService()
+        self._audition_items_cache = {}
+        self._audition_scan_lock = threading.Lock()
 
         # ========== 本地测试配置 ==========
         # 设置为 True 启用本地遥测测试（连接 localhost:8080）
@@ -820,6 +825,634 @@ class AppApi:
             dt_ms = (time.perf_counter() - t0) * 1000.0
             log.debug(f"[PERF] get_library_list {dt_ms:.1f}ms mods={len(result)}")
         return result
+
+    def audition_mod(self, mod_name, max_seconds=12):
+        """
+        生成语音包试听音频（data URL）。
+        """
+        try:
+            mod_id = str(mod_name or "").strip()
+            if not mod_id:
+                return {"success": False, "msg": "语音包名称为空"}
+
+            mod_dir = self._lib_mgr.library_dir / mod_id
+            if not mod_dir.exists() or not mod_dir.is_dir():
+                return {"success": False, "msg": "语音包不存在"}
+
+            details = self._lib_mgr.get_mod_details(mod_id)
+            groups = details.get("files") or []
+
+            candidates = []
+            for g in groups:
+                for rel in g.get("files", []):
+                    rp = str(rel).replace("\\", "/").strip()
+                    lp = rp.lower()
+                    if not lp.endswith(".bank"):
+                        continue
+                    if "/info/" in lp or lp.startswith("info/"):
+                        continue
+                    candidates.append(rp)
+
+            candidates.sort(key=lambda p: (0 if p.lower().endswith(".assets.bank") else 1, len(p)))
+            if not candidates:
+                return {"success": False, "msg": "未找到可试听的 bank 文件"}
+
+            bank_path = None
+            for rel in candidates:
+                p = (mod_dir / rel).resolve()
+                if p.exists() and p.is_file() and self._bank_preview_mgr.is_supported_bank(p):
+                    bank_path = p
+                    break
+
+            if bank_path is None:
+                return {"success": False, "msg": "不是支持的 FMOD bank"}
+
+            sec = int(max_seconds) if max_seconds else 12
+            sec = max(3, min(30, sec))
+            audio_url = self._bank_preview_mgr.create_preview_data_url(bank_path, max_seconds=sec)
+            return {
+                "success": True,
+                "audio_url": audio_url,
+                "bank_file": bank_path.name,
+                "seconds": sec,
+            }
+        except ValueError:
+            return {"success": False, "msg": "文件不正确"}
+        except RuntimeError as e:
+            msg = str(e).strip() or "试听失败"
+            return {"success": False, "msg": msg}
+        except Exception as e:
+            log.error(f"试听生成失败: {e}")
+            return {"success": False, "msg": "试听生成失败"}
+
+    def _get_mod_audition_items(self, mod_id: str, progress_cb=None):
+        mod_dir = self._lib_mgr.library_dir / mod_id
+        if not mod_dir.exists() or not mod_dir.is_dir():
+            return None, {"success": False, "msg": "语音包不存在"}
+
+        try:
+            mod_mtime = mod_dir.stat().st_mtime_ns
+        except Exception:
+            mod_mtime = 0
+
+        cached = self._audition_items_cache.get(mod_id)
+        if cached and cached.get("mtime") == mod_mtime:
+            return cached.get("items", []), None
+
+        details = self._lib_mgr.get_mod_details(mod_id)
+        groups = details.get("files") or []
+
+        rel_to_type = {}
+        for g in groups:
+            t_code = str(g.get("code") or "").strip().lower()
+            t_name = str(g.get("type") or "").strip() or t_code
+            t_cls = str(g.get("cls") or "").strip()
+            for rel in g.get("files", []):
+                rp = str(rel).replace("\\", "/").strip()
+                if rp:
+                    rel_to_type[rp] = {"code": t_code, "name": t_name, "cls": t_cls}
+
+        candidates = []
+        for rel, t in rel_to_type.items():
+            lp = rel.lower()
+            if not lp.endswith(".bank"):
+                continue
+            if "/info/" in lp or lp.startswith("info/"):
+                continue
+            if lp.endswith("masterbank.bank"):
+                continue
+            candidates.append((rel, t))
+
+        candidates = sorted(candidates, key=lambda x: (0 if x[0].lower().endswith(".assets.bank") else 1, x[0]))
+        if not candidates:
+            return None, {"success": False, "msg": "未找到可试听的 bank 文件"}
+
+        all_items = []
+        total_candidates = len(candidates)
+        for idx, (rel, type_info) in enumerate(candidates, start=1):
+            p = (mod_dir / rel).resolve()
+            if progress_cb:
+                progress = int(5 + (idx / max(1, total_candidates)) * 90)
+                progress_cb(progress, f"正在扫描 {p.name} ({idx}/{total_candidates})")
+            if not p.exists() or not p.is_file():
+                continue
+            if not self._bank_preview_mgr.is_supported_bank(p):
+                continue
+
+            try:
+                streams = self._bank_preview_mgr.list_streams(p)
+            except Exception:
+                continue
+
+            for s in streams:
+                all_items.append(
+                    {
+                        "bank_rel": rel,
+                        "bank_file": p.name,
+                        "chunk_index": s.get("chunk_index"),
+                        "stream_index": s.get("stream_index"),
+                        "name": s.get("name") or f"stream_{s.get('stream_index')}",
+                        "duration_sec": s.get("duration_sec") or 0.0,
+                        "voice_type_code": type_info.get("code") or "unknown",
+                        "voice_type_name": type_info.get("name") or "未分类",
+                        "voice_type_cls": type_info.get("cls") or "default",
+                    }
+                )
+
+        if not all_items:
+            return None, {"success": False, "msg": "未解析到可试听语音，文件不正确"}
+
+        self._audition_items_cache[mod_id] = {"mtime": mod_mtime, "items": all_items}
+        return all_items, None
+
+    @staticmethod
+    def _build_audition_categories(items):
+        grouped = defaultdict(lambda: {"code": "", "name": "", "cls": "default", "count": 0})
+        for it in items:
+            code = it.get("voice_type_code") or "unknown"
+            row = grouped[code]
+            row["code"] = code
+            row["name"] = it.get("voice_type_name") or code
+            row["cls"] = it.get("voice_type_cls") or "default"
+            row["count"] += 1
+        return sorted(grouped.values(), key=lambda x: x["name"])
+
+    def _emit_audition_scan_update(self, mod_id: str):
+        if not self._window:
+            return
+        try:
+            with self._audition_scan_lock:
+                state = dict(self._audition_items_cache.get(mod_id, {}))
+            items = list(state.get("items", []))
+            categories = self._build_audition_categories(items)
+            payload = {
+                "running": bool(state.get("running", False)),
+                "done": bool(state.get("complete", False)),
+                "paused": bool(state.get("paused", False)),
+                "progress": int(state.get("progress", 0)),
+                "message": str(state.get("message", "") or ""),
+                "count": len(items),
+                "category_count": len(categories),
+                "categories": categories,
+                "error": str(state.get("error", "") or ""),
+            }
+            mod_js = json.dumps(str(mod_id), ensure_ascii=False)
+            payload_js = json.dumps(payload, ensure_ascii=False)
+            self._window.evaluate_js(
+                f"if(window.app && app.onAuditionScanUpdate) app.onAuditionScanUpdate({mod_js}, {payload_js})"
+            )
+        except Exception:
+            pass
+
+    def start_mod_audition_scan(self, mod_name):
+        """
+        启动语音包试听分类的后台增量解析；解析过程中会实时推送前端更新。
+        """
+        mod_id = str(mod_name or "").strip()
+        if not mod_id:
+            return {"success": False, "msg": "语音包名称为空"}
+
+        mod_dir = self._lib_mgr.library_dir / mod_id
+        if not mod_dir.exists() or not mod_dir.is_dir():
+            return {"success": False, "msg": "语音包不存在"}
+
+        try:
+            mod_mtime = mod_dir.stat().st_mtime_ns
+        except Exception:
+            mod_mtime = 0
+
+        need_emit = False
+        with self._audition_scan_lock:
+            state = self._audition_items_cache.get(mod_id)
+            if state and state.get("mtime") == mod_mtime:
+                if state.get("running"):
+                    if state.get("paused"):
+                        state["paused"] = False
+                        state["message"] = "继续解析中..."
+                        self._audition_items_cache[mod_id] = state
+                        need_emit = True
+                    return {"success": True, "running": True}
+                if state.get("complete"):
+                    need_emit = True
+                    result = {"success": True, "running": False}
+                else:
+                    result = None
+            else:
+                result = None
+
+            if result is None:
+                self._audition_items_cache[mod_id] = {
+                    "mtime": mod_mtime,
+                    "items": [],
+                    "running": True,
+                    "complete": False,
+                    "paused": False,
+                    "progress": 1,
+                    "message": "正在准备解析...",
+                    "error": "",
+                }
+                need_emit = True
+                result = {"success": True, "running": True}
+
+        if need_emit:
+            self._emit_audition_scan_update(mod_id)
+        if result.get("running") is False:
+            return result
+
+        def _worker():
+            try:
+                details = self._lib_mgr.get_mod_details(mod_id)
+                groups = details.get("files") or []
+                rel_to_type = {}
+                for g in groups:
+                    t_code = str(g.get("code") or "").strip().lower()
+                    t_name = str(g.get("type") or "").strip() or t_code
+                    t_cls = str(g.get("cls") or "").strip()
+                    for rel in g.get("files", []):
+                        rp = str(rel).replace("\\", "/").strip()
+                        if rp:
+                            rel_to_type[rp] = {"code": t_code, "name": t_name, "cls": t_cls}
+
+                candidates = []
+                for rel, t in rel_to_type.items():
+                    lp = rel.lower()
+                    if not lp.endswith(".bank"):
+                        continue
+                    if "/info/" in lp or lp.startswith("info/"):
+                        continue
+                    if lp.endswith("masterbank.bank"):
+                        continue
+                    candidates.append((rel, t))
+                candidates = sorted(candidates, key=lambda x: (0 if x[0].lower().endswith(".assets.bank") else 1, x[0]))
+                total = len(candidates)
+                if total <= 0:
+                    with self._audition_scan_lock:
+                        st = self._audition_items_cache.get(mod_id, {})
+                        st.update({"running": False, "complete": True, "progress": 100, "message": "未找到可试听语音", "error": "未找到可试听的 bank 文件"})
+                        self._audition_items_cache[mod_id] = st
+                    self._emit_audition_scan_update(mod_id)
+                    return
+
+                parsed_items = []
+                for idx, (rel, type_info) in enumerate(candidates, start=1):
+                    # 支持用户在前端暂停解析
+                    while True:
+                        with self._audition_scan_lock:
+                            paused = bool(self._audition_items_cache.get(mod_id, {}).get("paused", False))
+                            running = bool(self._audition_items_cache.get(mod_id, {}).get("running", False))
+                        if not running:
+                            return
+                        if not paused:
+                            break
+                        with self._audition_scan_lock:
+                            st = self._audition_items_cache.get(mod_id, {})
+                            st.update({"message": "解析已暂停"})
+                            self._audition_items_cache[mod_id] = st
+                        self._emit_audition_scan_update(mod_id)
+                        time.sleep(0.2)
+
+                    p = (mod_dir / rel).resolve()
+                    progress = int(5 + (idx / max(1, total)) * 90)
+                    if not p.exists() or not p.is_file() or not self._bank_preview_mgr.is_supported_bank(p):
+                        with self._audition_scan_lock:
+                            st = self._audition_items_cache.get(mod_id, {})
+                            st.update({"items": parsed_items, "progress": progress, "message": f"跳过 {p.name} ({idx}/{total})"})
+                            self._audition_items_cache[mod_id] = st
+                        self._emit_audition_scan_update(mod_id)
+                        continue
+                    try:
+                        streams = self._bank_preview_mgr.list_streams(p)
+                    except Exception:
+                        streams = []
+
+                    for s in streams:
+                        parsed_items.append(
+                            {
+                                "bank_rel": rel,
+                                "bank_file": p.name,
+                                "chunk_index": s.get("chunk_index"),
+                                "stream_index": s.get("stream_index"),
+                                "name": s.get("name") or f"stream_{s.get('stream_index')}",
+                                "duration_sec": s.get("duration_sec") or 0.0,
+                                "voice_type_code": type_info.get("code") or "unknown",
+                                "voice_type_name": type_info.get("name") or "未分类",
+                                "voice_type_cls": type_info.get("cls") or "default",
+                            }
+                        )
+                    with self._audition_scan_lock:
+                        st = self._audition_items_cache.get(mod_id, {})
+                        st.update(
+                            {
+                                "items": parsed_items,
+                                "progress": progress,
+                                "message": f"已解析 {idx}/{total} 个 bank，累计 {len(parsed_items)} 条语音",
+                            }
+                        )
+                        self._audition_items_cache[mod_id] = st
+                    self._emit_audition_scan_update(mod_id)
+
+                with self._audition_scan_lock:
+                    st = self._audition_items_cache.get(mod_id, {})
+                    err = "" if parsed_items else "未解析到可试听语音，文件不正确"
+                    st.update(
+                        {
+                            "items": parsed_items,
+                            "running": False,
+                            "complete": True,
+                            "progress": 100,
+                            "message": f"解析完成，共 {len(parsed_items)} 条语音",
+                            "error": err,
+                        }
+                    )
+                    self._audition_items_cache[mod_id] = st
+                self._emit_audition_scan_update(mod_id)
+            except Exception as e:
+                with self._audition_scan_lock:
+                    st = self._audition_items_cache.get(mod_id, {})
+                    st.update({"running": False, "complete": True, "progress": 100, "message": "解析失败", "error": str(e)})
+                    self._audition_items_cache[mod_id] = st
+                self._emit_audition_scan_update(mod_id)
+                log.error(f"试听增量解析失败: {e}")
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        return {"success": True, "running": True}
+
+    def set_mod_audition_scan_paused(self, mod_name, paused):
+        """
+        暂停或继续指定语音包的试听解析任务。
+        """
+        mod_id = str(mod_name or "").strip()
+        if not mod_id:
+            return {"success": False, "msg": "语音包名称为空"}
+        want_pause = bool(paused)
+
+        with self._audition_scan_lock:
+            st = self._audition_items_cache.get(mod_id)
+            if not st:
+                return {"success": False, "msg": "当前没有解析任务"}
+            if st.get("complete"):
+                return {"success": False, "msg": "解析已完成"}
+            st["paused"] = want_pause
+            st["message"] = "解析已暂停" if want_pause else "继续解析中..."
+            self._audition_items_cache[mod_id] = st
+
+        self._emit_audition_scan_update(mod_id)
+        return {"success": True, "paused": want_pause}
+
+    def stop_mod_audition_scan(self, mod_name):
+        """
+        停止指定语音包的试听解析任务。
+        """
+        mod_id = str(mod_name or "").strip()
+        if not mod_id:
+            return {"success": False, "msg": "语音包名称为空"}
+
+        with self._audition_scan_lock:
+            st = self._audition_items_cache.get(mod_id)
+            if not st:
+                return {"success": True, "stopped": False}
+            st["running"] = False
+            st["paused"] = False
+            if not st.get("complete"):
+                st["complete"] = True
+                st["message"] = "已停止解析"
+            self._audition_items_cache[mod_id] = st
+
+        self._emit_audition_scan_update(mod_id)
+        return {"success": True, "stopped": True}
+
+    def get_mod_audition_categories_snapshot(self, mod_name):
+        """
+        获取当前已解析的试听分类快照（可用于实时刷新）。
+        """
+        mod_id = str(mod_name or "").strip()
+        if not mod_id:
+            return {"success": False, "msg": "语音包名称为空"}
+        with self._audition_scan_lock:
+            st = dict(self._audition_items_cache.get(mod_id, {}))
+        items = list(st.get("items", []))
+        categories = self._build_audition_categories(items)
+        return {
+            "success": True,
+            "running": bool(st.get("running", False)),
+            "done": bool(st.get("complete", False)),
+            "paused": bool(st.get("paused", False)),
+            "progress": int(st.get("progress", 0)),
+            "message": str(st.get("message", "") or ""),
+            "count": len(items),
+            "category_count": len(categories),
+            "categories": categories,
+            "error": str(st.get("error", "") or ""),
+        }
+
+    def list_mod_audition_items_by_type(self, mod_name, voice_type_code):
+        """
+        按指定 VoiceType 列出可手动选择的试听条目（用于作者专用试听类型）。
+        """
+        mod_id = str(mod_name or "").strip()
+        vt_code = str(voice_type_code or "").strip().lower()
+        if not mod_id or not vt_code:
+            return {"success": False, "msg": "参数不完整"}
+
+        with self._audition_scan_lock:
+            st = dict(self._audition_items_cache.get(mod_id, {}))
+        items = list(st.get("items", []))
+        if not items:
+            if st.get("running"):
+                return {"success": False, "msg": "该语音包仍在解析中，请稍后再试"}
+            return {"success": False, "msg": "暂无可试听语音，请先开始解析"}
+
+        pool = [it for it in items if str(it.get("voice_type_code") or "").lower() == vt_code]
+        if not pool:
+            return {"success": False, "msg": "该分类暂无可手动选择的语音"}
+
+        pool = sorted(
+            pool,
+            key=lambda x: (
+                str(x.get("name") or ""),
+                str(x.get("bank_file") or ""),
+                int(x.get("chunk_index") or 0),
+                int(x.get("stream_index") or 0),
+            ),
+        )
+
+        out_items = []
+        for i, it in enumerate(pool, start=1):
+            out_items.append(
+                {
+                    "id": f"{it.get('bank_rel')}|{it.get('chunk_index')}|{it.get('stream_index')}",
+                    "index": i,
+                    "name": it.get("name") or f"stream_{it.get('stream_index')}",
+                    "duration_sec": it.get("duration_sec") or 0.0,
+                    "bank_file": it.get("bank_file") or "",
+                    "bank_rel": it.get("bank_rel") or "",
+                    "chunk_index": int(it.get("chunk_index") or 0),
+                    "stream_index": int(it.get("stream_index") or 0),
+                }
+            )
+
+        return {"success": True, "count": len(out_items), "items": out_items}
+
+    def clear_audition_cache(self, mod_name=None):
+        """
+        清理试听音频缓存文件。
+        """
+        try:
+            removed = self._bank_preview_mgr.clear_cache()
+            return {"success": True, "removed": int(removed)}
+        except Exception as e:
+            log.error(f"清理试听缓存失败: {e}")
+            return {"success": False, "msg": "清理试听缓存失败"}
+
+    def list_mod_audition_categories(self, mod_name):
+        """
+        按 VoiceType 返回可试听分类（不暴露具体语音列表）。
+        """
+        try:
+            def _push_progress(pct: int, msg: str):
+                if not self._window:
+                    return
+                try:
+                    safe_pct = max(0, min(100, int(pct)))
+                    msg_js = json.dumps(str(msg or ""), ensure_ascii=False)
+                    self._window.evaluate_js(
+                        f"if(window.MinimalistLoading) MinimalistLoading.update({safe_pct}, {msg_js})"
+                    )
+                except Exception:
+                    pass
+
+            mod_id = str(mod_name or "").strip()
+            if not mod_id:
+                return {"success": False, "msg": "语音包名称为空"}
+
+            _push_progress(3, "正在解析语音包...")
+            all_items, err = self._get_mod_audition_items(mod_id, progress_cb=_push_progress)
+            if err:
+                return err
+
+            grouped = defaultdict(lambda: {"code": "", "name": "", "cls": "default", "count": 0})
+            for it in all_items:
+                code = it.get("voice_type_code") or "unknown"
+                row = grouped[code]
+                row["code"] = code
+                row["name"] = it.get("voice_type_name") or code
+                row["cls"] = it.get("voice_type_cls") or "default"
+                row["count"] += 1
+
+            categories = sorted(grouped.values(), key=lambda x: x["name"])
+            _push_progress(100, f"解析完成，共 {len(categories)} 个分类")
+            return {
+                "success": True,
+                "count": len(all_items),
+                "category_count": len(categories),
+                "categories": categories,
+            }
+        except Exception as e:
+            log.error(f"试听分类枚举失败: {e}")
+            return {"success": False, "msg": "试听分类枚举失败"}
+
+    def audition_mod_random_by_type(self, mod_name, voice_type_code, max_seconds=12):
+        """
+        在指定 VoiceType 分类内随机抽取一条语音试听。
+        """
+        try:
+            mod_id = str(mod_name or "").strip()
+            vt_code = str(voice_type_code or "").strip().lower()
+            if not mod_id or not vt_code:
+                return {"success": False, "msg": "参数不完整"}
+
+            with self._audition_scan_lock:
+                st = dict(self._audition_items_cache.get(mod_id, {}))
+            all_items = list(st.get("items", []))
+            if not all_items:
+                if st.get("running"):
+                    return {"success": False, "msg": "该语音包仍在解析中，请稍后再试"}
+                return {"success": False, "msg": "暂无可试听语音，请先开始解析"}
+
+            pool = [it for it in all_items if str(it.get("voice_type_code") or "").lower() == vt_code]
+            if not pool:
+                return {"success": False, "msg": "该分类暂无可试听语音"}
+
+            selected = random.choice(pool)
+            sec = int(max_seconds) if max_seconds else 12
+            sec = max(3, min(30, sec))
+
+            mod_dir = self._lib_mgr.library_dir / mod_id
+            rel = str(selected.get("bank_rel") or "").replace("\\", "/")
+            bank_path = (mod_dir / rel).resolve()
+            mod_dir_resolved = mod_dir.resolve()
+            if not str(bank_path).lower().startswith(str(mod_dir_resolved).lower()):
+                return {"success": False, "msg": "参数不正确"}
+            if not bank_path.exists() or not bank_path.is_file():
+                return {"success": False, "msg": "bank 文件不存在"}
+
+            ci = int(selected.get("chunk_index") or 0)
+            si = int(selected.get("stream_index") or 0)
+            audio_url = self._bank_preview_mgr.create_preview_data_url_for_stream(
+                bank_path, chunk_index=ci, stream_index=si, max_seconds=sec
+            )
+            return {
+                "success": True,
+                "audio_url": audio_url,
+                "voice_type_code": vt_code,
+                "voice_type_name": selected.get("voice_type_name") or vt_code,
+                "picked_name": selected.get("name") or f"stream_{si}",
+                "bank_file": selected.get("bank_file") or bank_path.name,
+                "seconds": sec,
+            }
+        except ValueError:
+            return {"success": False, "msg": "文件不正确"}
+        except RuntimeError as e:
+            return {"success": False, "msg": str(e).strip() or "试听失败"}
+        except Exception as e:
+            log.error(f"分类随机试听失败: {e}")
+            return {"success": False, "msg": "试听失败"}
+
+    def audition_mod_stream(self, mod_name, bank_rel, chunk_index, stream_index, max_seconds=12):
+        """
+        按指定 bank/chunk/subsong 生成试听音频（data URL）。
+        """
+        try:
+            mod_id = str(mod_name or "").strip()
+            rel = str(bank_rel or "").replace("\\", "/").strip()
+            if not mod_id or not rel:
+                return {"success": False, "msg": "参数不完整"}
+
+            mod_dir = self._lib_mgr.library_dir / mod_id
+            mod_dir_resolved = mod_dir.resolve()
+            bank_path = (mod_dir / rel).resolve()
+            if not str(bank_path).lower().startswith(str(mod_dir_resolved).lower()):
+                return {"success": False, "msg": "参数不正确"}
+            if not bank_path.exists() or not bank_path.is_file():
+                return {"success": False, "msg": "bank 文件不存在"}
+
+            try:
+                ci = int(chunk_index)
+                si = int(stream_index)
+            except Exception:
+                return {"success": False, "msg": "参数不正确"}
+
+            sec = int(max_seconds) if max_seconds else 12
+            sec = max(3, min(30, sec))
+            audio_url = self._bank_preview_mgr.create_preview_data_url_for_stream(
+                bank_path, chunk_index=ci, stream_index=si, max_seconds=sec
+            )
+            return {
+                "success": True,
+                "audio_url": audio_url,
+                "bank_file": bank_path.name,
+                "chunk_index": ci,
+                "stream_index": si,
+                "seconds": sec,
+            }
+        except ValueError:
+            return {"success": False, "msg": "文件不正确"}
+        except RuntimeError as e:
+            return {"success": False, "msg": str(e).strip() or "试听失败"}
+        except Exception as e:
+            log.error(f"指定语音试听失败: {e}")
+            return {"success": False, "msg": "试听失败"}
 
     def open_folder(self, folder_type):
         # 按类型打开资源相关目录（待解压区/语音包库/游戏目录/UserSkins）。
