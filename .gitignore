@@ -44,10 +44,11 @@ WT待解压区/*
 !WT待解压区/.gitkeep
 WT语音包库/*
 !WT语音包库/.gitkeep
+WT任务库
+WT机库
+WT模型库
 
 # Redundant / Test Files
-telemetry_manager.py
-wt_sound.py
 AimerWT v2 Beta作者端.html
 web/themes/test.json
 
@@ -55,3 +56,6 @@ web/themes/test.json
 web/themes/*.json
 !web/themes/default.json
 
+
+# Temp workdir
+_tmp/

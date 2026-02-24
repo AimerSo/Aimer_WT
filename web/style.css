@@ -4560,7 +4560,7 @@ i[class^="ri-"] {
     position: fixed;
     top: 20px;
     right: 20px;
-    z-index: 10001;
+    z-index: 40001;
     min-width: 320px;
     max-width: 480px;
     display: none;
@@ -4675,7 +4675,7 @@ i[class^="ri-"] {
     position: fixed;
     top: 20px;
     right: 20px;
-    z-index: 10001;
+    z-index: 40001;
     min-width: 320px;
     max-width: 480px;
     display: none;
@@ -4766,7 +4766,7 @@ i[class^="ri-"] {
     position: fixed;
     top: 20px;
     right: 20px;
-    z-index: 10001;
+    z-index: 40001;
     min-width: 320px;
     max-width: 480px;
     display: none;

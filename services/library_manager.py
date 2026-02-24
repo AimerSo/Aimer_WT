@@ -807,6 +807,13 @@ class LibraryManager:
         if base_name.startswith('_'):
             base_name = base_name[1:]
 
+        # 作者专用试听文件：允许通过 preview/audition_preview 前缀归类到试听类型
+        if base_name == "preview" or base_name.startswith("preview_") or base_name.startswith("audition_preview"):
+            try:
+                return VoiceType.PREVIEW, None, base_name
+            except Exception:
+                pass
+
         detected_country = None
         # 按照 code 长度倒序排列，优先识别长后缀
         sorted_countries = sorted(list(Country), key=lambda x: len(x.code), reverse=True)

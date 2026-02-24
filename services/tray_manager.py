@@ -201,7 +201,7 @@ class TrayManager:
                 self._icon = pystray.Icon(
                     "aimer_wt",
                     self.create_icon_image(),
-                    "AimerWT - 战争雷霆一键更换语音包",
+                    "AimerWT - 战雷工具箱",
                     self._create_menu()
                 )
                 

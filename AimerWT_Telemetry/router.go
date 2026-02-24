@@ -26,7 +26,7 @@ func initRouter(r *gin.Engine) {
 
 	r.Use(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		if path == "/health" {
+		if path == "/health" || path == "/ws" {
 			c.Next()
 			return
 		}
@@ -42,6 +42,11 @@ func initRouter(r *gin.Engine) {
 		}
 		c.Next()
 	})
+
+	// 静态文件服务
+	r.Static("/css", "./dashboard/css")
+	r.Static("/js", "./dashboard/js")
+	r.Static("/views", "./dashboard/views")
 
 	authorized := r.Group("/", authMiddleware)
 	{
@@ -279,6 +284,26 @@ func initRouter(r *gin.Engine) {
 					}
 				}
 
+				// WebSocket 实时推送
+				if wsHub != nil {
+					switch action {
+					case "maintenance":
+						BroadcastMaintenance(sysConfig.Maintenance, sysConfig.MaintenanceMsg)
+					case "alert":
+						if sysConfig.AlertActive {
+							BroadcastAlert(sysConfig.AlertTitle, sysConfig.AlertContent, sysConfig.AlertScope)
+						}
+					case "notice":
+						if sysConfig.NoticeActive {
+							BroadcastNotice(sysConfig.NoticeContent, sysConfig.NoticeScope)
+						}
+					case "update":
+						if sysConfig.UpdateActive {
+							BroadcastUpdate(sysConfig.UpdateContent, sysConfig.UpdateUrl, sysConfig.UpdateScope)
+						}
+					}
+				}
+
 				c.JSON(200, gin.H{"status": "success", "config": sysConfig})
 			})
 
@@ -390,4 +415,7 @@ func initRouter(r *gin.Engine) {
 			"user_command": pendingCmd,
 		})
 	})
+
+	// WebSocket 端点（不需要 Basic Auth，使用自定义认证）
+	r.GET("/ws", HandleWebSocket)
 }

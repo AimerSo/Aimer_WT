@@ -1,8 +1,8 @@
 package main
 
 import (
-	_ "embed"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -12,7 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:embed dashboard.html
 var dashboardHTML []byte
 
 var sysConfig SystemConfig
@@ -31,8 +30,25 @@ func initDB() {
 	db.AutoMigrate(&TelemetryRecord{})
 }
 
+func loadDashboard() {
+	var err error
+	dashboardHTML, err = ioutil.ReadFile("dashboard/index.html")
+	if err != nil {
+		log.Printf("警告: 无法加载 dashboard/index.html: %v", err)
+		dashboardHTML = []byte("<html><body><h1>Dashboard template not found</h1></body></html>")
+	} else {
+		log.Printf("成功加载 dashboard 模板，大小: %d 字节", len(dashboardHTML))
+	}
+}
+
 func main() {
 	initDB()
+	loadDashboard()
+
+	// 初始化 WebSocket Hub
+	wsHub = NewWebSocketHub()
+	go wsHub.Run()
+
 	r := gin.Default()
 
 	if adminUser == "" || adminPass == "" {
@@ -41,8 +57,14 @@ func main() {
 
 	initRouter(r)
 
-	log.Println("遥测后端已启动在 :8080")
-	r.Run(":8080")
+	// 从环境变量读取端口，默认 8080
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("遥测后端已启动在 :%s (WebSocket: /ws)\n", port)
+	r.Run(":" + port)
 }
 
 func buildWhereClause(c *gin.Context) string {
