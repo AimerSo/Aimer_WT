@@ -2961,15 +2961,16 @@ app.switchResourceView = function (target) {
     // 检查是否是新模块系统注册的页面
     const registeredPage = this.resourcePages[target];
     if (registeredPage) {
+        // 无论当前是否已有注册页，都先隐藏原生视图，避免与注册页叠层显示
+        document.querySelectorAll('.resource-view').forEach(view => {
+            view.classList.remove('active');
+        });
+
         // 隐藏当前页面
         if (this.currentResourcePage && this.currentResourcePage !== registeredPage) {
             if (this.currentResourcePage.hide) {
                 this.currentResourcePage.hide();
             }
-            // 隐藏所有原生视图
-            document.querySelectorAll('.resource-view').forEach(view => {
-                view.classList.remove('active');
-            });
         }
 
         // 初始化并显示新页面（如果未初始化）

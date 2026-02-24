@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 import argparse
 import base64
+import csv
 import itertools
 import json
 import os
 import random
+import re
 import sys
 import threading
 import time
@@ -36,6 +38,12 @@ from services.bank_preview_service import BankPreviewService
 from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
 from services.telemetry_manager import init_telemetry, get_hwid
+from utils.custom_text_processor import extract_prefix_group
+from wt.wt_text import (
+    load_csv_rows_with_fallback,
+    list_lang_csv_files,
+    sanitize_csv_file_name,
+)
 
 APP_VERSION = "2.1.0"
 AGREEMENT_VERSION = "2026-01-10"
@@ -1766,6 +1774,338 @@ class AppApi:
         t.daemon = True
         t.start()
         return True
+
+    # ===========================
+    # 自定义文本（lang/menu.csv）
+    # ===========================
+    def _normalize_lang_header(self, value: str) -> str:
+        if value is None:
+            return ""
+        return str(value).strip().strip('"').strip().strip("<>").strip()
+
+    def _find_header_index(self, header_row: list[str], target_name: str) -> int:
+        target = self._normalize_lang_header(target_name).lower()
+        for idx, name in enumerate(header_row):
+            if self._normalize_lang_header(name).lower() == target:
+                return idx
+        return -1
+
+    def _ensure_test_localization_enabled(self, config_path: Path):
+        if not config_path.exists():
+            return False, "未找到 config.blk，无法自动开启 testLocalization。"
+
+        try:
+            content = config_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception as e:
+            return False, f"读取 config.blk 失败: {e}"
+
+        if "testLocalization:b=yes" in content:
+            return True, "testLocalization 已开启。"
+
+        new_content = content
+        if "testLocalization:b=no" in new_content:
+            new_content = new_content.replace("testLocalization:b=no", "testLocalization:b=yes")
+        else:
+            debug_open_pat = re.compile(r"(debug\s*\{)", re.IGNORECASE)
+            if debug_open_pat.search(new_content):
+                new_content = debug_open_pat.sub(r"\1\n  testLocalization:b=yes", new_content, count=1)
+            else:
+                suffix = "\n" if not new_content.endswith("\n") else ""
+                new_content = f"{new_content}{suffix}\ndebug{{\n  testLocalization:b=yes\n}}\n"
+
+        try:
+            config_path.write_text(new_content, encoding="utf-8")
+            return True, "已在 config.blk 写入 testLocalization:b=yes。"
+        except Exception as e:
+            return False, f"写入 config.blk 失败: {e}"
+
+    def _ensure_custom_text_dir(self, lang_dir: Path) -> tuple[bool, str]:
+        aimer_dir = lang_dir / "aimerWT"
+        try:
+            aimer_dir.mkdir(parents=True, exist_ok=True)
+            return True, "已就绪"
+        except Exception as e:
+            return False, f"创建 lang/aimerWT 失败: {e}"
+
+    def _redirect_localization_for_files(self, lang_dir: Path, changed_files: list[str]) -> tuple[bool, str]:
+        if not changed_files:
+            return True, "无路径变更"
+
+        localization_blk = lang_dir / "localization.blk"
+        if not localization_blk.exists():
+            return False, "未找到 lang/localization.blk。"
+
+        try:
+            content = localization_blk.read_text(encoding="utf-8", errors="ignore")
+        except Exception as e:
+            return False, f"读取 localization.blk 失败: {e}"
+
+        changed_set = {str(x).strip().lower() for x in changed_files if str(x).strip()}
+        if not changed_set:
+            return True, "无路径变更"
+
+        changed_count = 0
+
+        def _redirect_lang_ref(match: re.Match):
+            nonlocal changed_count
+            name = match.group(1).strip()
+            if name.lower() in changed_set:
+                changed_count += 1
+                return f'%lang/aimerWT/{name}'
+            return match.group(0)
+
+        redirected = re.sub(
+            r'%lang/(?:aimerWT/)?([^"\r\n]+?\.csv)',
+            _redirect_lang_ref,
+            content,
+            flags=re.IGNORECASE
+        )
+
+        if redirected != content:
+            backup = lang_dir / "localization.blk.aimerWT.backup"
+            try:
+                if not backup.exists():
+                    backup.write_text(content, encoding="utf-8")
+            except Exception:
+                pass
+            try:
+                localization_blk.write_text(redirected, encoding="utf-8")
+            except Exception as e:
+                return False, f"写入 localization.blk 失败: {e}"
+
+        return True, f"已更新 localization.blk（命中 {changed_count} 处）。"
+
+    def get_custom_text_data(self, payload=None):
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = None
+        payload = payload if isinstance(payload, dict) else {}
+
+        game_path = self._cfg_mgr.get_game_path()
+        if not game_path:
+            return {"success": False, "msg": "请先在主页设置游戏路径。"}
+
+        valid, msg = self._logic.validate_game_path(game_path)
+        if not valid:
+            return {"success": False, "msg": msg or "游戏路径无效。"}
+
+        game_root = Path(game_path)
+        lang_dir = game_root / "lang"
+        if not lang_dir.exists() or not lang_dir.is_dir():
+            ok, info = self._ensure_test_localization_enabled(game_root / "config.blk")
+            return {
+                "success": False,
+                "need_restart": True,
+                "msg": "未检测到 lang 文件夹。已尝试开启 testLocalization，请启动一次游戏后再使用该功能。",
+                "detail": info,
+                "config_updated": bool(ok),
+            }
+
+        csv_files = list_lang_csv_files(lang_dir)
+        if not csv_files:
+            return {"success": False, "msg": "未找到 lang/*.csv。"}
+
+        requested_csv = sanitize_csv_file_name(payload.get("csv_file", ""))
+        selected_csv = requested_csv if requested_csv in csv_files else ("menu.csv" if "menu.csv" in csv_files else csv_files[0])
+        source_csv = lang_dir / selected_csv
+
+        # 使用功能时确保 lang/aimerWT 存在；读取优先副本，不强制改路径。
+        ok, info = self._ensure_custom_text_dir(lang_dir)
+        if not ok:
+            return {"success": False, "msg": info}
+
+        aimer_csv = lang_dir / "aimerWT" / selected_csv
+        read_csv = aimer_csv if aimer_csv.exists() else source_csv
+
+        try:
+            rows, used_encoding = load_csv_rows_with_fallback(read_csv)
+        except Exception as e:
+            return {"success": False, "msg": f"读取 {selected_csv} 失败: {e}"}
+
+        if not rows:
+            return {"success": False, "msg": f"{selected_csv} 内容为空。"}
+
+        header = rows[0]
+        id_idx = self._find_header_index(header, "ID|readonly|noverify")
+        if id_idx < 0:
+            id_idx = 0
+
+        language_keys = [
+            "English", "French", "Italian", "German", "Spanish", "Russian", "Polish",
+            "Czech", "Turkish", "Chinese", "Japanese", "Portuguese", "Ukrainian",
+            "Serbian", "Hungarian", "Korean", "Belarusian", "Romanian", "TChinese",
+            "HChinese", "Vietnamese"
+        ]
+        lang_indexes = {}
+        for lk in language_keys:
+            idx = self._find_header_index(header, lk)
+            if idx >= 0:
+                lang_indexes[lk] = idx
+
+        if "Chinese" not in lang_indexes:
+            # 非标准表头时，尽量给出可编辑列
+            if len(header) > 1:
+                fallback = self._normalize_lang_header(header[1]) or "Column2"
+                lang_indexes[fallback] = 1
+            else:
+                return {"success": False, "msg": f"{selected_csv} 缺少可编辑语言列。"}
+
+        default_language = "Chinese" if "Chinese" in lang_indexes else list(lang_indexes.keys())[0]
+        groups_map = defaultdict(list)
+        total = 0
+
+        for row in rows[1:]:
+            if not row:
+                continue
+            if id_idx >= len(row):
+                continue
+            text_id = str(row[id_idx]).strip()
+            if not text_id:
+                continue
+
+            group = extract_prefix_group(text_id)
+            lang_values = {}
+            for lk, idx in lang_indexes.items():
+                lang_values[lk] = str(row[idx]) if idx < len(row) else ""
+
+            groups_map[group].append({
+                "id": text_id,
+                "value": lang_values.get(default_language, ""),
+                "languages": lang_values
+            })
+            total += 1
+
+        groups = [{"group": k, "items": v} for k, v in sorted(groups_map.items(), key=lambda x: x[0].lower())]
+        return {
+            "success": True,
+            "menu_csv": str(read_csv),
+            "csv_file": selected_csv,
+            "csv_files": csv_files,
+            "encoding": used_encoding,
+            "language_keys": list(lang_indexes.keys()),
+            "default_language": default_language,
+            "groups": groups,
+            "total": total,
+            "workspace_info": info
+        }
+
+    def save_custom_text_data(self, payload):
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return {"success": False, "msg": "参数格式错误。"}
+
+        if not isinstance(payload, dict):
+            return {"success": False, "msg": "参数格式错误。"}
+
+        language = str(payload.get("language") or "Chinese")
+        csv_file = sanitize_csv_file_name(payload.get("csv_file", ""))
+        entries = payload.get("entries") or []
+        if not isinstance(entries, list) or not entries:
+            return {"success": False, "msg": "没有可保存的数据。"}
+
+        game_path = self._cfg_mgr.get_game_path()
+        if not game_path:
+            return {"success": False, "msg": "请先在主页设置游戏路径。"}
+
+        valid, msg = self._logic.validate_game_path(game_path)
+        if not valid:
+            return {"success": False, "msg": msg or "游戏路径无效。"}
+
+        lang_dir = Path(game_path) / "lang"
+        csv_files = list_lang_csv_files(lang_dir)
+        if not csv_files:
+            return {"success": False, "msg": "未在 lang 文件夹中找到 CSV 文件。"}
+
+        if not csv_file:
+            csv_file = "menu.csv" if "menu.csv" in csv_files else csv_files[0]
+        if csv_file not in csv_files:
+            return {"success": False, "msg": f"未找到 lang/{csv_file}。"}
+
+        source_csv = lang_dir / csv_file
+
+        ok, info = self._ensure_custom_text_dir(lang_dir)
+        if not ok:
+            return {"success": False, "msg": info}
+
+        target_csv = lang_dir / "aimerWT" / csv_file
+        source_menu_csv = target_csv if target_csv.exists() else source_csv
+
+        try:
+            rows, used_encoding = load_csv_rows_with_fallback(source_menu_csv)
+        except Exception as e:
+            return {"success": False, "msg": f"读取 {csv_file} 失败: {e}"}
+
+        if not rows:
+            return {"success": False, "msg": f"{csv_file} 内容为空。"}
+
+        header = rows[0]
+        id_idx = self._find_header_index(header, "ID|readonly|noverify")
+        if id_idx < 0:
+            id_idx = 0
+        lang_idx = self._find_header_index(header, language)
+        if lang_idx < 0:
+            return {"success": False, "msg": f"{csv_file} 缺少 {language} 列。"}
+
+        update_map = {}
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            text_id = str(item.get("id", "")).strip()
+            if not text_id:
+                continue
+            update_map[text_id] = str(item.get("text", ""))
+
+        if not update_map:
+            return {"success": False, "msg": "没有有效的文本条目。"}
+
+        changed = 0
+        for i in range(1, len(rows)):
+            row = rows[i]
+            if not row or id_idx >= len(row):
+                continue
+            text_id = str(row[id_idx]).strip()
+            if text_id not in update_map:
+                continue
+
+            if lang_idx >= len(row):
+                row.extend([""] * (lang_idx - len(row) + 1))
+            new_text = update_map[text_id]
+            if row[lang_idx] != new_text:
+                row[lang_idx] = new_text
+                changed += 1
+
+        if changed == 0:
+            return {"success": True, "msg": "没有检测到变更。", "changed": 0}
+
+        if not target_csv.exists():
+            try:
+                import shutil
+                shutil.copy2(source_csv, target_csv)
+            except Exception as e:
+                return {"success": False, "msg": f"创建 {csv_file} 副本失败: {e}"}
+
+        try:
+            with open(target_csv, "w", encoding=used_encoding, newline="") as f:
+                writer = csv.writer(f, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL, lineterminator="\n")
+                writer.writerows(rows)
+        except Exception as e:
+            return {"success": False, "msg": f"写入 {csv_file} 失败: {e}"}
+
+        loc_ok, loc_info = self._redirect_localization_for_files(lang_dir, [csv_file])
+        if not loc_ok:
+            return {"success": False, "msg": loc_info}
+
+        return {
+            "success": True,
+            "msg": f"已保存 {changed} 条文本到 lang/aimerWT/{csv_file}。",
+            "changed": changed,
+            "workspace_info": info,
+            "localization_info": loc_info
+        }
 
     def refresh_skins_async(self, opts=None):
         """

@@ -19,6 +19,7 @@
 - 增加对linux和macOS的支持（@kyokusaki #12， @TNT569 #1）
 - 增加遥测功能，以便开发者了解用户使用情况和优化程序（@Findoutsider #16, @AimerSo）
 - 新增语音包卡片详细信息界面（@AimerSo）
+- 新增语音包试听功能（@Findoutsider）
 
 ## 修复
 
