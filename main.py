@@ -731,6 +731,23 @@ class AppApi:
         """
         return self._logic.get_installed_mods()
 
+    def log_message(self, level, message):
+        """
+        前端日志输出到后端。
+
+        Args:
+            level: 日志级别 (info, warning, error, debug)
+            message: 日志消息
+        """
+        level_map = {
+            'info': log.info,
+            'warning': log.warning,
+            'error': log.error,
+            'debug': log.debug
+        }
+        log_func = level_map.get(level.lower(), log.info)
+        log_func(message)
+
     def start_auto_search(self):
         # 在后台线程执行游戏目录自动搜索，并将结果写入配置后通知前端更新显示。
         if self._search_running:
@@ -2377,10 +2394,10 @@ class AppApi:
             return []
 
     def delete_mod(self, mod_name):
-        # 从语音包库目录中删除指定语音包文件夹。
+        """从语音包库目录中删除指定语音包文件夹（不影响游戏目录中已安装的文件）。"""
         if self._is_busy:
             log.warning("另一个任务正在进行中，请稍候...")
-            return False
+            return {"success": False, "msg": "另一个任务正在进行中"}
 
         import shutil
 
@@ -2392,11 +2409,129 @@ class AppApi:
             ) or str(target) == str(library_dir):
                 raise Exception("非法路径")
             shutil.rmtree(target)
-            log.info(f"已删除语音包: {mod_name}")
-            return True
+            log.info(f"已从库中删除语音包: {mod_name}")
+            return {"success": True, "msg": f"已从库中删除: {mod_name}"}
         except Exception as e:
-            log.error(f"删除失败: {e}")
-            return False
+            log.error(f"删除库文件失败: {e}")
+            return {"success": False, "msg": f"删除失败: {e}"}
+
+    def uninstall_mod(self, mod_name):
+        """从游戏目录中卸载指定语音包的已安装文件（保留库文件）。"""
+        if self._is_busy:
+            log.warning("另一个任务正在进行中，请稍候...")
+            return {"success": False, "msg": "另一个任务正在进行中"}
+
+        try:
+            path = self._cfg_mgr.get_game_path()
+            valid, msg = self._logic.validate_game_path(path)
+            if not valid:
+                return {"success": False, "msg": msg or "未设置有效游戏路径"}
+
+            result = self._logic.uninstall_mod(mod_name)
+            return result
+        except Exception as e:
+            log.error(f"卸载失败: {e}")
+            return {"success": False, "msg": f"卸载失败: {e}"}
+
+    def uninstall_mod_modules(self, mod_name, modules):
+        """按模块卸载语音包的特定文件。
+
+        Args:
+            mod_name: 语音包名称
+            modules: 模块列表，如 ["ground", "radio", "tank"]
+        """
+        if self._is_busy:
+            log.warning("另一个任务正在进行中，请稍候...")
+            return {"success": False, "msg": "另一个任务正在进行中"}
+
+        try:
+            path = self._cfg_mgr.get_game_path()
+            valid, msg = self._logic.validate_game_path(path)
+            if not valid:
+                return {"success": False, "msg": msg or "未设置有效游戏路径"}
+
+            # 将模块名称转换为文件名模式
+            module_patterns = []
+            module_map = {
+                "ground": "_crew_dialogs_ground_",
+                "radio": "_crew_dialogs_common_",
+                "tank": "_tank_",
+                "aircraft": "_aircraft_",
+                "ships": "_ships_",
+                "infantry": "_infantry_"
+            }
+
+            for module in modules:
+                pattern = module_map.get(module.lower())
+                if pattern:
+                    module_patterns.append(pattern)
+                else:
+                    # 如果不在映射中，直接使用原始值
+                    module_patterns.append(module)
+
+            if not module_patterns:
+                return {"success": False, "msg": "未指定有效的模块"}
+
+            result = self._logic.uninstall_mod_modules(mod_name, module_patterns)
+            return result
+        except Exception as e:
+            log.error(f"模块卸载失败: {e}")
+            return {"success": False, "msg": f"模块卸载失败: {e}"}
+
+    def delete_mod_completely(self, mod_name):
+        """完全删除语音包：同时删除库文件和游戏目录中的已安装文件。"""
+        if self._is_busy:
+            log.warning("另一个任务正在进行中，请稍候...")
+            return {"success": False, "msg": "另一个任务正在进行中"}
+
+        import shutil
+
+        try:
+            # 先卸载游戏目录中的文件
+            path = self._cfg_mgr.get_game_path()
+            valid, msg = self._logic.validate_game_path(path)
+            if valid:
+                uninstall_result = self._logic.uninstall_mod(mod_name)
+                if uninstall_result.get("success"):
+                    log.info(f"已卸载游戏目录中的文件: {uninstall_result.get('removed', 0)} 个")
+            else:
+                log.warning(f"游戏路径无效，跳过卸载步骤: {msg}")
+
+            # 再删除库文件
+            library_dir = Path(self._lib_mgr.library_dir).resolve()
+            target = (library_dir / str(mod_name)).resolve()
+            if os.path.commonpath([str(target), str(library_dir)]) != str(
+                    library_dir
+            ) or str(target) == str(library_dir):
+                raise Exception("非法路径")
+
+            if target.exists():
+                shutil.rmtree(target)
+                log.info(f"已从库中删除语音包: {mod_name}")
+            else:
+                log.warning(f"库文件不存在: {mod_name}")
+
+            return {"success": True, "msg": f"已完全删除: {mod_name}"}
+        except Exception as e:
+            log.error(f"完全删除失败: {e}")
+            return {"success": False, "msg": f"删除失败: {e}"}
+
+    def get_installed_mods_info(self):
+        """获取所有已安装的语音包信息。"""
+        try:
+            path = self._cfg_mgr.get_game_path()
+            valid, msg = self._logic.validate_game_path(path)
+            if not valid:
+                return {"success": False, "msg": msg or "未设置有效游戏路径", "mods": {}}
+
+            if not self._logic.manifest_mgr:
+                return {"success": False, "msg": "清单管理器未初始化", "mods": {}}
+
+            installed_mods = self._logic.manifest_mgr.get_all_installed_mods()
+            return {"success": True, "mods": installed_mods}
+        except Exception as e:
+            log.error(f"获取已安装语音包信息失败: {e}")
+            return {"success": False, "msg": f"获取失败: {e}", "mods": {}}
 
     def copy_country_files(self, mod_name, country_code, include_ground=True, include_radio=True):
         # 触发“复制国籍文件”流程：从语音包库中查找匹配文件并复制到游戏 sound/mod。

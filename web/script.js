@@ -1907,10 +1907,16 @@ const app = {
     // --- 语音包库逻辑 ---
     async refreshLibrary(opts) {
         const listContainer = document.getElementById('lib-list');
-        if (!listContainer) return;
-        if (this._libraryRefreshing) return;
+        if (!listContainer) {
+            return;
+        }
+        if (this._libraryRefreshing) {
+            return;
+        }
         const isManual = !!(opts && opts.manual);
-        if (!isManual && this._libraryLoaded) return;
+        if (!isManual && this._libraryLoaded) {
+            return;
+        }
 
         // 检查 API 是否就绪
         if (!window.pywebview?.api?.get_library_list) {
@@ -2134,8 +2140,9 @@ const app = {
             </button>
 
             <div class="mod-actions-col">
-                <div class="action-icon action-btn-del" onclick="app.deleteMod('${mod.id}')" title="删除语音包">
+                <div class="action-icon action-btn-del-dropdown" onclick="app.showDeleteMenu(event, '${mod.id}')" title="删除选项">
                     <i class="ri-delete-bin-line"></i>
+                    <i class="ri-arrow-down-s-line" style="font-size: 12px; margin-left: -2px;"></i>
                 </div>
 
                 <div style="flex:1"></div>
@@ -2434,8 +2441,348 @@ const app = {
                 await new Promise(r => setTimeout(r, 300));
             }
 
-            const success = await pywebview.api.delete_mod(modId);
-            if (success) this.refreshLibrary();
+            const result = await pywebview.api.delete_mod(modId);
+            if (result && result.success) {
+                app.showToast(result.msg || '已从库中删除', 'success');
+
+                // 更新已安装列表
+                try {
+                    if (window.pywebview && pywebview.api && pywebview.api.get_installed_mods) {
+                        this.installedModIds = await pywebview.api.get_installed_mods() || [];
+                    }
+                } catch (e) {
+                    console.error("Failed to update installed mods:", e);
+                }
+
+                // 强制刷新库列表以更新卡片状态
+                this.refreshLibrary({ manual: true });
+            } else {
+                app.showToast(result?.msg || '删除失败', 'error');
+            }
+        }
+    },
+
+    showDeleteMenu(event, modId) {
+        event.stopPropagation();
+
+        // 检查是否已安装
+        pywebview.api.get_installed_mods_info().then(result => {
+            const isInstalled = result.success && result.mods && result.mods[modId];
+
+            const menuItems = [
+                {
+                    label: '只删除库文件',
+                    icon: 'ri-folder-reduce-line',
+                    description: '从语音包库中删除，保留游戏中已安装的文件',
+                    action: () => this.deleteModLibraryOnly(modId)
+                }
+            ];
+
+            if (isInstalled) {
+                menuItems.push({
+                    label: '只卸载游戏文件',
+                    icon: 'ri-uninstall-line',
+                    description: '从游戏目录中卸载，保留库文件',
+                    action: () => this.uninstallModFromGame(modId)
+                });
+                menuItems.push({
+                    label: '按模块卸载',
+                    icon: 'ri-list-check',
+                    description: '选择性卸载特定模块（陆战、空战等）',
+                    action: () => this.showUninstallModulesDialog(modId)
+                });
+            }
+
+            menuItems.push({
+                label: '完全删除',
+                icon: 'ri-delete-bin-line',
+                description: '同时删除库文件和游戏中已安装的文件',
+                action: () => this.deleteModCompletely(modId),
+                danger: true
+            });
+
+            app.showContextMenu(event, menuItems);
+        }).catch(err => {
+            console.error('获取安装信息失败:', err);
+            app.showToast('获取安装信息失败', 'error');
+        });
+    },
+
+    async deleteModLibraryOnly(modId) {
+        const yes = await app.confirm(
+            '删除库文件',
+            `确定要从语音包库中删除 <strong>[${modId}]</strong> 吗？<br>游戏中已安装的文件将保留。`,
+            true
+        );
+        if (yes) {
+            const card = document.querySelector(`.mod-card[data-id="${modId}"]`);
+            if (card) {
+                card.classList.add('leaving');
+                await new Promise(r => setTimeout(r, 300));
+            }
+
+            const result = await pywebview.api.delete_mod(modId);
+            if (result && result.success) {
+                app.showToast(result.msg || '已从库中删除', 'success');
+
+                // 更新已安装列表
+                try {
+                    if (window.pywebview && pywebview.api && pywebview.api.get_installed_mods) {
+                        this.installedModIds = await pywebview.api.get_installed_mods() || [];
+                    }
+                } catch (e) {
+                    console.error("Failed to update installed mods:", e);
+                }
+
+                // 强制刷新库列表以更新卡片状态
+                this.refreshLibrary({ manual: true });
+            } else {
+                app.showToast(result?.msg || '删除失败', 'error');
+            }
+        }
+    },
+
+    async uninstallModFromGame(modId) {
+        const yes = await app.confirm(
+            '卸载游戏文件',
+            `确定要从游戏目录中卸载 <strong>[${modId}]</strong> 吗？<br>语音包库文件将保留。`,
+            true
+        );
+        if (yes) {
+            const card = document.querySelector(`.mod-card[data-id="${modId}"]`);
+            if (card) {
+                card.style.transition = 'all 0.3s ease';
+                card.style.opacity = '0.5';
+                card.style.transform = 'scale(0.95)';
+            }
+
+            const result = await pywebview.api.uninstall_mod(modId);
+            if (result && result.success) {
+                app.showToast(`已卸载 ${result.removed || 0} 个文件`, 'success');
+                if (card) {
+                    card.style.opacity = '1';
+                    card.style.transform = 'scale(1)';
+                }
+
+                // 更新已安装列表
+                try {
+                    if (window.pywebview && pywebview.api && pywebview.api.get_installed_mods) {
+                        this.installedModIds = await pywebview.api.get_installed_mods() || [];
+                    }
+                } catch (e) {
+                    console.error("Failed to update installed mods:", e);
+                }
+
+                // 强制刷新库列表
+                this.refreshLibrary({ manual: true });
+            } else {
+                app.showToast(result?.msg || '卸载失败', 'error');
+                if (card) {
+                    card.style.opacity = '1';
+                    card.style.transform = 'scale(1)';
+                }
+            }
+        }
+    },
+
+    async deleteModCompletely(modId) {
+        const yes = await app.confirm(
+            '完全删除',
+            `确定要完全删除语音包 <strong>[${modId}]</strong> 吗？<br>将同时删除库文件和游戏中已安装的文件。<br><span style="color: var(--danger);">此操作不可撤销！</span>`,
+            true
+        );
+        if (yes) {
+            const card = document.querySelector(`.mod-card[data-id="${modId}"]`);
+            if (card) {
+                card.classList.add('leaving');
+                await new Promise(r => setTimeout(r, 300));
+            }
+
+            const result = await pywebview.api.delete_mod_completely(modId);
+            if (result && result.success) {
+                app.showToast(result.msg || '已完全删除', 'success');
+
+                // 更新已安装列表
+                try {
+                    if (window.pywebview && pywebview.api && pywebview.api.get_installed_mods) {
+                        this.installedModIds = await pywebview.api.get_installed_mods() || [];
+                    }
+                } catch (e) {
+                    console.error("Failed to update installed mods:", e);
+                }
+
+                // 强制刷新库列表
+                this.refreshLibrary({ manual: true });
+            } else {
+                app.showToast(result?.msg || '删除失败', 'error');
+            }
+        }
+    },
+
+    async showUninstallModulesDialog(modId) {
+        // 获取语音包详情和已安装信息
+        const [mods, installedInfo] = await Promise.all([
+            pywebview.api.get_library_list(),
+            pywebview.api.get_installed_mods_info()
+        ]);
+
+        const mod = mods.find(m => m.id === modId);
+        if (!mod || !mod.files || mod.files.length === 0) {
+            app.showToast('无法获取语音包模块信息', 'error');
+            return;
+        }
+
+        // 获取已安装的文件列表
+        const installedFiles = installedInfo.success && installedInfo.mods && installedInfo.mods[modId]
+            ? installedInfo.mods[modId].files || []
+            : [];
+
+        if (installedFiles.length === 0) {
+            app.showToast('该语音包未安装任何文件', 'warning');
+            return;
+        }
+
+        // 只显示已安装的模块
+        const moduleOptions = mod.files.filter(f => {
+            const moduleCode = f.code.toLowerCase();
+            return installedFiles.some(file => file.toLowerCase().includes(moduleCode));
+        }).map(f => ({
+            value: f.code,
+            label: f.type,
+            cls: f.cls || 'default'
+        }));
+
+        if (moduleOptions.length === 0) {
+            app.showToast('没有可卸载的模块', 'warning');
+            return;
+        }
+
+        // 创建模态框
+        const modalId = 'modal-uninstall-modules';
+        let existingModal = document.getElementById(modalId);
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        const modalHtml = `
+            <div id="${modalId}" class="modal-overlay">
+                <div class="modal-content" style="max-width: 480px; text-align: left;">
+                    <h2 style="margin: 0 0 8px 0; font-size: 22px; font-weight: 600; color: var(--text-main);">按模块卸载</h2>
+                    <p style="margin: 0 0 24px 0; color: var(--text-sec); font-size: 14px;">
+                        语音包: <strong style="color: var(--primary);">${mod.title || modId}</strong>
+                    </p>
+
+                    <div class="toggle-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 12px; margin-bottom: 30px;">
+                        ${moduleOptions.map(opt => `
+                            <div class="toggle-btn available module-toggle" data-module="${opt.value}" style="height: 90px; opacity: 1; pointer-events: all;">
+                                <span class="tag ${opt.cls}" style="font-size: 28px; margin-bottom: 8px;">${this.getModuleIcon(opt.cls)}</span>
+                                <span style="font-size: 13px; font-weight: 500; text-align: center; line-height: 1.3;">${opt.label}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div style="display: flex; gap: 12px; justify-content: flex-end; align-items: center;">
+                        <button class="btn secondary modal-cancel-btn" style="height: 40px; padding: 0 20px; display: flex; align-items: center; justify-content: center;">取消</button>
+                        <button class="btn primary modal-confirm-btn" style="height: 40px; padding: 0 20px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                            <i class="ri-uninstall-line"></i>
+                            <span>卸载选中</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = document.getElementById(modalId);
+
+        // 绑定事件
+        const cancelBtn = modal.querySelector('.modal-cancel-btn');
+        const confirmBtn = modal.querySelector('.modal-confirm-btn');
+        const toggleBtns = modal.querySelectorAll('.module-toggle');
+
+        const closeModal = () => {
+            modal.classList.add('hiding');
+            setTimeout(() => modal.remove(), 200);
+        };
+
+        cancelBtn.addEventListener('click', closeModal);
+
+        // 切换选中状态
+        toggleBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                btn.classList.toggle('selected');
+            });
+        });
+
+        confirmBtn.addEventListener('click', () => {
+            const selectedModules = Array.from(modal.querySelectorAll('.module-toggle.selected'))
+                .map(btn => btn.dataset.module);
+
+            if (selectedModules.length === 0) {
+                app.showToast('请至少选择一个模块', 'warning');
+                return;
+            }
+
+            closeModal();
+            app.confirmUninstallModules(modId, selectedModules);
+        });
+
+        // 显示动画
+        modal.classList.add('show');
+    },
+
+    getModuleIcon(cls) {
+        const icons = {
+            '陆战语音': '🎖️',
+            '无线电': '📻',
+            '陆战音效': '💥',
+            '空战音效': '✈️',
+            '海战音效': '⚓',
+            '降噪包': '🔇',
+            '步兵': '🪖',
+            'default': '📦'
+        };
+        return icons[cls] || icons['default'];
+    },
+
+    async confirmUninstallModules(modId, selectedModules) {
+        try {
+            const result = await pywebview.api.uninstall_mod_modules(modId, selectedModules || []);
+
+            if (result && result.success) {
+                const msg = `已卸载 ${result.removed || 0} 个文件${result.remaining ? `，剩余 ${result.remaining} 个文件` : ''}`;
+
+                // 使用 app 引用而不是 this
+                const appRef = window.app || this;
+                if (appRef.showToast) {
+                    appRef.showToast(msg, 'success');
+                }
+
+                // 更新已安装列表
+                try {
+                    if (window.pywebview && pywebview.api && pywebview.api.get_installed_mods) {
+                        appRef.installedModIds = await pywebview.api.get_installed_mods() || [];
+                    }
+                } catch (e) {
+                    console.error("Failed to update installed mods:", e);
+                }
+
+                // 强制刷新库列表
+                if (appRef.refreshLibrary) {
+                    appRef.refreshLibrary({ manual: true });
+                }
+            } else {
+                const appRef = window.app || this;
+                if (appRef.showToast) {
+                    appRef.showToast(result?.msg || '模块卸载失败', 'error');
+                }
+            }
+        } catch (error) {
+            console.error("confirmUninstallModules error:", error);
+            const appRef = window.app || this;
+            if (appRef.showToast) {
+                appRef.showToast('卸载过程发生错误', 'error');
+            }
         }
     },
 
@@ -2486,8 +2833,21 @@ app.openInstallModal = async function (modId) {
     } else {
         fileGroups.forEach(group => {
             const div = document.createElement('div');
-            // 默认全选
-            div.className = 'toggle-btn available selected';
+
+            // 检查是否为试听语音包
+            const isPreview = group.code.includes('preview') || group.type.includes('试听');
+
+            if (isPreview) {
+                // 试听语音包：禁用状态
+                div.className = 'toggle-btn';
+                div.style.opacity = '0.4';
+                div.style.cursor = 'not-allowed';
+                div.style.pointerEvents = 'none';
+            } else {
+                // 普通模块：默认不选中，可用
+                div.className = 'toggle-btn available';
+            }
+
             div.dataset.key = group.code; // 使用 code 作为标识
             div.dataset.files = JSON.stringify(group.files); // 存储文件列表
 
@@ -2521,17 +2881,28 @@ app.openInstallModal = async function (modId) {
             else if (group.code.includes('masterbank')) {
                 iconClass = "ri-volume-mute-line";
             }
-            div.innerHTML = `<i class="${iconClass}"></i><div class="label">${displayName} <span style="opacity:0.6;font-size:11px;">(${fileCount})</span></div>`;
+            // 试听语音
+            else if (isPreview) {
+                iconClass = "ri-headphone-line";
+            }
 
+            div.innerHTML = `<i class="${iconClass}"></i><div class="label">${displayName}${isPreview ? ' <span style="color:var(--text-sec);font-size:10px;">(禁用)</span>' : ''} <span style="opacity:0.6;font-size:11px;">(${fileCount})</span></div>`;
 
-            div.onclick = () => {
-                div.classList.toggle('selected');
-            };
+            if (!isPreview) {
+                div.onclick = () => {
+                    div.classList.toggle('selected');
+                };
 
-            // Tooltip 交互
-            const tooltipText = `${displayName}\n包含 ${fileCount} 个文件`;
-            div.onmouseenter = (e) => app.showTooltip(div, tooltipText);
-            div.onmouseleave = () => app.hideTooltip();
+                // Tooltip 交互
+                const tooltipText = `${displayName}\n包含 ${fileCount} 个文件`;
+                div.onmouseenter = (e) => app.showTooltip(div, tooltipText);
+                div.onmouseleave = () => app.hideTooltip();
+            } else {
+                // 试听语音包的提示
+                const tooltipText = `试听语音包不可安装\n仅用于预览效果`;
+                div.onmouseenter = (e) => app.showTooltip(div, tooltipText);
+                div.onmouseleave = () => app.hideTooltip();
+            }
 
             container.appendChild(div);
         });
@@ -2612,7 +2983,6 @@ document.getElementById('btn-confirm-install').onclick = async function () {
     // 将文件列表序列化为 JSON 字符串传递给后端
     pywebview.api.install_mod(app.currentModId, JSON.stringify(allFiles));
     app.closeModal('modal-install');
-    app.switchTab('home'); // 跳转回主页看日志
 };
 
 app.restoreGame = async function () {
@@ -2926,6 +3296,109 @@ app.init = async function () {
             console.warn("PyWebview API still not available after timeout, UI may not be fully functional.");
         }
     }, 2000);
+};
+
+// 添加上下文菜单功能
+app.showContextMenu = function(event, menuItems) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // 移除已存在的菜单
+    const existingMenu = document.querySelector('.context-menu');
+    if (existingMenu) {
+        existingMenu.remove();
+    }
+
+    // 创建菜单容器
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.style.cssText = `
+        position: fixed;
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 10000;
+        min-width: 220px;
+        padding: 8px 0;
+    `;
+
+    // 添加菜单项
+    menuItems.forEach(item => {
+        const menuItem = document.createElement('div');
+        menuItem.className = 'context-menu-item' + (item.danger ? ' danger' : '');
+        menuItem.style.cssText = `
+            padding: 10px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: background 0.2s;
+        `;
+
+        menuItem.innerHTML = `
+            <i class="${item.icon}" style="font-size: 18px; ${item.danger ? 'color: var(--danger);' : ''}"></i>
+            <div style="flex: 1;">
+                <div style="font-weight: 500; ${item.danger ? 'color: var(--danger);' : ''}">${item.label}</div>
+                ${item.description ? `<div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">${item.description}</div>` : ''}
+            </div>
+        `;
+
+        menuItem.addEventListener('mouseenter', () => {
+            if (item.danger) {
+                menuItem.style.background = 'rgba(239, 68, 68, 0.1)';
+            } else {
+                menuItem.style.background = 'rgba(100, 100, 100, 0.15)';
+            }
+        });
+        menuItem.addEventListener('mouseleave', () => {
+            menuItem.style.background = 'transparent';
+        });
+
+        menuItem.addEventListener('click', () => {
+            menu.remove();
+            if (item.action) {
+                item.action();
+            }
+        });
+
+        menu.appendChild(menuItem);
+    });
+
+    // 添加到页面
+    document.body.appendChild(menu);
+
+    // 定位菜单
+    const x = event.clientX;
+    const y = event.clientY;
+    const menuRect = menu.getBoundingClientRect();
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    // 调整位置避免超出屏幕
+    let left = x;
+    let top = y;
+
+    if (x + menuRect.width > windowWidth) {
+        left = windowWidth - menuRect.width - 10;
+    }
+    if (y + menuRect.height > windowHeight) {
+        top = windowHeight - menuRect.height - 10;
+    }
+
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+
+    // 点击其他地方关闭菜单
+    const closeMenu = (e) => {
+        if (!menu.contains(e.target)) {
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+        }
+    };
+    setTimeout(() => {
+        document.addEventListener('click', closeMenu);
+    }, 0);
 };
 
 app.init();
