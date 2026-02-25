@@ -72,7 +72,7 @@ class ConfigManager:
         """初始化配置管理器，加载或创建配置文件。"""
         self.config_dir = DOCS_DIR
         self.config_file = CONFIG_FILE
-        # 初始化默认配置并尝试从 settings.json 加载复盖
+        # 初始化默认配置并尝试从 settings.json 加载覆盖
         self.config = self.DEFAULT_CONFIG.copy()
         self.load_config()
 
