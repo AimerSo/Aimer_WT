@@ -1922,7 +1922,7 @@ class AppApi:
 
         csv_files = list_lang_csv_files(lang_dir)
         if not csv_files:
-            return {"success": False, "msg": "未找到 lang/*.csv。"}
+            return {"success": False, "msg": "未找到 lang/*.csv，请先启动一次游戏。若您在启动游戏后看见此弹窗，请将lang文件夹清空，然后重启游戏"}
 
         requested_csv = sanitize_csv_file_name(payload.get("csv_file", ""))
         selected_csv = requested_csv if requested_csv in csv_files else ("menu.csv" if "menu.csv" in csv_files else csv_files[0])
