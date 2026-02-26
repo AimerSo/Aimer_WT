@@ -4,7 +4,7 @@
 
 功能定位:
 - 管理用户指定的 UserSights 目录，并扫描其中的炮镜文件夹以生成前端展示数据。
-- 将用户提供的炮镜 ZIP 解压导入到 UserSights，支援复盖导入与进度回调。
+- 将用户提供的炮镜 ZIP 解压导入到 UserSights，支援覆盖导入与进度回调。
 - 提供炮镜文件夹重命名与封面（preview.png）更新能力。
 - 自动搜索 War Thunder 的 UserSights 路径，支援多 UID 选择。
 

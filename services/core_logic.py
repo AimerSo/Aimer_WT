@@ -103,8 +103,17 @@ class CoreService:
         
         self.game_root = path
         # 初始化安装清单管理器（用于记录本次安装文件与冲突检测）
+        # 只在第一次或游戏路径改变时重新初始化
         try:
-            self.manifest_mgr = ManifestManager(self.game_root)
+            if self.manifest_mgr is None or self.manifest_mgr.game_root != self.game_root:
+                log.info(f"[MANIFEST] 创建新的 ManifestManager 实例")
+                self.manifest_mgr = ManifestManager(self.game_root)
+                log.info("已初始化清单管理器")
+            else:
+                log.info(f"[MANIFEST] 重新加载清单数据（游戏路径未变）")
+                # 重新加载清单以获取最新数据
+                self.manifest_mgr.manifest = self.manifest_mgr._load_manifest()
+                log.info("已重新加载清单数据")
             log.info(f"游戏路径校验成功: {path}")
         except Exception as e:
             log.error(f"初始化清单管理器失败: {e}")
@@ -390,31 +399,37 @@ class CoreService:
 
     def get_installed_mods(self) -> List[str]:
         """
-        获取已安装的 mod 列表。
-        
+        获取已安装的 mod 列表（只返回有实际文件的语音包）。
+
         Returns:
             已安装的 mod ID 列表
         """
         if not self.manifest_mgr:
             log.debug("清单管理器未初始化，返回空列表")
             return []
-        
+
         try:
             manifest_file = self.manifest_mgr.manifest_file
             if not manifest_file.exists():
+                log.debug("[GET_INSTALLED] 清单文件不存在")
                 return []
-            
+
             with open(manifest_file, "r", encoding="utf-8") as f:
                 _mods = json.load(f)
-            
+
             _installed_mods = _mods.get("installed_mods", {})
             if not _installed_mods:
+                log.debug("[GET_INSTALLED] 清单中没有已安装的 mods")
                 return []
-            
-            mod_list = list(_installed_mods.keys())
-            log.info(f"已读取 {len(mod_list)} 个 mods")
+
+            # 只返回有实际文件的语音包
+            mod_list = [
+                mod_name for mod_name, mod_info in _installed_mods.items()
+                if mod_info.get("files") and len(mod_info.get("files", [])) > 0
+            ]
+
             return mod_list
-            
+
         except FileNotFoundError:
             log.debug(f"清单文件不存在: {self.manifest_mgr.manifest_file}")
             return []
@@ -461,7 +476,7 @@ class CoreService:
                     game_mod_dir.mkdir(parents=True, exist_ok=True)
                     log.info("[INIT] 创建 mod 文件夹...")
                 else:
-                    log.info("[MERGE] 检测到 mod 文件夹，准备复盖安装...")
+                    log.info("[MERGE] 检测到 mod 文件夹，准备覆盖安装...")
             except PermissionError as e:
                 raise InstallError(f"无法创建 mod 目录（权限不足）: {e}")
             except OSError as e:
@@ -553,7 +568,7 @@ class CoreService:
             if progress_callback:
                 progress_callback(100, "安装完成")
 
-            log.info(f"[SUCCESS] [DONE] 安装完成！本次复盖/新增 {total_files} 个文件。")
+            log.info(f"[SUCCESS] [DONE] 安装完成！本次覆盖/新增 {total_files} 个文件。")
             return True
 
         except (GamePathError, InstallError) as e:
@@ -568,15 +583,170 @@ class CoreService:
                 progress_callback(100, "安装失败")
             return False
 
+    def uninstall_mod(self, mod_name: str) -> dict:
+        """
+        卸载指定语音包的已安装文件（从游戏目录删除，但保留库文件）。
+
+        Args:
+            mod_name: 语音包名称
+
+        Returns:
+            包含操作结果的字典
+        """
+        try:
+            if not self.game_root:
+                raise GamePathError("未设置游戏路径")
+
+            if not self.manifest_mgr:
+                raise InstallError("清单管理器未初始化")
+
+            # 获取已安装的文件列表
+            installed_files = self.manifest_mgr.get_installed_files(mod_name)
+            if not installed_files:
+                log.warning(f"语音包 {mod_name} 未安装或无安装记录")
+                return {"success": False, "msg": "该语音包未安装", "removed": 0}
+
+            mod_dir = self.game_root / "sound" / "mod"
+            removed_count = 0
+            failed_files = []
+
+            log.info(f"[UNINSTALL] 开始卸载语音包: {mod_name}")
+
+            # 删除已安装的文件
+            for file_name in installed_files:
+                file_path = mod_dir / file_name
+                if file_path.exists():
+                    try:
+                        if not self._is_safe_deletion_path(file_path):
+                            log.warning(f"🚫 [安全拦截] 拒绝删除保护文件: {file_path}")
+                            failed_files.append(file_name)
+                            continue
+
+                        file_path.unlink()
+                        removed_count += 1
+                        log.debug(f"已删除: {file_name}")
+                    except Exception as e:
+                        log.warning(f"删除文件失败 {file_name}: {e}")
+                        failed_files.append(file_name)
+
+            # 清理安装记录
+            self.manifest_mgr.remove_mod_record(mod_name)
+
+            log.info(f"[SUCCESS] 卸载完成: {mod_name}，已删除 {removed_count} 个文件")
+
+            return {
+                "success": True,
+                "msg": f"已卸载 {removed_count} 个文件",
+                "removed": removed_count,
+                "failed": failed_files
+            }
+
+        except (GamePathError, InstallError) as e:
+            log.error(f"卸载失败: {e}")
+            return {"success": False, "msg": str(e), "removed": 0}
+        except Exception as e:
+            log.error(f"卸载失败: {type(e).__name__}: {e}")
+            log.exception("卸载异常详情")
+            return {"success": False, "msg": f"卸载失败: {e}", "removed": 0}
+
+    def uninstall_mod_modules(self, mod_name: str, module_patterns: list[str]) -> dict:
+        """
+        按模块卸载语音包的特定文件。
+
+        Args:
+            mod_name: 语音包名称
+            module_patterns: 模块文件名模式列表，如 ["_crew_dialogs_ground_", "_tank_"]
+
+        Returns:
+            包含操作结果的字典
+        """
+        try:
+            if not self.game_root:
+                raise GamePathError("未设置游戏路径")
+
+            if not self.manifest_mgr:
+                raise InstallError("清单管理器未初始化")
+
+            # 获取已安装的文件列表
+            installed_files = self.manifest_mgr.get_installed_files(mod_name)
+            if not installed_files:
+                log.warning(f"语音包 {mod_name} 未安装或无安装记录")
+                return {"success": False, "msg": "该语音包未安装", "removed": 0}
+
+            mod_dir = self.game_root / "sound" / "mod"
+            removed_count = 0
+            failed_files = []
+            remaining_files = []
+
+            log.info(f"开始按模块卸载: {mod_name}, 模块: {module_patterns}")
+
+            # 筛选需要删除的文件
+            for file_name in installed_files:
+                should_remove = False
+                for pattern in module_patterns:
+                    if pattern.lower() in file_name.lower():
+                        should_remove = True
+                        break
+
+                if should_remove:
+                    file_path = mod_dir / file_name
+                    if file_path.exists():
+                        try:
+                            if not self._is_safe_deletion_path(file_path):
+                                log.warning(f"🚫 [安全拦截] 拒绝删除保护文件: {file_path}")
+                                failed_files.append(file_name)
+                                remaining_files.append(file_name)
+                                continue
+
+                            file_path.unlink()
+                            removed_count += 1
+                            log.debug(f"已删除: {file_name}")
+                        except Exception as e:
+                            log.warning(f"删除文件失败 {file_name}: {e}")
+                            failed_files.append(file_name)
+                            remaining_files.append(file_name)
+                    else:
+                        log.debug(f"文件不存在，跳过: {file_name}")
+                else:
+                    remaining_files.append(file_name)
+
+            # 更新安装记录
+            if remaining_files:
+                # 还有剩余文件，使用 update_mod_files 替换文件列表（不是合并）
+                self.manifest_mgr.update_mod_files(mod_name, remaining_files)
+                log.info(f"已更新安装记录，剩余 {len(remaining_files)} 个文件")
+            else:
+                # 所有文件都被删除，移除记录
+                self.manifest_mgr.remove_mod_record(mod_name)
+                log.info(f"所有文件已删除，已移除安装记录")
+
+            log.info(f"[SUCCESS] 模块卸载完成: {mod_name}，已删除 {removed_count} 个文件")
+
+            return {
+                "success": True,
+                "msg": f"已卸载 {removed_count} 个模块文件",
+                "removed": removed_count,
+                "remaining": len(remaining_files),
+                "failed": failed_files
+            }
+
+        except (GamePathError, InstallError) as e:
+            log.error(f"模块卸载失败: {e}")
+            return {"success": False, "msg": str(e), "removed": 0}
+        except Exception as e:
+            log.error(f"模块卸载失败: {type(e).__name__}: {e}")
+            log.exception("模块卸载异常详情")
+            return {"success": False, "msg": f"模块卸载失败: {e}", "removed": 0}
+
     def restore_game(self) -> bool:
         """
         将游戏目录恢復为未加载语音包的状态。
-        
+
         操作包括：
         - 清空 sound/mod 下的子项
         - 关闭 config.blk 的 enable_mod
         - 清空安装清单
-        
+
         Returns:
             是否还原成功
         """
