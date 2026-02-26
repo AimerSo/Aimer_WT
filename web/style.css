@@ -1501,7 +1501,7 @@ i[class^="ri-"] {
 
 .btn-v2:hover {
     background: var(--primary);
-    color: #fff;
+    color: rgba(0, 0, 0, 0.85);
     border-color: var(--primary);
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(255, 153, 0, 0.25);
@@ -1536,6 +1536,7 @@ i[class^="ri-"] {
 
 .btn-v2.primary:hover {
     background: linear-gradient(135deg, var(--primary-hover) 0%, #ffa726 100%);
+    color: rgba(0, 0, 0, 0.85);
     border-color: var(--primary-hover);
     box-shadow: 0 6px 16px rgba(255, 153, 0, 0.35);
     transform: translateY(-2px);
@@ -1559,7 +1560,7 @@ i[class^="ri-"] {
 
 .btn-v2.icon-only:hover {
     background: var(--primary);
-    color: #fff;
+    color: rgba(0, 0, 0, 0.85);
     border-color: var(--primary);
     transform: translateY(-2px) scale(1.05);
     box-shadow: 0 4px 12px rgba(255, 153, 0, 0.25);

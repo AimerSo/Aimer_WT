@@ -7,6 +7,7 @@ import json
 import os
 import random
 import re
+import shutil
 import sys
 import threading
 import time
@@ -39,9 +40,19 @@ from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
 from services.telemetry_manager import init_telemetry, get_hwid
 from utils.custom_text_processor import extract_prefix_group
+from utils.custom_text_importer import (
+    extract_archive,
+    detect_import_mode,
+    match_csv_to_standard,
+    find_csv_files_recursive,
+    find_blk_files_recursive,
+    extract_csv_references_from_blk,
+    merge_csv_files,
+)
 from wt.wt_text import (
     load_csv_rows_with_fallback,
     list_lang_csv_files,
+    list_lang_csv_files_with_status,
     sanitize_csv_file_name,
 )
 
@@ -1837,12 +1848,12 @@ class AppApi:
             return False, f"写入 config.blk 失败: {e}"
 
     def _ensure_custom_text_dir(self, lang_dir: Path) -> tuple[bool, str]:
-        aimer_dir = lang_dir / "aimerWT"
+        aimer_dir = lang_dir / "AimerWT"
         try:
             aimer_dir.mkdir(parents=True, exist_ok=True)
             return True, "已就绪"
         except Exception as e:
-            return False, f"创建 lang/aimerWT 失败: {e}"
+            return False, f"创建 lang/AimerWT 失败: {e}"
 
     def _redirect_localization_for_files(self, lang_dir: Path, changed_files: list[str]) -> tuple[bool, str]:
         if not changed_files:
@@ -1872,14 +1883,14 @@ class AppApi:
             return match.group(0)
 
         redirected = re.sub(
-            r'%lang/(?:aimerWT/)?([^"\r\n]+?\.csv)',
+            r'%lang/(?:AimerWT/)?([^"\r\n]+?\.csv)',
             _redirect_lang_ref,
             content,
             flags=re.IGNORECASE
         )
 
         if redirected != content:
-            backup = lang_dir / "localization.blk.aimerWT.backup"
+            backup = lang_dir / "localization.blk.AimerWT.backup"
             try:
                 if not backup.exists():
                     backup.write_text(content, encoding="utf-8")
@@ -1920,10 +1931,11 @@ class AppApi:
                 "config_updated": bool(ok),
             }
 
-        csv_files = list_lang_csv_files(lang_dir)
-        if not csv_files:
+        csv_files_info = list_lang_csv_files_with_status(lang_dir)
+        if not csv_files_info:
             return {"success": False, "msg": "未找到 lang/*.csv，请先启动一次游戏。若您在启动游戏后看见此弹窗，请将lang文件夹清空，然后重启游戏"}
 
+        csv_files = [f["name"] for f in csv_files_info]
         requested_csv = sanitize_csv_file_name(payload.get("csv_file", ""))
         selected_csv = requested_csv if requested_csv in csv_files else ("menu.csv" if "menu.csv" in csv_files else csv_files[0])
         source_csv = lang_dir / selected_csv
@@ -1970,6 +1982,31 @@ class AppApi:
                 return {"success": False, "msg": f"{selected_csv} 缺少可编辑语言列。"}
 
         default_language = "Chinese" if "Chinese" in lang_indexes else list(lang_indexes.keys())[0]
+
+        # 读取原始文件以检测修改
+        original_data = {}
+        if aimer_csv.exists():
+            try:
+                original_rows, _ = load_csv_rows_with_fallback(source_csv)
+                if original_rows and len(original_rows) > 1:
+                    original_header = original_rows[0]
+                    original_id_idx = self._find_header_index(original_header, "ID|readonly|noverify")
+                    if original_id_idx < 0:
+                        original_id_idx = 0
+
+                    for lk in lang_indexes.keys():
+                        original_lang_idx = self._find_header_index(original_header, lk)
+                        if original_lang_idx >= 0:
+                            for row in original_rows[1:]:
+                                if row and original_id_idx < len(row):
+                                    text_id = str(row[original_id_idx]).strip()
+                                    if text_id:
+                                        if text_id not in original_data:
+                                            original_data[text_id] = {}
+                                        original_data[text_id][lk] = str(row[original_lang_idx]) if original_lang_idx < len(row) else ""
+            except Exception:
+                pass
+
         groups_map = defaultdict(list)
         total = 0
 
@@ -1984,22 +2021,35 @@ class AppApi:
 
             group = extract_prefix_group(text_id)
             lang_values = {}
+            modified = False
+
             for lk, idx in lang_indexes.items():
-                lang_values[lk] = str(row[idx]) if idx < len(row) else ""
+                current_value = str(row[idx]) if idx < len(row) else ""
+                lang_values[lk] = current_value
+
+                # 检测是否修改
+                if text_id in original_data and lk in original_data[text_id]:
+                    if original_data[text_id][lk] != current_value:
+                        modified = True
 
             groups_map[group].append({
                 "id": text_id,
                 "value": lang_values.get(default_language, ""),
-                "languages": lang_values
+                "languages": lang_values,
+                "modified": modified
             })
             total += 1
+
+        # 对每个分组内的项目排序：已修改的在前
+        for group_items in groups_map.values():
+            group_items.sort(key=lambda x: (not x.get("modified", False), x["id"].lower()))
 
         groups = [{"group": k, "items": v} for k, v in sorted(groups_map.items(), key=lambda x: x[0].lower())]
         return {
             "success": True,
             "menu_csv": str(read_csv),
             "csv_file": selected_csv,
-            "csv_files": csv_files,
+            "csv_files": csv_files_info,
             "encoding": used_encoding,
             "language_keys": list(lang_indexes.keys()),
             "default_language": default_language,
@@ -2123,6 +2173,411 @@ class AppApi:
             "workspace_info": info,
             "localization_info": loc_info
         }
+
+    def import_custom_text(self, payload):
+        """
+        导入自定义文本模组
+        支持：压缩包（.zip）或 CSV 文件
+        """
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return {"success": False, "msg": "参数格式错误。"}
+
+        if not isinstance(payload, dict):
+            return {"success": False, "msg": "参数格式错误。"}
+
+        import_file = payload.get("file_path", "")
+        if not import_file:
+            return {"success": False, "msg": "未提供导入文件路径。"}
+
+        import_path = Path(import_file)
+        if not import_path.exists():
+            return {"success": False, "msg": f"文件不存在: {import_file}"}
+
+        game_path = self._cfg_mgr.get_game_path()
+        if not game_path:
+            return {"success": False, "msg": "请先在主页设置游戏路径。"}
+
+        valid, msg = self._logic.validate_game_path(game_path)
+        if not valid:
+            return {"success": False, "msg": msg or "游戏路径无效。"}
+
+        lang_dir = Path(game_path) / "lang"
+        if not lang_dir.exists():
+            return {"success": False, "msg": "未找到 lang 文件夹。"}
+
+        ok, info = self._ensure_custom_text_dir(lang_dir)
+        if not ok:
+            return {"success": False, "msg": info}
+
+        aimer_dir = lang_dir / "aimerWT"
+        temp_dir = aimer_dir / ".import_temp"
+        skipped_temp_dir = aimer_dir / ".skipped_files"  # 保存跳过的文件
+
+        try:
+            # 清理临时目录
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+            temp_dir.mkdir(parents=True, exist_ok=True)
+
+            # 处理压缩包
+            if import_path.suffix.lower() in ['.zip', '.rar', '.7z']:
+                extract_ok, extract_msg = extract_archive(import_path, temp_dir)
+                if not extract_ok:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    return {"success": False, "msg": extract_msg}
+
+                # 递归查找 CSV 和 BLK 文件
+                csv_files = find_csv_files_recursive(temp_dir)
+                blk_files = find_blk_files_recursive(temp_dir)
+
+                if not csv_files:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    return {"success": False, "msg": "压缩包中未找到 CSV 文件。"}
+
+            # 处理单个 CSV 文件
+            elif import_path.suffix.lower() == '.csv':
+                csv_files = [import_path]
+                blk_files = []
+            else:
+                return {"success": False, "msg": f"不支持的文件格式: {import_path.suffix}"}
+
+            # 获取标准 CSV 文件列表
+            standard_csv_files = list_lang_csv_files(lang_dir)
+            if not standard_csv_files:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return {"success": False, "msg": "未找到标准 CSV 文件，请先启动一次游戏。"}
+
+            # 检测导入模式
+            mode = "standard"
+            csv_references = []
+
+            if blk_files:
+                # 模式2：有 blk 文件
+                mode = "custom_blk"
+                for blk_file in blk_files:
+                    try:
+                        with open(blk_file, 'r', encoding='utf-8', errors='ignore') as f:
+                            content = f.read()
+                            refs = extract_csv_references_from_blk(content)
+                            csv_references.extend(refs)
+                    except Exception:
+                        pass
+                csv_references = list(set(csv_references))
+
+            # 映射和导入
+            imported_files = []
+            mapping_info = []
+            unrecognized_files = []  # 无法识别但已导入的文件
+
+            for csv_file in csv_files:
+                csv_name = csv_file.name
+
+                # 确定目标文件名
+                target_name = None
+                is_unrecognized = False
+
+                if mode == "custom_blk" and csv_references:
+                    # 模式2：有 blk 文件，尝试从引用中找到匹配
+                    if csv_name in csv_references:
+                        # 映射到标准名称
+                        target_name = match_csv_to_standard(csv_name, standard_csv_files)
+                        if not target_name:
+                            # 无法识别，使用原文件名
+                            target_name = csv_name
+                            is_unrecognized = True
+                    else:
+                        target_name = match_csv_to_standard(csv_name, standard_csv_files)
+                        if not target_name:
+                            # 无法识别，使用原文件名
+                            target_name = csv_name
+                            is_unrecognized = True
+                else:
+                    # 模式1：标准命名
+                    if csv_name in standard_csv_files:
+                        target_name = csv_name
+                    else:
+                        target_name = match_csv_to_standard(csv_name, standard_csv_files)
+                        if not target_name:
+                            # 无法识别，使用原文件名
+                            target_name = csv_name
+                            is_unrecognized = True
+
+                # 目标路径
+                target_path = aimer_dir / target_name
+                source_path = lang_dir / target_name
+
+                try:
+                    if is_unrecognized:
+                        # 无法识别的文件，直接复制
+                        shutil.copy2(csv_file, target_path)
+                        imported_files.append(target_name)
+                        unrecognized_files.append(target_name)
+                        mapping_info.append(f"⚠ {target_name} (无法识别，已导入)")
+                    elif mode == "custom_blk":
+                        # 模式2：使用智能合并
+                        merge_ok, merge_msg, stats = merge_csv_files(
+                            source_path,  # 原始CSV
+                            csv_file,     # 模组CSV
+                            target_path   # 输出路径
+                        )
+
+                        if merge_ok:
+                            imported_files.append(target_name)
+                            detail = f"✓ {csv_name}"
+                            if csv_name != target_name:
+                                detail += f" → {target_name}"
+                            detail += f" (新增 {stats.get('added', 0)} 条, 修改 {stats.get('modified', 0)} 条)"
+                            mapping_info.append(detail)
+                        else:
+                            mapping_info.append(f"✗ 失败: {csv_name} ({merge_msg})")
+                    else:
+                        # 模式1：直接复制
+                        shutil.copy2(csv_file, target_path)
+                        imported_files.append(target_name)
+                        if csv_name != target_name:
+                            mapping_info.append(f"✓ {csv_name} → {target_name}")
+                        else:
+                            mapping_info.append(f"✓ {csv_name}")
+
+                except Exception as e:
+                    mapping_info.append(f"✗ 失败: {csv_name} ({e})")
+
+            # 清理临时目录
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+            if not imported_files:
+                return {"success": False, "msg": "没有成功导入任何文件。", "details": mapping_info}
+
+            # 更新 localization.blk
+            loc_ok, loc_info = self._redirect_localization_for_files(lang_dir, imported_files)
+
+            result_msg = f"成功导入 {len(imported_files)} 个文件。"
+            if unrecognized_files:
+                result_msg += f"\n其中 {len(unrecognized_files)} 个文件无法识别，已以原文件名导入。"
+
+            return {
+                "success": True,
+                "msg": result_msg,
+                "imported_files": imported_files,
+                "unrecognized_files": unrecognized_files,
+                "mapping_info": mapping_info,
+                "mode": mode,
+                "localization_info": loc_info if loc_ok else f"警告: {loc_info}"
+            }
+
+        except Exception as e:
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            return {"success": False, "msg": f"导入失败: {e}"}
+
+    def delete_custom_text_files(self, payload):
+        """
+        删除指定的自定义文本文件
+        """
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return {"success": False, "msg": "参数格式错误。"}
+
+        if not isinstance(payload, dict):
+            return {"success": False, "msg": "参数格式错误。"}
+
+        file_names = payload.get("file_names", [])
+        if not file_names:
+            return {"success": False, "msg": "缺少文件名列表。"}
+
+        game_path = self._cfg_mgr.get_game_path()
+        if not game_path:
+            return {"success": False, "msg": "请先在主页设置游戏路径。"}
+
+        lang_dir = Path(game_path) / "lang"
+        aimer_dir = lang_dir / "aimerWT"
+
+        if not aimer_dir.exists():
+            return {"success": False, "msg": "自定义文本目录不存在。"}
+
+        deleted_files = []
+        failed_files = []
+
+        for file_name in file_names:
+            file_path = aimer_dir / file_name
+            try:
+                if file_path.exists():
+                    file_path.unlink()
+                    deleted_files.append(file_name)
+                else:
+                    failed_files.append(f"{file_name} (文件不存在)")
+            except Exception as e:
+                failed_files.append(f"{file_name} ({e})")
+
+        if not deleted_files:
+            return {"success": False, "msg": "没有成功删除任何文件。", "failed": failed_files}
+
+        # 更新 localization.blk，移除这些文件的引用
+        # 这里简单处理：重新扫描剩余文件并更新
+        remaining_files = [f.name for f in aimer_dir.glob("*.csv")]
+        if remaining_files:
+            self._redirect_localization_for_files(lang_dir, remaining_files)
+
+        result = {
+            "success": True,
+            "msg": f"成功删除 {len(deleted_files)} 个文件。",
+            "deleted_files": deleted_files
+        }
+
+        if failed_files:
+            result["failed_files"] = failed_files
+            result["msg"] += f"\n{len(failed_files)} 个文件删除失败。"
+
+        return result
+
+    def import_custom_text_manual(self, payload):
+        """
+        手动导入用户确认的CSV文件（保持原文件名）
+        从临时目录导入
+        """
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return {"success": False, "msg": "参数格式错误。"}
+
+        if not isinstance(payload, dict):
+            return {"success": False, "msg": "参数格式错误。"}
+
+        selected_files = payload.get("selected_files", [])  # 用户选中的文件名列表
+        temp_dir_str = payload.get("temp_dir", "")  # 临时目录路径
+
+        if not selected_files or not temp_dir_str:
+            return {"success": False, "msg": "缺少必要参数。"}
+
+        temp_dir = Path(temp_dir_str)
+        if not temp_dir.exists():
+            return {"success": False, "msg": "临时文件已被清理，请重新导入。"}
+
+        game_path = self._cfg_mgr.get_game_path()
+        if not game_path:
+            return {"success": False, "msg": "请先在主页设置游戏路径。"}
+
+        valid, msg = self._logic.validate_game_path(game_path)
+        if not valid:
+            return {"success": False, "msg": msg or "游戏路径无效。"}
+
+        lang_dir = Path(game_path) / "lang"
+        if not lang_dir.exists():
+            return {"success": False, "msg": "未找到 lang 文件夹。"}
+
+        ok, info = self._ensure_custom_text_dir(lang_dir)
+        if not ok:
+            return {"success": False, "msg": info}
+
+        aimer_dir = lang_dir / "aimerWT"
+
+        try:
+            # 查找临时目录中的所有CSV文件
+            csv_files_map = {}
+            for csv_file in find_csv_files_recursive(temp_dir):
+                csv_files_map[csv_file.name] = csv_file
+
+            # 执行手动导入（保持原文件名）
+            imported_files = []
+            mapping_info = []
+
+            for file_name in selected_files:
+                if file_name not in csv_files_map:
+                    mapping_info.append(f"✗ 失败: {file_name} (文件不存在)")
+                    continue
+
+                source_file = csv_files_map[file_name]
+                # 保持原文件名
+                target_path = aimer_dir / file_name
+
+                try:
+                    # 直接复制文件
+                    shutil.copy2(source_file, target_path)
+                    imported_files.append(file_name)
+                    mapping_info.append(f"✓ {file_name} (保持原文件名)")
+
+                except Exception as e:
+                    mapping_info.append(f"✗ 失败: {file_name} ({e})")
+
+            # 清理临时目录
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+            if not imported_files:
+                return {"success": False, "msg": "没有成功导入任何文件。", "details": mapping_info}
+
+            # 更新 localization.blk，添加这些文件的引用
+            loc_ok, loc_info = self._redirect_localization_for_files(lang_dir, imported_files)
+
+            return {
+                "success": True,
+                "msg": f"手动导入成功，共 {len(imported_files)} 个文件。",
+                "imported_files": imported_files,
+                "mapping_info": mapping_info,
+                "mode": "manual",
+                "localization_info": loc_info if loc_ok else f"警告: {loc_info}"
+            }
+
+        except Exception as e:
+            # 出错时也清理临时目录
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            return {"success": False, "msg": f"手动导入失败: {e}"}
+
+    def cleanup_import_temp(self, payload):
+        """
+        清理导入临时目录
+        """
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return {"success": False, "msg": "参数格式错误。"}
+
+        if not isinstance(payload, dict):
+            return {"success": False, "msg": "参数格式错误。"}
+
+        temp_dir_str = payload.get("temp_dir", "")
+        if not temp_dir_str:
+            return {"success": False, "msg": "缺少临时目录路径。"}
+
+        temp_dir = Path(temp_dir_str)
+        try:
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            return {"success": True, "msg": "清理成功。"}
+        except Exception as e:
+            return {"success": False, "msg": f"清理失败: {e}"}
+
+    def select_custom_text_file(self):
+        """
+        打开文件选择对话框，选择自定义文本文件（CSV 或压缩包）
+        """
+        file_types = (
+            "Custom Text Files (*.csv;*.zip)",
+            "CSV Files (*.csv)",
+            "Zip Files (*.zip)",
+            "All files (*.*)"
+        )
+
+        try:
+            result = self._window.create_file_dialog(
+                webview.FileDialog.OPEN, allow_multiple=False, file_types=file_types
+            )
+
+            if result and len(result) > 0:
+                file_path = result[0]
+                return {"success": True, "file_path": file_path}
+            return {"success": False}
+        except Exception as e:
+            return {"success": False, "msg": f"选择文件失败: {e}"}
 
     def refresh_skins_async(self, opts=None):
         """

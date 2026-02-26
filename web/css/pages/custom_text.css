@@ -216,6 +216,23 @@
     padding: 20px;
 }
 
+/* 已修改标记样式 */
+.custom-text-row.modified {
+    position: relative;
+}
+
+.custom-text-row.modified .custom-text-id {
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 8%, var(--bg-body));
+}
+
+.modified-mark {
+    color: var(--primary);
+    font-weight: bold;
+    margin-right: 4px;
+    font-size: 14px;
+}
+
 @media (max-width: 980px) {
     .custom-text-wrap {
         grid-template-columns: 1fr;

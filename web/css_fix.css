@@ -473,8 +473,9 @@
 }
 
 .btn-v2:hover {
+    background: var(--primary);
     border-color: var(--primary);
-    color: var(--primary);
+    color: rgba(0, 0, 0, 0.85);
     transform: translateY(-1px);
 }
 
@@ -486,6 +487,7 @@
 
 .btn-v2.primary:hover {
     background: var(--primary-hover);
+    color: rgba(0, 0, 0, 0.85);
     box-shadow: 0 4px 12px rgba(255, 153, 0, 0.3);
 }
 
