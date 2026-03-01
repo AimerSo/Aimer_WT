@@ -30,6 +30,7 @@ class TelemetryManager:
     def __init__(self, app_version: str, report_url: Optional[str] = None):
         self._stop_heartbeat = None
         self._is_log_error = False
+        self._server_connected = False
         self.app_version = app_version
 
         # 优先级：显式注入 > app_secrets > 默认接口
@@ -60,6 +61,10 @@ class TelemetryManager:
     def set_log_callback(self, callback):
         """设置日志回调 (msg: str, level: str) -> None"""
         self._log_callback = callback
+
+    def is_server_connected(self) -> bool:
+        """返回最近一次遥测交互是否成功连接到服务端。"""
+        return bool(self._server_connected)
 
     def _run_command(self, cmd: str) -> str:
         """执行系统命令。在 Windows 下会尝试隐藏控制台窗口。"""
@@ -213,6 +218,7 @@ class TelemetryManager:
 
                 if response.status_code == 200 or response.status_code == 503:
                     self._is_log_error = False
+                    self._server_connected = True
                     try:
                         data = response.json()
                         sys_config = data.get("sys_config")
@@ -225,11 +231,13 @@ class TelemetryManager:
                     except Exception:
                         pass
                 else:
+                    self._server_connected = False
                     if self._log_callback and not self._is_log_error:
                         self._log_callback.error(f"[遥测] 服务异常: {response.status_code}")
                         self._is_log_error = True
 
             except Exception as e:
+                self._server_connected = False
                 if self._log_callback and not self._is_log_error:
                     self._log_callback.error(f"[遥测] 服务交互异常: {type(e).__name__}")
                     self._is_log_error = True
@@ -257,6 +265,7 @@ class TelemetryManager:
         """停止心跳上报"""
         if self._stop_heartbeat:
             self._stop_heartbeat.set()
+        self._server_connected = False
 
 
 _instance = None
@@ -280,3 +289,10 @@ def get_hwid():
     if _instance:
         return _instance.get_machine_id()
     return "UNKNOWN"
+
+
+def get_telemetry_connection_status() -> bool:
+    """获取当前遥测与服务端的连接状态。"""
+    if _instance:
+        return _instance.is_server_connected()
+    return False

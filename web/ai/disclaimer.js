@@ -103,8 +103,6 @@ const AIDisclaimer = {
                             
                             <p>对于 AI 数据库中涉及的特定游戏（如 War Thunder 等）及软件的专有名称、商标及知识产权，均归属于其原始权利人。</p>
                             
-                            <p>若您对上述声明有任何疑问，请通过官方反馈渠道联系作者。感谢您的理解与配合，让我们共同维护一个健康、理性的技术交流环境。</p>
-                            
                             <p class="ai-disclaimer-author">作者：Aimer</p>
                         </div>
                     </div>

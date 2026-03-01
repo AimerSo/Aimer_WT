@@ -1,0 +1,277 @@
+/* 更新公告弹窗模板样式 */
+.notice-detail-overlay {
+    background: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(4px);
+}
+
+.notice-react-update-modal {
+    width: min(768px, 92vw);
+    max-height: 85vh;
+    border-radius: 24px;
+    background: #ffffff;
+    border: 1px solid #f3f4f6;
+    box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.notice-react-header {
+    padding: 24px 32px;
+    border-bottom: 1px solid #f9fafb;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.notice-react-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #111827;
+}
+
+.notice-react-subline {
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #9ca3af;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.notice-react-intro {
+    margin: 10px 0 0;
+    max-width: 620px;
+    font-size: 13px;
+    line-height: 1.65;
+    color: #6b7280;
+}
+
+.notice-react-pulse {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: #3b82f6;
+}
+
+.notice-react-close {
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    border-radius: 999px;
+    color: #9ca3af;
+    font-size: 22px;
+    cursor: pointer;
+}
+
+.notice-react-close:hover {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.notice-react-content {
+    padding: 32px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.notice-react-section {
+    margin-bottom: 40px;
+}
+
+.notice-react-sec-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.notice-react-sec-head h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.notice-react-sec-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+}
+
+.notice-react-sec-blue {
+    background: #eff6ff;
+    color: #3b82f6;
+}
+
+.notice-react-sec-green {
+    background: #ecfdf5;
+    color: #10b981;
+}
+
+.notice-react-sec-red {
+    background: #fff1f2;
+    color: #f43f5e;
+}
+
+.notice-react-sec-gray {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.notice-react-list {
+    list-style: none;
+    margin: 0 0 0 14px;
+    padding: 0 0 0 24px;
+    border-left: 1.5px solid #f3f4f6;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.notice-react-item {
+    position: relative;
+}
+
+.notice-react-item-dot {
+    position: absolute;
+    left: -30px;
+    top: 10px;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    border: 2px solid #ffffff;
+    background: #d1d5db;
+}
+
+.notice-react-item-text {
+    font-size: 14px;
+    line-height: 1.7;
+    color: #4b5563;
+}
+
+.notice-react-item:hover .notice-react-item-text {
+    color: #111827;
+}
+
+.notice-react-item:hover .notice-react-item-dot {
+    background: #3b82f6;
+}
+
+.notice-react-inline-meta {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 2px;
+    opacity: 0.6;
+    font-size: 12px;
+}
+
+.notice-react-token {
+    display: inline-flex;
+    align-items: center;
+    margin: 0 2px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.notice-react-fallback {
+    font-size: 14px;
+    line-height: 1.7;
+    color: #4b5563;
+}
+
+.notice-react-footer {
+    padding: 20px 32px;
+    background: rgba(249, 250, 251, 0.5);
+    border-top: 1px solid #f9fafb;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.notice-react-footer p {
+    margin: 0;
+    font-size: 11px;
+    color: #9ca3af;
+    font-style: italic;
+    font-weight: 500;
+}
+
+.notice-react-ack {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 12px;
+    background: #111827;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.notice-react-ack:hover {
+    background: #000000;
+}
+
+@media (max-width: 640px) {
+    .notice-react-update-modal {
+        width: min(96vw, 96vw);
+        border-radius: 16px;
+    }
+
+    .notice-react-header,
+    .notice-react-content,
+    .notice-react-footer {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .notice-react-title {
+        font-size: 18px;
+    }
+
+    .notice-react-sec-head h3 {
+        font-size: 15px;
+    }
+
+    .notice-react-item-text {
+        font-size: 16px;
+    }
+
+    .notice-react-inline-meta,
+    .notice-react-token,
+    .notice-react-footer p {
+        font-size: 12px;
+    }
+
+    .notice-react-footer {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .notice-react-ack {
+        width: 100%;
+        justify-content: center;
+    }
+}
