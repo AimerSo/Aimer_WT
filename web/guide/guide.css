@@ -1,0 +1,361 @@
+.author-guide-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+}
+
+.author-guide-overlay.active {
+    pointer-events: none;
+    visibility: visible;
+    opacity: 1;
+    transition: opacity 0.2s ease, visibility 0s linear 0s;
+}
+
+.author-guide-overlay:not(.active) * {
+    pointer-events: none !important;
+}
+
+.author-guide-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(8, 12, 22, 0.08);
+    opacity: 0;
+    transition: opacity 0.22s ease;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.author-guide-blocker {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: var(--guide-backdrop-top, 56px);
+    z-index: 0;
+    pointer-events: none;
+}
+
+.author-guide-overlay.active .author-guide-backdrop {
+    opacity: 1;
+}
+
+.author-guide-overlay.active.intro-step .author-guide-backdrop {
+    background: rgba(8, 12, 22, 0.44);
+    opacity: 1;
+}
+
+.author-guide-focus {
+    position: absolute;
+    border-radius: 14px;
+    border: 2px solid rgba(255, 180, 82, 1);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow:
+        0 0 0 9999px rgba(8, 12, 22, 0.32),
+        0 0 0 10px rgba(255, 180, 82, 0.22),
+        0 16px 36px rgba(0, 0, 0, 0.24);
+    transition: all 0.26s cubic-bezier(.2, .8, .2, 1);
+    opacity: 0;
+    z-index: 1;
+    pointer-events: none;
+    will-change: left, top, width, height, opacity;
+}
+
+.author-guide-focus.active {
+    opacity: 1;
+    animation: author-guide-focus-pulse 1.25s ease-in-out infinite;
+}
+
+.author-guide-card {
+    position: absolute;
+    width: min(358px, calc(100vw - 20px));
+    background: var(--bg-card, #fff);
+    color: var(--text-main, #2c3e50);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 16px;
+    box-shadow: 0 18px 52px rgba(9, 16, 32, 0.35);
+    padding: 16px 16px 14px;
+    transform: translateY(8px);
+    opacity: 0;
+    transition: opacity 0.28s ease, transform 0.28s ease;
+    pointer-events: none;
+}
+
+.author-guide-overlay.active .author-guide-card {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.author-guide-card {
+    z-index: 2;
+}
+
+.author-guide-pointer {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: var(--bg-card, #fff);
+    border-left: 1px solid var(--border-color, #e2e8f0);
+    border-top: 1px solid var(--border-color, #e2e8f0);
+    transform: rotate(45deg);
+}
+
+.author-guide-card.arrow-left .author-guide-pointer {
+    left: -8px;
+    top: 24px;
+    transform: rotate(-45deg);
+}
+
+.author-guide-card.arrow-right .author-guide-pointer {
+    right: -8px;
+    top: 24px;
+    transform: rotate(135deg);
+}
+
+.author-guide-card.arrow-none .author-guide-pointer {
+    display: none;
+}
+
+.author-guide-card.arrow-up .author-guide-pointer {
+    top: -8px;
+    left: var(--guide-pointer-left, 26px);
+    transform: rotate(45deg);
+}
+
+.author-guide-card.arrow-down .author-guide-pointer {
+    bottom: -8px;
+    left: var(--guide-pointer-left, 26px);
+    transform: rotate(225deg);
+}
+
+.author-guide-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.author-guide-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.author-guide-step-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--primary, #ff9900) 18%, transparent);
+    color: var(--primary, #ff9900);
+    font-size: 12px;
+    font-weight: 700;
+    min-width: 54px;
+    padding: 4px 10px;
+}
+
+.author-guide-desc {
+    margin: 0;
+    color: var(--text-sec, #6b7280);
+    font-size: 13px;
+    line-height: 1.65;
+    min-height: 44px;
+}
+
+.author-guide-foot {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.author-guide-detail-btn {
+    border: none;
+    background: transparent;
+    color: var(--primary, #ff9900);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0;
+    text-align: left;
+}
+
+.author-guide-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.author-guide-btn {
+    border: 1px solid var(--border-color, #d1d5db);
+    background: var(--bg-card, #fff);
+    color: var(--text-main, #111827);
+    border-radius: 10px;
+    padding: 6px 11px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.author-guide-btn:active {
+    transform: translateY(1px);
+}
+
+.author-guide-btn.skip,
+.author-guide-btn.prev {
+    color: var(--text-sec, #6b7280);
+}
+
+.author-guide-btn.prev:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.author-guide-btn.next {
+    border-color: transparent;
+    background: var(--primary, #ff9900);
+    color: #fff;
+}
+
+.author-guide-btn.next:hover {
+    filter: brightness(1.04);
+}
+
+.author-guide-target-active {
+    outline: 2px solid rgba(255, 197, 115, 0.78);
+    outline-offset: 2px;
+    border-radius: 12px;
+    transition: outline-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 0 0 5px rgba(255, 180, 82, 0.16);
+}
+
+.author-guide-card.step-fade {
+    animation: author-guide-step-fade 0.24s ease both;
+}
+
+.author-guide-card.step-switch-out {
+    opacity: 0 !important;
+    transform: translateY(3px) scale(0.995) !important;
+    transition-duration: 220ms !important;
+}
+
+.author-guide-card.step-switch-in {
+    opacity: 1 !important;
+    transform: translateY(0) scale(1) !important;
+    transition-duration: 280ms !important;
+}
+
+/* First-run hint: pulse the question button until user starts guide manually. */
+#btn-guide-help.guide-help-pulse {
+    color: var(--primary, #ff9900);
+    animation: guide-help-breathe 1.6s ease-in-out infinite;
+}
+
+#btn-guide-help {
+    position: fixed;
+    left: 18px;
+    bottom: 18px;
+    z-index: 2600;
+    width: 42px;
+    height: 42px;
+    border: 1px solid color-mix(in srgb, var(--border-color, #e2e8f0) 88%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-card, #fff) 88%, transparent);
+    color: var(--text-sec, #64748b);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(9, 16, 32, 0.16);
+    transition: opacity 0.28s ease, transform 0.28s ease, box-shadow 0.28s ease, color 0.2s ease;
+    opacity: 0;
+    transform: translateY(5px) scale(0.96);
+    pointer-events: none;
+}
+
+#btn-guide-help.near,
+#btn-guide-help:hover {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    box-shadow: 0 12px 28px rgba(9, 16, 32, 0.24);
+    color: var(--primary, #ff9900);
+    pointer-events: auto;
+}
+
+#btn-guide-help.guide-force-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+@keyframes guide-help-breathe {
+    0% {
+        transform: scale(1);
+        text-shadow: 0 0 0 rgba(255, 153, 0, 0.3);
+    }
+    50% {
+        transform: scale(1.08);
+        text-shadow: 0 0 16px rgba(255, 153, 0, 0.5);
+    }
+    100% {
+        transform: scale(1);
+        text-shadow: 0 0 0 rgba(255, 153, 0, 0.3);
+    }
+}
+
+@keyframes author-guide-step-fade {
+    from {
+        opacity: 0.55;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes author-guide-focus-pulse {
+    0% {
+        box-shadow:
+            0 0 0 9999px rgba(8, 12, 22, 0.32),
+            0 0 0 6px rgba(255, 180, 82, 0.12),
+            0 14px 34px rgba(0, 0, 0, 0.2);
+    }
+    50% {
+        box-shadow:
+            0 0 0 9999px rgba(8, 12, 22, 0.32),
+            0 0 0 10px rgba(255, 180, 82, 0.22),
+            0 18px 40px rgba(0, 0, 0, 0.24);
+    }
+    100% {
+        box-shadow:
+            0 0 0 9999px rgba(8, 12, 22, 0.32),
+            0 0 0 6px rgba(255, 180, 82, 0.12),
+            0 14px 34px rgba(0, 0, 0, 0.2);
+    }
+}
+
+@media (max-width: 720px) {
+    .author-guide-title {
+        font-size: 14px;
+    }
+
+    .author-guide-desc {
+        font-size: 12px;
+    }
+
+    .author-guide-foot {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .author-guide-actions {
+        justify-content: flex-end;
+    }
+}

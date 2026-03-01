@@ -45,7 +45,8 @@
     justify-content: center;
     text-align: center;
     padding: 24px 20px;
-    min-height: 160px;
+    /* min-height: 160px; */
+    height: 100%;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 16px;
@@ -500,7 +501,7 @@
 .home-grid {
     display: grid;
     grid-template-columns: 320px 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: calc(190px - 5px) 1fr;
     gap: 24px;
     height: 100%;
     padding: 4px;
