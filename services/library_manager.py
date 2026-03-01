@@ -451,6 +451,7 @@ class LibraryManager:
             "link_video": "",
             "tags": [],  # 存储标籤列表 ["tank", "radio"]
             "language": [],  # 存储语言列表 ["中", "美"]
+            "related_voicepacks": [],
             "size_str": "0 MB",
             "cover_path": None,
             "capabilities": {}  # 兼容前端旧逻辑
@@ -501,7 +502,7 @@ class LibraryManager:
                 if isinstance(data, dict):
                     for key in ["title", "author", "version", "date", "note", "version_note", "link_bilibili",
                                 "link_qq_group", "link_wtlive", "link_liker", "link_feedback", "link_video", "tags",
-                                "language"]:
+                                "language", "related_voicepacks"]:
                         if key in data:
                             details[key] = data[key]
                 else:

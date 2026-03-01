@@ -56,7 +56,30 @@ const DEFAULT_THEME = {
     "--bili-color-2": "#fb7299",
     "--win-close-hover-bg": "#EF4444",
     "--win-close-hover-text": "#FFFFFF",
-    "--scrollbar-track-hover": "#ccc"
+    "--scrollbar-track-hover": "#ccc",
+    "--notice-hero-bg-start": "#111827",
+    "--notice-hero-bg-end": "#0f172a",
+    "--notice-hero-title": "#ffffff",
+    "--notice-hero-text": "rgba(255, 255, 255, 0.78)",
+    "--notice-hero-subtext": "rgba(255, 255, 255, 0.5)",
+    "--notice-hero-tag-bg": "rgba(239, 68, 68, 0.95)",
+    "--notice-hero-tag-text": "#ffffff",
+    "--notice-hero-shadow": "0 10px 24px rgba(15, 23, 42, 0.25)",
+    "--notice-hero-deco": "rgba(255, 255, 255, 0.2)",
+    "--notice-section-text": "#9CA3AF",
+    "--notice-section-line": "#E5E7EB",
+    "--notice-item-hover-bg": "rgba(0, 0, 0, 0.03)",
+    "--notice-item-hover-text": "#FF9900",
+    "--notice-arrow": "#D1D5DB",
+    "--notice-footer-text": "#D1D5DB",
+    "--notice-urgent-bg": "rgba(239, 68, 68, 0.12)",
+    "--notice-urgent-text": "#EF4444",
+    "--notice-update-bg": "rgba(59, 130, 246, 0.12)",
+    "--notice-update-text": "#3B82F6",
+    "--notice-event-bg": "rgba(249, 115, 22, 0.12)",
+    "--notice-event-text": "#F97316",
+    "--notice-normal-bg": "rgba(148, 163, 184, 0.2)",
+    "--notice-normal-text": "#64748B"
 };
 
 /**
@@ -94,6 +117,9 @@ const app = {
     _libraryRefreshing: false,
     _skinsLoaded: false,
     _sightsLoaded: false,
+    _guideReady: false,
+    telemetryConnected: false,
+    _telemetryStatusTimer: 0,
 
     // 应用主题的函数
     applyTheme(themeObj) {
@@ -230,6 +256,19 @@ const app = {
     // 实际初始化逻辑请见文件末尾的 app.init = async function() {...}
     async init() {
         // 此方法将被复盖，不需要实现
+    },
+
+    initGuideSystem() {
+        if (this._guideReady) return;
+        if (!window.AuthorGuide || typeof window.AuthorGuide.init !== "function") return;
+        window.AuthorGuide.init(this, { autoStart: true });
+        this._guideReady = true;
+    },
+
+    startGuide(force = false) {
+        this.initGuideSystem();
+        if (!window.AuthorGuide || typeof window.AuthorGuide.start !== "function") return;
+        window.AuthorGuide.start({ force: Boolean(force) });
     },
 
     // --- 页面切换 ---
@@ -1431,10 +1470,104 @@ const app = {
 
     // 动态更新首页公告栏文字
     updateNoticeBar(contentHtml) {
+        if (window.NoticeBoardModule && typeof window.NoticeBoardModule.updateNoticeBar === 'function') {
+            window.NoticeBoardModule.updateNoticeBar(contentHtml);
+            return;
+        }
         const container = document.querySelector('.notice-content');
         if (container && contentHtml) {
             container.innerHTML = contentHtml;
         }
+    },
+
+    async refreshTelemetryConnectionStatus() {
+        if (!window.pywebview?.api?.get_telemetry_connection_status) return;
+        try {
+            const connected = await pywebview.api.get_telemetry_connection_status();
+            this.telemetryConnected = !!connected;
+            if (window.NoticeBoardModule && typeof window.NoticeBoardModule.updateServerStatusFooter === 'function') {
+                window.NoticeBoardModule.updateServerStatusFooter(this.telemetryConnected);
+            }
+        } catch (_e) {
+        }
+    },
+
+    startTelemetryStatusPolling() {
+        if (this._telemetryStatusTimer) {
+            clearInterval(this._telemetryStatusTimer);
+            this._telemetryStatusTimer = 0;
+        }
+        this.refreshTelemetryConnectionStatus();
+        this._telemetryStatusTimer = window.setInterval(() => {
+            this.refreshTelemetryConnectionStatus();
+        }, 10000);
+    },
+
+    noticeData: (window.NoticeDataModule && typeof window.NoticeDataModule.getDefaultNoticeData === 'function')
+        ? window.NoticeDataModule.getDefaultNoticeData()
+        : [
+            {
+                id: 1,
+                type: 'urgent',
+                tag: '维护',
+                title: '服务器临时维护与线路升级公告',
+                date: '今天 14:00',
+                content: '为了优化联机节点性能，我们将于今晚 24:00 进行临时停机维护，预计耗时 2 小时。维护期间将无法获取云端语音包。',
+                isPinned: true
+            },
+            {
+                id: 2,
+                type: 'update',
+                tag: '更新',
+                title: 'v3.1.0 版本更新：云端工坊上线',
+                date: '昨天 09:30',
+                content: '1. 新增在线语音包工坊功能；2. 优化解压引擎；3. 修复了部分系统图标丢失的BUG。',
+                isPinned: false
+            },
+            {
+                id: 3,
+                type: 'event',
+                tag: '活动',
+                title: '周末创作者激励计划开启',
+                date: '02-25',
+                content: '本周末上传自制语音包至云端工坊，审核通过即可获得双倍社区积分。',
+                isPinned: false
+            },
+            {
+                id: 4,
+                type: 'normal',
+                tag: '日常',
+                title: '关于部分杀毒软件误报的说明',
+                date: '02-20',
+                content: '由于更新了底层注入逻辑，部分杀软可能误报拦截，请手动添加至白名单。',
+                isPinned: false
+            }
+        ],
+
+    getNoticeTypeMeta(type) {
+        if (window.NoticeDataModule && typeof window.NoticeDataModule.getNoticeTypeMeta === 'function') {
+            return window.NoticeDataModule.getNoticeTypeMeta(type);
+        }
+        switch (type) {
+            case 'urgent':
+                return { tagClass: 'notice-tag-urgent', iconClass: 'ri-tools-line' };
+            case 'update':
+                return { tagClass: 'notice-tag-update', iconClass: 'ri-flashlight-line' };
+            case 'event':
+                return { tagClass: 'notice-tag-event', iconClass: 'ri-sparkling-2-line' };
+            default:
+                return { tagClass: 'notice-tag-normal', iconClass: 'ri-notification-3-line' };
+        }
+    },
+
+    renderNoticeBoard() {
+        if (window.NoticeBoardModule && typeof window.NoticeBoardModule.renderNoticeBoard === 'function') {
+            window.NoticeBoardModule.renderNoticeBoard(this);
+            return;
+        }
+        const container = document.getElementById('notice-board') || document.querySelector('.notice-content');
+        if (!container) return;
+        container.innerHTML = '';
     },
 
     recoverToSafeState(reason) {
@@ -1669,6 +1802,7 @@ const app = {
         if (yes) {
             toggle.checked = checked; // 用户确认，应用新状态
             await pywebview.api.set_telemetry_status(checked);
+            await this.refreshTelemetryConnectionStatus();
         }
     },
 
@@ -1952,8 +2086,6 @@ const app = {
                 listContainer.classList.remove('fade-out');
             });
 
-            const searchInput = document.querySelector('.search-input');
-            if (searchInput) searchInput.value = '';
             this._libraryLoaded = true;
             this._libraryRefreshing = false;
         }
@@ -3006,6 +3138,7 @@ app.restoreGame = async function () {
 
 // --- 免责声明逻辑 ---
 app.checkDisclaimer = async function () {
+    if (app._disclaimerPromise) return app._disclaimerPromise;
     try {
         const result = await pywebview.api.check_first_run();
         // check_first_run 返回 { status: bool, version: str }
@@ -3036,9 +3169,16 @@ app.checkDisclaimer = async function () {
                     if (hint) hint.textContent = `请阅读协议 (${timeLeft}s)`;
                 }
             }, 1000);
+
+            app._disclaimerPromise = new Promise((resolve) => {
+                app._disclaimerResolve = resolve;
+            });
+            return app._disclaimerPromise;
         }
+        return true;
     } catch (e) {
         console.error("Disclaimer check failed", e);
+        return true;
     }
 };
 
@@ -3051,9 +3191,16 @@ app.disclaimerAgree = async function () {
 
     // 调用 API 保存状态
     await pywebview.api.agree_to_terms(app._pendingAgreementVer);
+    app._pendingAgreementVer = null;
+    if (typeof app._disclaimerResolve === 'function') app._disclaimerResolve(true);
+    app._disclaimerResolve = null;
+    app._disclaimerPromise = null;
 };
 
 app.disclaimerReject = function () {
+    if (typeof app._disclaimerResolve === 'function') app._disclaimerResolve(false);
+    app._disclaimerResolve = null;
+    app._disclaimerPromise = null;
     // 拒绝则退出程序
     pywebview.api.close_window();
 };
@@ -3168,7 +3315,8 @@ app.init = async function () {
         this._setupModalOverlayClose();
 
         // 1. 优先检查免责声明
-        await app.checkDisclaimer();
+        const disclaimerAccepted = await app.checkDisclaimer();
+        if (disclaimerAccepted === false) return;
 
         // 1.2 全局拖放初始化 (暂时禁用)
         // TODO 需要优化，拖放压缩包时大概率卡死
@@ -3183,14 +3331,9 @@ app.init = async function () {
             theme: "Light",
             installed_mods: [],
         };
+        this.telemetryConnected = !!state.telemetry_connected;
         this.currentLaunchMode = state.launch_mode || 'launcher';
         this.updatePathUI(state.game_path, state.path_valid);
-
-        if (state.installed_mods && Array.isArray(state.installed_mods)) {
-            this.installedModIds = state.installed_mods;
-        } else {
-            this.installedModIds = [];
-        }
 
         if (state.installed_mods && Array.isArray(state.installed_mods)) {
             this.installedModIds = state.installed_mods;
@@ -3220,6 +3363,8 @@ app.init = async function () {
         if (themeData && (themeData.colors || themeData.light || themeData.dark)) {
             this.applyThemeData(themeData);
         }
+        this.renderNoticeBoard();
+        this.startTelemetryStatusPolling();
 
         // 加载语音包库路径信息（设置页显示用）
         try {
@@ -3270,6 +3415,9 @@ app.init = async function () {
         // 保存状态到本地变量供关闭逻辑使用
         this._trayMode = !!state.tray_mode;
         this._closeConfirm = state.close_confirm !== false; // 默认开启
+
+        // 可选引导系统初始化（模块不存在时会自动跳过）
+        this.initGuideSystem();
     };
 
     // 防止重複註册 pywebviewready 监听器
@@ -4141,7 +4289,9 @@ app.setupGlobalDragDrop = function () {
 
 (function () {
     const MODAL_ID = 'modal-mod-preview';
+    const AUTHOR_WORKS_MODAL_ID = 'modal-author-works';
     const LIST_ID = 'lib-list';
+    const FALLBACK_AVATAR = 'assets/card_image_small.png';
     const QQ_GROUP_URL = 'https://qun.qq.com/universal-share/share?ac=1&authKey=%2FDJOR1E72xAQKvLD%2BNQmaZmD7py%2F5PUY7xHORJX4kmmKdabaRF4%2BwIJkp6s8I10U&busi_data=eyJncm91cENvZGUiOiIxMDc4MzQzNjI5IiwidG9rZW4iOiJmSUNpVXErcnNMMVhlemRNR25EbVF5TWJrbmc5bm02UmRIS0c0WHFxemdWQkRzUlVmSkVZQW11NXFkRXZkMXBDIiwidWluIjoiMTA3OTY0OTM2OSJ9&data=4qfEzEByH95wqWw0I5ButymAfP5Aj5bjksqrXyh3uAoIWg5ChDGQ3w6cocqmRaRaGbDRpFunhEYQYBHwC46GHg&svctype=4&tempid=h5_group_info';
     const WTLIKER_URL = 'https://wtliker.com/';
     const WT_LIVE_URL = 'https://live.warthunder.com/';
@@ -4309,6 +4459,19 @@ app.setupGlobalDragDrop = function () {
         return [{ version, note: '暂无详细更新日志。' }];
     }
 
+    function normalizeRelatedVoicepacks(raw) {
+        if (!Array.isArray(raw)) return [];
+        return raw
+            .map((item) => ({
+                name: String(item?.name || '').trim(),
+                description: String(item?.description || '').trim(),
+                link: String(item?.link || '').trim(),
+                avatar_url: String(item?.avatar_url || '').trim(),
+                preview_audio_files: Array.isArray(item?.preview_audio_files) ? item.preview_audio_files : []
+            }))
+            .filter((item) => item.name || item.description || item.link || item.avatar_url);
+    }
+
     function buildVersionNoteHtml(mod) {
         const entries = resolveVersionNoteEntries(mod);
         if (!entries.length) {
@@ -4343,14 +4506,19 @@ app.setupGlobalDragDrop = function () {
         overlay.innerHTML = `
             <div class="modal-content mod-preview-modal-v2">
                 <div class="mod-preview-topbar">
-                    <div class="mod-preview-title-wrap">
-                        <div class="mod-preview-title" id="mod-preview-title"></div>
-                        <span class="mod-preview-version" id="mod-preview-version"></span>
-                    </div>
-                    <div class="mod-preview-subline">
-                        <span><i class="ri-user-3-line"></i> <span id="mod-preview-author"></span></span>
-                        <span class="dot"></span>
-                        <span><i class="ri-time-line"></i> <span id="mod-preview-date"></span></span>
+                    <div class="mod-preview-head-main">
+                        <img class="mod-preview-author-avatar" id="mod-preview-author-avatar" src="${FALLBACK_AVATAR}" alt="author avatar">
+                        <div class="mod-preview-head-text">
+                            <div class="mod-preview-title-wrap">
+                                <div class="mod-preview-title" id="mod-preview-title"></div>
+                                <span class="mod-preview-version" id="mod-preview-version"></span>
+                            </div>
+                            <div class="mod-preview-subline">
+                                <span class="meta-item"><i class="ri-user-3-line"></i> <span id="mod-preview-author"></span></span>
+                                <span class="dot"></span>
+                                <span class="meta-item"><i class="ri-time-line"></i> <span id="mod-preview-date"></span></span>
+                            </div>
+                        </div>
                     </div>
                     <button class="mod-preview-close-btn" type="button" title="关闭">
                         <i class="ri-close-line"></i>
@@ -4378,29 +4546,31 @@ app.setupGlobalDragDrop = function () {
                     </div>
 
                     <div class="mod-preview-right">
-                        <section class="mod-preview-card">
-                            <h4><i class="ri-price-tag-3-line"></i> 包含内容</h4>
-                            <div class="mod-preview-tags-scroll" id="mod-preview-tags"></div>
-                        </section>
+                        <div class="mod-preview-top-stack">
+                            <section class="mod-preview-card mod-preview-tags-card">
+                                <h4><i class="ri-price-tag-3-line"></i> 包含内容</h4>
+                                <div class="mod-preview-tags-scroll" id="mod-preview-tags"></div>
+                            </section>
 
-                        <section class="mod-preview-card">
-                            <h4><i class="ri-information-line"></i> 详细介绍</h4>
-                            <div class="mod-preview-desc" id="mod-preview-desc"></div>
-                        </section>
-
+                            <section class="mod-preview-card mod-preview-desc-card">
+                                <h4><i class="ri-information-line"></i> 详细介绍</h4>
+                                <div class="mod-preview-desc" id="mod-preview-desc"></div>
+                            </section>
+                        </div>
                         <div class="mod-preview-bottom-grid">
                             <section class="mod-preview-card">
                                 <h4><i class="ri-refresh-line"></i> 版本说明</h4>
                                 <div class="mod-preview-note-log" id="mod-preview-version-note"></div>
                             </section>
 
-                            <section class="mod-preview-card">
+                            <section class="mod-preview-card mod-preview-links-card">
                                 <h4><i class="ri-links-line"></i> 关注与反馈</h4>
                                 <div class="mod-preview-link-grid">
                                     <button class="mod-preview-link-btn bili" type="button" data-link-action="bili"><i class="ri-bilibili-line"></i> Bilibili 主页</button>
                                     <button class="mod-preview-link-btn qq" type="button" data-link-action="qq"><i class="ri-qq-line"></i> 加入粉丝群</button>
                                     <button class="mod-preview-link-btn wt" type="button" data-link-action="wtlive"><i class="ri-global-line"></i> WT Live</button>
                                     <button class="mod-preview-link-btn liker" type="button" data-link-action="liker"><i class="ri-heart-3-line"></i> WT Liker</button>
+                                    <button class="mod-preview-link-btn other-works" type="button" data-link-action="otherworks"><i class="ri-apps-2-line"></i> 作者其他语音包</button>
                                     <button class="mod-preview-link-btn feedback" type="button" data-link-action="feedback"><i class="ri-mail-send-line"></i> 联系作者反馈</button>
                                 </div>
                             </section>
@@ -4409,9 +4579,9 @@ app.setupGlobalDragDrop = function () {
                 </div>
 
                 <div class="mod-preview-footer">
-                    <div class="mod-preview-id" id="mod-preview-id"></div>
                     <div class="mod-preview-footer-actions">
                         <button class="btn secondary" type="button" data-action="delete"><i class="ri-delete-bin-line"></i> 删除</button>
+                        <button class="btn secondary" type="button" data-action="open-folder"><i class="ri-folder-open-line"></i> 打开</button>
                         <button class="btn secondary" type="button" data-action="audition"><i class="ri-play-circle-line"></i> 试听语音</button>
                         <button class="btn primary" type="button" data-action="apply"><i class="ri-check-line"></i> 应用语音包</button>
                     </div>
@@ -4446,6 +4616,7 @@ app.setupGlobalDragDrop = function () {
         const app = getApp();
         const applyBtn = overlay.querySelector('[data-action="apply"]');
         const deleteBtn = overlay.querySelector('[data-action="delete"]');
+        const openFolderBtn = overlay.querySelector('[data-action="open-folder"]');
         const auditionBtn = overlay.querySelector('[data-action="audition"]');
 
         if (applyBtn) {
@@ -4461,6 +4632,39 @@ app.setupGlobalDragDrop = function () {
                 closePreview();
                 if (app && typeof app.deleteMod === 'function') {
                     app.deleteMod(mod.id);
+                }
+            };
+        }
+        if (openFolderBtn) {
+            openFolderBtn.onclick = async () => {
+                const modId = String(mod?.id || '').trim();
+                if (!modId) {
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('提示', '语音包标识为空，无法打开目录', 'warn');
+                    }
+                    return;
+                }
+                try {
+                    if (window.pywebview?.api?.open_mod_folder) {
+                        const res = await pywebview.api.open_mod_folder(modId);
+                        if (!res?.success) {
+                            if (app && typeof app.showAlert === 'function') {
+                                app.showAlert('错误', res?.msg || '打开目录失败', 'error');
+                            }
+                        }
+                        return;
+                    }
+                    if (window.pywebview?.api?.open_folder) {
+                        await pywebview.api.open_folder('library');
+                        return;
+                    }
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('错误', '打开目录接口不可用', 'error');
+                    }
+                } catch (e) {
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('错误', `打开目录失败: ${e.message || e}`, 'error');
+                    }
                 }
             };
         }
@@ -4920,6 +5124,170 @@ app.setupGlobalDragDrop = function () {
         }
     };
 
+    function ensureAuthorWorksModal() {
+        let overlay = document.getElementById(AUTHOR_WORKS_MODAL_ID);
+        if (overlay) return overlay;
+
+        overlay = document.createElement('div');
+        overlay.id = AUTHOR_WORKS_MODAL_ID;
+        overlay.className = 'modal-overlay author-works-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content author-works-modal">
+                <div class="author-works-header">
+                    <div class="author-works-title-wrap">
+                        <span class="author-works-icon"><i class="ri-user-3-line"></i></span>
+                        <div>
+                            <h3 id="author-works-title">作者其他语音包</h3>
+                            <p id="author-works-subtitle">发现更多高质量语音包</p>
+                        </div>
+                    </div>
+                    <button class="mod-preview-close-btn" type="button" id="btn-author-works-close" title="关闭"><i class="ri-close-line"></i></button>
+                </div>
+                <div class="author-works-body">
+                    <div class="author-works-grid" id="author-works-grid"></div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeAuthorWorksModal();
+        });
+        const closeBtn = overlay.querySelector('#btn-author-works-close');
+        if (closeBtn) closeBtn.addEventListener('click', closeAuthorWorksModal);
+        return overlay;
+    }
+
+    function collectAuthorWorks(mod) {
+        const currentVersion = normalizeVersion(mod?.version || '1.0');
+        const currentDate = String(mod?.date || '').trim() || new Date().toISOString().split('T')[0];
+        const currentSize = String(mod?.size_str || '<1 MB').trim() || '<1 MB';
+        const currentAuthor = String(mod?.author || '未知作者').trim() || '未知作者';
+        const related = normalizeRelatedVoicepacks(mod?.related_voicepacks || []);
+        return related.map((item, idx) => {
+            const title = item.name || `关联语音包${idx + 1}`;
+            const description = item.description || '作者推荐语音包';
+            const link = item.link;
+            const coverUrl = item.avatar_url || 'assets/card_image.png';
+            return {
+                title,
+                description,
+                cover_url: coverUrl,
+                link,
+                detail_mod: {
+                    id: `author-related-${idx + 1}`,
+                    title,
+                    author: currentAuthor,
+                    version: currentVersion,
+                    date: currentDate,
+                    size_str: currentSize,
+                    tags: [],
+                    language: [],
+                    note: description,
+                    full_desc: description,
+                    version_note: [{ version: currentVersion, note: '来自关联语音包配置。' }],
+                    cover_url: coverUrl,
+                    link_bilibili: link,
+                    link_wtlive: '',
+                    link_video: '',
+                    link_qq_group: '',
+                    link_liker: '',
+                    link_feedback: '',
+                    related_voicepacks: [],
+                    capabilities: {}
+                }
+            };
+        });
+    }
+
+    function renderAuthorWorksGrid(overlay, items) {
+        const grid = overlay?.querySelector('#author-works-grid');
+        if (!grid) return;
+
+        if (!Array.isArray(items) || items.length === 0) {
+            grid.innerHTML = '<div class="author-works-empty">暂无可展示的语音包</div>';
+            return;
+        }
+
+        grid.innerHTML = items.map((item, idx) => {
+            const title = escapeHtml(String(item?.title || '未命名语音包').trim() || '未命名语音包');
+            const desc = escapeHtml(String(item?.description || '暂无描述').trim() || '暂无描述');
+            const cover = escapeHtml(String(item?.cover_url || 'assets/card_image.png').trim() || 'assets/card_image.png');
+            const canDetail = Boolean(item?.detail_mod || String(item?.link || '').trim());
+            return `
+                <article class="author-work-card" data-work-index="${idx}">
+                    <img class="author-work-cover" src="${cover}" alt="${title}" onerror="this.src='assets/card_image.png'">
+                    <div class="author-work-mask"></div>
+                    <div class="author-work-info">
+                        <h4>${title}</h4>
+                        <p>${desc}</p>
+                        <div class="author-work-actions">
+                            <button class="author-work-btn light ${canDetail ? '' : 'disabled'}" type="button" data-work-action="detail">
+                                详情 <i class="ri-external-link-line"></i>
+                            </button>
+                        </div>
+                    </div>
+                </article>
+            `;
+        }).join('');
+
+        grid.querySelectorAll('.author-work-card').forEach((card) => {
+            const idx = Number(card.getAttribute('data-work-index'));
+            if (!Number.isFinite(idx)) return;
+            const item = items[idx];
+            card.querySelectorAll('[data-work-action]').forEach((btn) => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (btn.getAttribute('data-work-action') !== 'detail') return;
+                    if (item?.detail_mod) {
+                        closeAuthorWorksModal();
+                        openPreview(item.detail_mod);
+                        return;
+                    }
+                    const link = String(item?.link || '').trim();
+                    if (link) openExternal(link);
+                });
+            });
+        });
+    }
+
+    function openAuthorWorksModal(mod, prebuiltItems = null) {
+        const app = getApp();
+        const overlay = ensureAuthorWorksModal();
+        const author = String(mod?.author || '作者').trim() || '作者';
+        const items = Array.isArray(prebuiltItems) ? prebuiltItems : collectAuthorWorks(mod);
+        if (!items.length) {
+            if (app && typeof app.showInfoToast === 'function') {
+                app.showInfoToast('提示', '作者未配置可关联语音包');
+            }
+            return;
+        }
+
+        const iconEl = overlay.querySelector('.author-works-icon');
+        if (iconEl) {
+            const avatarUrl = String(mod?.author_avatar || FALLBACK_AVATAR).trim() || FALLBACK_AVATAR;
+            iconEl.innerHTML = `<img src="${escapeHtml(avatarUrl)}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" onerror="this.src='${escapeHtml(FALLBACK_AVATAR)}'">`;
+        }
+        const titleEl = overlay.querySelector('#author-works-title');
+        if (titleEl) titleEl.textContent = `${author} 的其他作品`;
+
+        renderAuthorWorksGrid(overlay, items);
+        overlay.classList.remove('hiding');
+        overlay.classList.add('show');
+    }
+
+    function closeAuthorWorksModal() {
+        const app = getApp();
+        if (app && typeof app.closeModal === 'function') {
+            app.closeModal(AUTHOR_WORKS_MODAL_ID);
+            return;
+        }
+        const overlay = document.getElementById(AUTHOR_WORKS_MODAL_ID);
+        if (!overlay) return;
+        overlay.classList.remove('show');
+        overlay.classList.remove('hiding');
+    }
+
     function bindLinkActions(overlay, mod) {
         const getLink = (action) => {
             if (action === 'bili') return String(mod?.link_bilibili || '').trim();
@@ -4932,6 +5300,18 @@ app.setupGlobalDragDrop = function () {
 
         overlay.querySelectorAll('[data-link-action]').forEach((btn) => {
             const action = btn.dataset.linkAction;
+            if (action === 'otherworks') {
+                const works = collectAuthorWorks(mod);
+                const enabled = works.length > 0;
+                btn.classList.toggle('disabled', !enabled);
+                btn.disabled = !enabled;
+                btn.innerHTML = `<i class="ri-music-2-line"></i> 查看作者其他语音包 (${works.length})`;
+                btn.onclick = () => {
+                    if (!enabled) return;
+                    openAuthorWorksModal(mod, works);
+                };
+                return;
+            }
             const url = getLink(action);
             const enabled = Boolean(url);
             btn.classList.toggle('disabled', !enabled);
@@ -4948,6 +5328,7 @@ app.setupGlobalDragDrop = function () {
         const title = String(mod?.title || '未命名语音包');
         const author = String(mod?.author || '未知作者');
         const date = String(mod?.date || '未知日期');
+        const authorAvatar = String(mod?.author_avatar || FALLBACK_AVATAR).trim() || FALLBACK_AVATAR;
         const sizeText = String(mod?.size_str || '未知大小');
         const cover = String(mod?.cover_url || 'assets/card_image.png');
         const version = normalizeVersion(mod?.version);
@@ -4956,13 +5337,11 @@ app.setupGlobalDragDrop = function () {
         const tagHtml = buildTagHtml(mod);
         const tagCount = normalizeUserTags(mod).length || buildCapabilityTags(mod).length;
 
-        const idText = String(mod?.id || '');
-        const idShow = /^\d+$/.test(idText) ? idText.padStart(6, '0') : idText;
-
         const titleEl = overlay.querySelector('#mod-preview-title');
         const versionEl = overlay.querySelector('#mod-preview-version');
         const authorEl = overlay.querySelector('#mod-preview-author');
         const dateEl = overlay.querySelector('#mod-preview-date');
+        const authorAvatarEl = overlay.querySelector('#mod-preview-author-avatar');
         const coverEl = overlay.querySelector('#mod-preview-cover');
         const sizeEl = overlay.querySelector('#mod-preview-size');
         const langEl = overlay.querySelector('#mod-preview-lang');
@@ -4970,12 +5349,15 @@ app.setupGlobalDragDrop = function () {
         const tagsEl = overlay.querySelector('#mod-preview-tags');
         const descEl = overlay.querySelector('#mod-preview-desc');
         const versionNoteEl = overlay.querySelector('#mod-preview-version-note');
-        const idEl = overlay.querySelector('#mod-preview-id');
 
         if (titleEl) titleEl.textContent = title;
         if (versionEl) versionEl.textContent = `v${version}`;
         if (authorEl) authorEl.textContent = author;
         if (dateEl) dateEl.textContent = date;
+        if (authorAvatarEl) {
+            authorAvatarEl.src = authorAvatar;
+            authorAvatarEl.onerror = () => { authorAvatarEl.src = FALLBACK_AVATAR; };
+        }
         if (coverEl) coverEl.src = cover;
         if (sizeEl) sizeEl.textContent = sizeText;
         if (langEl) langEl.innerHTML = buildLangHtml(mod);
@@ -4983,7 +5365,6 @@ app.setupGlobalDragDrop = function () {
         if (tagsEl) tagsEl.innerHTML = tagHtml || '<span class="mod-preview-empty">暂无标签</span>';
         if (descEl) descEl.textContent = desc;
         if (versionNoteEl) versionNoteEl.innerHTML = versionNoteHtml;
-        if (idEl) idEl.textContent = `ID: ${idShow || '-'}`;
 
         bindFooterActions(overlay, mod);
         bindLinkActions(overlay, mod);
@@ -4993,6 +5374,7 @@ app.setupGlobalDragDrop = function () {
     }
 
     function closePreview() {
+        closeAuthorWorksModal();
         const app = getApp();
         if (app && typeof app.closeModal === 'function') {
             app.closeModal(MODAL_ID);

@@ -6,14 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aimer WT</title>
     <link rel="stylesheet" href="assets/remixicon/remixicon.css">
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="css_fix.css">
+    <link rel="stylesheet" href="style.css?v=20260228_1">
+    <link rel="stylesheet" href="css_fix.css?v=20260228_1">
+    <link rel="stylesheet" href="css/notice_template_general.css?v=20260228_1">
+    <link rel="stylesheet" href="css/notice_template_update.css?v=20260228_1">
     <link rel="stylesheet" href="ai/ai_chat.css">
+    <link rel="stylesheet" href="ads/ad_carousel.css?v=20260228_1">
     <!-- 新功能模块样式 -->
     <link rel="stylesheet" href="css/pages/task_library.css">
     <link rel="stylesheet" href="css/pages/model_library.css">
     <link rel="stylesheet" href="css/pages/hangar.css">
     <link rel="stylesheet" href="css/pages/custom_text.css">
+    <link rel="stylesheet" href="guide/guide.css">
 </head>
 
 <body>
@@ -115,12 +119,15 @@
 
         <div id="page-home" class="page active">
             <div class="home-grid">
-                <div class="card status-card">
-                    <div class="status-icon" id="status-icon">
-                        <i class="ri-wifi-off-line"></i>
+                <div class="card status-card ad-carousel-host">
+                    <div id="home-ad-carousel" class="ad-carousel"></div>
+                    <div class="ad-legacy-status" aria-hidden="true">
+                        <div class="status-icon" id="status-icon">
+                            <i class="ri-wifi-off-line"></i>
+                        </div>
+                        <div class="status-label">当前连接状态</div>
+                        <div class="status-text waiting" id="status-text">未搜索路径</div>
                     </div>
-                    <div class="status-label">当前连接状态</div>
-                    <div class="status-text waiting" id="status-text">未搜索路径</div>
                 </div>
 
                 <div class="card path-card">
@@ -140,26 +147,7 @@
                 </div>
 
                 <div class="card notice-card">
-                    <div class="card-header no-border">
-                        <h3 style="display:flex; align-items:center; gap:8px;">
-                            <i class="ri-megaphone-line" style="color:var(--primary)"></i>
-                            公告栏
-                        </h3>
-                    </div>
-                    <div class="notice-content">
-                        <p><strong>软件没有自动更新功能，更新请关注UP动态和投稿</strong></p>
-                        <p>📌 <strong>使用步骤教程：</strong></p>
-                        <ul>
-                            <li>1. <strong>定位游戏：</strong> 在首页点击“自动搜索”或手动“浏览”定位到《战争雷霆》安装目录。</li>
-                            <li>2. <strong>准备文件：</strong> 将下载的语音包 ZIP/RAR 压缩包放入软件目录下的 <code>[待解压区]</code> 文件夹中。</li>
-                            <li>3. <strong>导入包体：</strong> 切换到“语音包库”页面，点击“导入压缩包”按钮，软件会自动解压并识别信息，你也可以自己解压放到语音包库中。</li>
-                            <li>4. <strong>一键加载：</strong> 在库中找到目标语音包，点击“加载”图标。软件会自动配置 <code>config.blk</code> 并安装。</li>
-                            <li>5. <strong>开启 Mod：</strong> 软件会自动检测并开启游戏内的 Mod 支持。若未生效，请检查 <code>config.blk</code> 中是否有
-                                <code>enable_mod:b=yes</code>，如果有问题先联系语音包制作者。
-                            </li>
-                        </ul>
-                        <p>祝您在战场上一路长虹！(๑•̀ㅂ•́)و✧</p>
-                    </div>
+                    <div class="notice-content" id="notice-board"></div>
                 </div>
 
                 <div class="card log-card">
@@ -256,18 +244,15 @@
                         <i class="ri-crosshair-line"></i>
                         <span>炮镜库</span>
                     </button>
-                    <button class="resource-nav-item" data-target="tasks"
-                        onclick="app.switchResourceView('tasks')">
+                    <button class="resource-nav-item" data-target="tasks" onclick="app.switchResourceView('tasks')">
                         <i class="ri-task-line"></i>
                         <span>任务库</span>
                     </button>
-                    <button class="resource-nav-item" data-target="models"
-                        onclick="app.switchResourceView('models')">
+                    <button class="resource-nav-item" data-target="models" onclick="app.switchResourceView('models')">
                         <i class="ri-box-3-line"></i>
                         <span>模型库</span>
                     </button>
-                    <button class="resource-nav-item" data-target="hangar"
-                        onclick="app.switchResourceView('hangar')">
+                    <button class="resource-nav-item" data-target="hangar" onclick="app.switchResourceView('hangar')">
                         <i class="ri-plane-line"></i>
                         <span>机库</span>
                     </button>
@@ -363,7 +348,8 @@
                                                     选择用户 UID
                                                 </label>
                                                 <div class="uid-selector-row">
-                                                    <div id="sights-uid-select-wrapper" class="uid-select-wrapper"></div>
+                                                    <div id="sights-uid-select-wrapper" class="uid-select-wrapper">
+                                                    </div>
                                                     <button class="btn-v2 icon-only"
                                                         onclick="app.refreshSightsUidList()" title="刷新 UID 列表">
                                                         <i class="ri-refresh-line"></i>
@@ -759,7 +745,8 @@
                                         <div class="contributor-role">涂装技术支持</div>
                                     </div>
                                 </a>
-                                <a class="contributor-card" href="https://github.com/Findoutsider" onclick="app.openExternal('https://github.com/Findoutsider'); return false;">
+                                <a class="contributor-card" href="https://github.com/Findoutsider"
+                                    onclick="app.openExternal('https://github.com/Findoutsider'); return false;">
                                     <div class="contributor-avatar">
                                         <img src="assets/tanks/5.BiAn.png" alt="BiAn">
                                     </div>
@@ -768,7 +755,8 @@
                                         <div class="contributor-role">软件、服务器技术支持</div>
                                     </div>
                                 </a>
-                                <a class="contributor-card" href="#" onclick="app.openExternal('https://github.com/TNT569'); return false;">
+                                <a class="contributor-card" href="#"
+                                    onclick="app.openExternal('https://github.com/TNT569'); return false;">
                                     <div class="contributor-avatar">
                                         <img src="assets/tanks/6.TNT569.png" alt="TNT569">
                                     </div>
@@ -777,7 +765,8 @@
                                         <div class="contributor-role">软件技术支持</div>
                                     </div>
                                 </a>
-                                <a class="contributor-card" href="#" onclick="app.openExternal('https://github.com/kyokusakin'); return false;">
+                                <a class="contributor-card" href="#"
+                                    onclick="app.openExternal('https://github.com/kyokusakin'); return false;">
                                     <div class="contributor-avatar">
                                         <img src="assets/tanks/7.Badwolf_TW.png" alt="Badwolf_TW">
                                     </div>
@@ -913,7 +902,8 @@
                     </div>
                     <div style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
                         <!-- 开机自启动 -->
-                        <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                        <div class="setting-item"
+                            style="display: flex; align-items: center; justify-content: space-between;">
                             <div>
                                 <div
                                     style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-main);">
@@ -927,7 +917,8 @@
                             </label>
                         </div>
                         <!-- 托盘模式 -->
-                        <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                        <div class="setting-item"
+                            style="display: flex; align-items: center; justify-content: space-between;">
                             <div>
                                 <div
                                     style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-main);">
@@ -941,7 +932,8 @@
                             </label>
                         </div>
                         <!-- 关闭确认提示 -->
-                        <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between;">
+                        <div class="setting-item"
+                            style="display: flex; align-items: center; justify-content: space-between;">
                             <div>
                                 <div
                                     style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-main);">
@@ -1097,34 +1089,44 @@
 
     <!-- 关闭确认弹窗 -->
     <div class="modal-overlay" id="modal-close-confirm">
-        <div class="modal-content" style="max-width: 400px;">
-            <h2 style="margin-top: 0; color: var(--text-main);">
-                <i class="ri-question-line" style="color: var(--primary);"></i> 确认关闭
-            </h2>
-            <p style="margin-bottom: 20px; color: var(--text-sec); font-size: 14px; line-height: 1.5;">
-                您想要退出程序还是最小化到系统托盘？
-            </p>
+        <div class="modal-content close-confirm-modal">
+            <button class="close-confirm-x" onclick="app.handleCloseAction('cancel')" aria-label="关闭弹窗">
+                <i class="ri-close-line"></i>
+            </button>
 
-            <div style="margin-bottom: 20px; padding: 12px; background: var(--bg-sec); border-radius: 8px;">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-sec);">
-                    <input type="checkbox" id="close-confirm-remember" style="cursor: pointer;">
-                    <span>不再提示我，记住我的选择</span>
-                </label>
-                <p style="margin: 8px 0 0 24px; font-size: 11px; color: var(--text-sec); opacity: 0.8;">
-                    可在 设置 > 启动设置 中重新开启此提示
-                </p>
+            <div class="close-confirm-head">
+                <h3 class="close-confirm-title">关闭程序</h3>
+                <p class="close-confirm-subtitle">请选择您需要的操作</p>
             </div>
 
-            <div class="modal-actions" style="justify-content: space-between;">
-                <button class="btn secondary" onclick="app.handleCloseAction('cancel')">取消</button>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn secondary" onclick="app.handleCloseAction('tray')">
-                        <i class="ri-apps-line"></i> 最小化到托盘
-                    </button>
-                    <button class="btn danger" onclick="app.handleCloseAction('exit')">
-                        <i class="ri-shut-down-line"></i> 退出程序
-                    </button>
-                </div>
+            <div class="close-confirm-choice-grid">
+                <button class="close-confirm-choice" onclick="app.handleCloseAction('tray')">
+                    <div class="close-confirm-choice-icon">
+                        <i class="ri-computer-line"></i>
+                    </div>
+                    <span>最小化到托盘</span>
+                    <small>保持后台运行<br>接收通知</small>
+                    <div class="close-confirm-arrow">
+                        <i class="ri-arrow-right-s-line"></i>
+                    </div>
+                </button>
+
+                <button class="close-confirm-choice danger" onclick="app.handleCloseAction('exit')">
+                    <div class="close-confirm-choice-icon">
+                        <i class="ri-shut-down-line"></i>
+                    </div>
+                    <span>完全退出程序</span>
+                    <small>释放系统内存<br>并关闭应用</small>
+                </button>
+            </div>
+
+            <div class="close-confirm-foot">
+                <label class="close-confirm-remember">
+                    <input type="checkbox" id="close-confirm-remember">
+                    <span>记住选择，不再提示</span>
+                </label>
+
+                <button class="close-confirm-cancel" onclick="app.handleCloseAction('cancel')">取消</button>
             </div>
         </div>
     </div>
@@ -1321,14 +1323,16 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="modal-support-me" onclick="if(event.target===this)app.closeModal('modal-support-me')">
+    <div class="modal-overlay" id="modal-support-me"
+        onclick="if(event.target===this)app.closeModal('modal-support-me')">
         <div class="modal-content" style="max-width: 780px; padding: 30px; position: relative;">
             <button class="modal-close-x" onclick="app.closeModal('modal-support-me')">
                 <i class="ri-close-line"></i>
             </button>
-            <h2 style="margin-top: 0;">支持开发者</h2>
-            <p class="subtitle" style="margin-bottom: 8px;">非常感谢给我钱！你的支持是我持续更新的动力</p>
-            <p class="subtitle" style="margin-bottom: 20px; font-size: 13px; color: var(--text-sec);">还可以帮我减轻服务器和大模型API的成本！</p>
+            <h2 style="margin-top: 0;">支持一下我</h2>
+            <p class="subtitle" style="margin-bottom: 8px;">非常感谢给我钱！你的支持是我持续更新的动力，本软件个人开发时长近1000小时啦！</p>
+            <p class="subtitle" style="margin-bottom: 20px; font-size: 13px; color: var(--text-sec);">
+                还可以帮我减轻服务器和大模型API的成本！</p>
 
             <div class="support-qr-row">
                 <div class="support-qr-item" onclick="app.openImagePreview('assets/aifadian.png', '爱发电')">
@@ -1357,11 +1361,14 @@
                 <div class="support-free-list">
                     <div class="support-free-item">
                         <i class="ri-star-fill" style="color: #FFB800;"></i>
-                        <a href="https://github.com/AimerSo/Aimer_WT" target="_blank" class="support-link-text github" onclick="app.openExternal('https://github.com/AimerSo/Aimer_WT'); return false;">在 GitHub 给项目点个 Star，帮助更多人发现（可点击跳转）</a>
+                        <a href="https://github.com/AimerSo/Aimer_WT" target="_blank" class="support-link-text github"
+                            onclick="app.openExternal('https://github.com/AimerSo/Aimer_WT'); return false;">在 GitHub
+                            给项目点个 Star，帮助更多人发现（可点击跳转）</a>
                     </div>
                     <div class="support-free-item">
                         <i class="ri-bilibili-fill" style="color: #FB7299;"></i>
-                        <a href="https://b23.tv/Z0hfm59" target="_blank" class="support-link-text bilibili" onclick="app.openExternal('https://b23.tv/Z0hfm59'); return false;">在哔哩哔哩关注我，获取最新动态和教程（可点击跳转）</a>
+                        <a href="https://b23.tv/Z0hfm59" target="_blank" class="support-link-text bilibili"
+                            onclick="app.openExternal('https://b23.tv/Z0hfm59'); return false;">在哔哩哔哩关注我，获取最新动态和教程（可点击跳转）</a>
                     </div>
                     <div class="support-free-item">
                         <i class="ri-server-fill" style="color: var(--primary);"></i>
@@ -1371,10 +1378,13 @@
             </div>
 
             <div class="modal-actions" style="margin-top: 24px; gap: 12px; justify-content: center;">
-                <a href="https://github.com/AimerSo/Aimer_WT" target="_blank" class="btn secondary support-action-btn" onclick="app.openExternal('https://github.com/AimerSo/Aimer_WT'); return false;" style="text-decoration: none;">
+                <a href="https://github.com/AimerSo/Aimer_WT" target="_blank" class="btn secondary support-action-btn"
+                    onclick="app.openExternal('https://github.com/AimerSo/Aimer_WT'); return false;"
+                    style="text-decoration: none;">
                     <i class="ri-github-fill"></i> GitHub 点星
                 </a>
-                <a href="https://b23.tv/Z0hfm59" target="_blank" class="btn secondary support-action-btn" onclick="app.openExternal('https://b23.tv/Z0hfm59'); return false;" style="text-decoration: none;">
+                <a href="https://b23.tv/Z0hfm59" target="_blank" class="btn secondary support-action-btn"
+                    onclick="app.openExternal('https://b23.tv/Z0hfm59'); return false;" style="text-decoration: none;">
                     <i class="ri-bilibili-fill"></i> B站关注
                 </a>
             </div>
@@ -1382,7 +1392,8 @@
     </div>
 
     <!-- 图片预览弹窗 -->
-    <div class="modal-overlay" id="modal-image-preview" onclick="if(event.target===this)app.closeModal('modal-image-preview')">
+    <div class="modal-overlay" id="modal-image-preview"
+        onclick="if(event.target===this)app.closeModal('modal-image-preview')">
         <div class="modal-content" style="max-width: 500px; padding: 20px;">
             <h3 id="image-preview-title" style="margin-top: 0; margin-bottom: 16px;">图片预览</h3>
             <div class="image-preview-wrap">
@@ -1459,7 +1470,8 @@
             </div>
 
             <div class="modal-actions" style="margin-top: 25px;">
-                <button class="btn secondary" onclick="app.closeModal('modal-launch-settings')" style="width: 100%;">取消</button>
+                <button class="btn secondary" onclick="app.closeModal('modal-launch-settings')"
+                    style="width: 100%;">取消</button>
             </div>
         </div>
     </div>
@@ -1609,6 +1621,9 @@
     </div>
 
     <div id="tooltip" class="tooltip"></div>
+    <button id="btn-guide-help" type="button" onclick="app.startGuide(true)" title="新手教程" aria-label="新手教程">
+        <i class="ri-question-line"></i>
+    </button>
 
     <script src="loading_voice_package.js"></script>
     <script src="components/AppDropdownMenu.js"></script>
@@ -1617,8 +1632,16 @@
     <script src="js/pages/model_library.js"></script>
     <script src="js/pages/hangar.js"></script>
     <script src="js/pages/custom_text.js"></script>
-    <script src="script.js"></script>
-    
+    <script src="js/notice/notice_data.js?v=20260228_1"></script>
+    <script src="js/notice/templates/general_notice_template.js?v=20260228_1"></script>
+    <script src="js/notice/templates/update_notice_template.js?v=20260228_1"></script>
+    <script src="js/notice/notice_modal.js?v=20260228_1"></script>
+    <script src="js/notice/notice_board.js?v=20260228_1"></script>
+    <script src="guide/guide.js"></script>
+    <script src="script.js?v=20260228"></script>
+    <script src="ads/ad_carousel_config.js"></script>
+    <script src="ads/ad_carousel.js"></script>
+
     <!-- AI助手模块 -->
     <script src="ai/config.js"></script>
     <script src="ai/prompts.js"></script>

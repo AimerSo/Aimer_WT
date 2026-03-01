@@ -37,7 +37,7 @@ from services.hangar_manager import HangarManager
 from services.bank_preview_service import BankPreviewService
 from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
-from services.telemetry_manager import init_telemetry, get_hwid
+from services.telemetry_manager import init_telemetry, get_hwid, get_telemetry_connection_status
 from utils.custom_text_processor import extract_prefix_group
 from wt.wt_text import (
     load_csv_rows_with_fallback,
@@ -490,6 +490,7 @@ class AppApi:
             "launch_mode": launch_mode,
             "hwid": get_hwid(),
             "telemetry_enabled": self._cfg_mgr.get_telemetry_enabled(),
+            "telemetry_connected": get_telemetry_connection_status(),
             "autostart_enabled": self._cfg_mgr.get_autostart_enabled(),
             "tray_mode": self._cfg_mgr.get_tray_mode(),
             "close_confirm": self._cfg_mgr.get_close_confirm()
@@ -575,6 +576,13 @@ class AppApi:
         - 获取当前遥测开启状态。
         """
         return self._cfg_mgr.get_telemetry_enabled()
+
+    def get_telemetry_connection_status(self):
+        """
+        功能定位:
+        - 获取当前与遥测服务端的连接状态。
+        """
+        return get_telemetry_connection_status()
 
     def set_telemetry_status(self, enabled):
         """
@@ -1531,6 +1539,31 @@ class AppApi:
             self._hangar_mgr.open_hangar_library_folder()
 
         # 未列入允许名单的 folder_type 不执行任何操作
+
+    def open_mod_folder(self, mod_name):
+        # 打开语音包库中指定语音包目录。
+        name = str(mod_name or "").strip()
+        if not name:
+            return {"success": False, "msg": "语音包名称为空"}
+
+        try:
+            library_dir = Path(self._lib_mgr.library_dir).resolve()
+            target = (library_dir / name).resolve()
+            if os.path.commonpath([str(target), str(library_dir)]) != str(library_dir):
+                return {"success": False, "msg": "非法语音包路径"}
+            if not target.exists() or not target.is_dir():
+                return {"success": False, "msg": "语音包目录不存在"}
+
+            if platform.system() == "Windows":
+                os.startfile(str(target))
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", str(target)])
+            else:
+                subprocess.Popen(["xdg-open", str(target)])
+            return {"success": True}
+        except Exception as e:
+            log.error(f"打开语音包目录失败: {e}")
+            return {"success": False, "msg": f"打开失败: {e}"}
 
     def open_external(self, url):
         """
