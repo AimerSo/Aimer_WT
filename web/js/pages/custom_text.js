@@ -33,6 +33,7 @@ const CustomText = {
                     <select id="custom-text-csv-file" class="custom-text-select"></select>
                     <select id="custom-text-language" class="custom-text-select"></select>
                     <button class="btn-v2" id="btn-custom-text-import"><i class="ri-upload-2-line"></i><span>导入</span></button>
+                    <button class="btn-v2" id="btn-custom-text-export"><i class="ri-download-2-line"></i><span>导出</span></button>
                     <button class="btn-v2" id="btn-custom-text-reload"><i class="ri-refresh-line"></i><span>刷新</span></button>
                     <button class="btn-v2 primary" id="btn-custom-text-save"><i class="ri-save-3-line"></i><span>保存当前语言</span></button>
                 </div>
@@ -61,6 +62,7 @@ const CustomText = {
         const reloadBtn = document.getElementById('btn-custom-text-reload');
         const saveBtn = document.getElementById('btn-custom-text-save');
         const importBtn = document.getElementById('btn-custom-text-import');
+        const exportBtn = document.getElementById('btn-custom-text-export');
         const searchEl = document.getElementById('custom-text-search');
         const groupSearchEl = document.getElementById('custom-text-group-search');
         const langEl = document.getElementById('custom-text-language');
@@ -69,6 +71,7 @@ const CustomText = {
         if (reloadBtn) reloadBtn.onclick = () => this.loadData();
         if (saveBtn) saveBtn.onclick = () => this.saveData();
         if (importBtn) importBtn.onclick = () => this.importData();
+        if (exportBtn) exportBtn.onclick = () => this.exportData();
         if (searchEl) searchEl.oninput = () => this.renderRows();
         if (groupSearchEl) groupSearchEl.oninput = () => this.renderGroupList();
         if (csvEl) {
@@ -321,6 +324,33 @@ const CustomText = {
             }
         } catch (e) {
             app.showAlert('错误', `导入失败: ${e.message || e}`, 'error');
+        }
+    },
+
+    async exportData() {
+        if (!window.pywebview?.api?.select_custom_text_export_folder || !window.pywebview?.api?.export_custom_text_package) {
+            app.showAlert('错误', '后端导出接口不可用', 'error');
+            return;
+        }
+
+        try {
+            const folderRes = await pywebview.api.select_custom_text_export_folder();
+            if (!folderRes || !folderRes.success || !folderRes.folder_path) {
+                return;
+            }
+
+            const res = await pywebview.api.export_custom_text_package({
+                export_folder: folderRes.folder_path
+            });
+
+            if (res && res.success) {
+                const msg = `${res.msg || '导出成功'}\nCSV: ${Number(res.csv_count || 0)} 个，BLK: ${Number(res.blk_count || 0)} 个\n${res.zip_path || ''}`;
+                app.showAlert('成功', msg, 'success');
+            } else {
+                app.showAlert('错误', (res && res.msg) ? res.msg : '导出失败', 'error');
+            }
+        } catch (e) {
+            app.showAlert('错误', `导出失败: ${e.message || e}`, 'error');
         }
     },
 

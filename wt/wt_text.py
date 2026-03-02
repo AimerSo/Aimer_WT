@@ -37,28 +37,27 @@ def list_lang_csv_files_with_status(lang_dir: Path) -> list[dict]:
     aimer_dir = lang_dir / "AimerWT"
 
     try:
+        base_names = set()
         for p in lang_dir.glob("*.csv"):
             if p.is_file():
-                modified = (aimer_dir / p.name).exists()
-                files_info.append({
-                    "name": p.name,
-                    "modified": modified
-                })
+                base_names.add(p.name)
+        if aimer_dir.exists() and aimer_dir.is_dir():
+            for p in aimer_dir.glob("*.csv"):
+                if p.is_file():
+                    base_names.add(p.name)
+
+        for name in base_names:
+            files_info.append({
+                "name": name,
+                "modified": (aimer_dir / name).exists()
+            })
     except Exception:
         return []
 
-    # 去重
-    seen = set()
-    unique_files = []
-    for f in files_info:
-        if f["name"] not in seen:
-            seen.add(f["name"])
-            unique_files.append(f)
-
     # 排序：已修改的在前，然后按名称排序
-    unique_files.sort(key=lambda x: (not x["modified"], x["name"].lower()))
+    files_info.sort(key=lambda x: (not x["modified"], x["name"].lower()))
 
-    return unique_files
+    return files_info
 
 
 def sanitize_csv_file_name(value: str) -> str:

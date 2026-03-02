@@ -13,6 +13,7 @@ import threading
 import time
 import platform
 import subprocess
+import zipfile
 
 # ==================== 控制台编码设置（已移至 utils.logger）====================
 # 详细逻辑请参考 utils/logger.py 中的 _setup_console_encoding 函数
@@ -67,6 +68,49 @@ else:
 WEB_DIR = BASE_DIR / "web"
 
 log = get_logger(__name__)
+
+
+def _is_localization_blk_modified_for_export(lang_dir: Path) -> bool:
+    """
+    判断 localization.blk 是否为“已修改”状态：
+    1) 若存在 localization.blk.AimerWT.backup，则与当前内容比较；
+    2) 若无 backup，则检测是否包含 %lang/aimerWT/*.csv 引用。
+    """
+    localization_blk = lang_dir / "localization.blk"
+    if not localization_blk.exists() or not localization_blk.is_file():
+        return False
+
+    backup_blk = lang_dir / "localization.blk.AimerWT.backup"
+    try:
+        current_content = localization_blk.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return False
+
+    if backup_blk.exists() and backup_blk.is_file():
+        try:
+            backup_content = backup_blk.read_text(encoding="utf-8", errors="ignore")
+            return current_content != backup_content
+        except Exception:
+            pass
+
+    return bool(re.search(r"%lang/aimerWT/[^\"\r\n]+?\.csv", current_content, flags=re.IGNORECASE))
+
+
+def _collect_custom_text_export_items(lang_dir: Path) -> tuple[list[Path], list[Path]]:
+    """
+    收集自定义文本导出所需文件：
+    - CSV: lang/aimerWT/*.csv
+    - BLK: 仅当 localization.blk 被修改时导出 localization.blk
+    """
+    aimer_dir = lang_dir / "aimerWT"
+    csv_files = sorted([p for p in aimer_dir.glob("*.csv") if p.is_file()], key=lambda p: p.name.lower())
+
+    blk_files: list[Path] = []
+    localization_blk = lang_dir / "localization.blk"
+    if _is_localization_blk_modified_for_export(lang_dir) and localization_blk.exists() and localization_blk.is_file():
+        blk_files.append(localization_blk)
+
+    return csv_files, blk_files
 
 
 def _show_fatal_error(title: str, message: str) -> None:
@@ -2117,13 +2161,22 @@ class AppApi:
 
         lang_dir = Path(game_path) / "lang"
         csv_files = list_lang_csv_files(lang_dir)
-        if not csv_files:
-            return {"success": False, "msg": "未在 lang 文件夹中找到 CSV 文件。"}
+        aimer_dir = lang_dir / "aimerWT"
+        custom_only_files = []
+        try:
+            if aimer_dir.exists() and aimer_dir.is_dir():
+                custom_only_files = [p.name for p in aimer_dir.glob("*.csv") if p.is_file()]
+        except Exception:
+            custom_only_files = []
+        all_csv_files = sorted(set(csv_files + custom_only_files), key=lambda x: x.lower())
+
+        if not all_csv_files:
+            return {"success": False, "msg": "未在 lang 或 lang/aimerWT 文件夹中找到 CSV 文件。"}
 
         if not csv_file:
-            csv_file = "menu.csv" if "menu.csv" in csv_files else csv_files[0]
-        if csv_file not in csv_files:
-            return {"success": False, "msg": f"未找到 lang/{csv_file}。"}
+            csv_file = "menu.csv" if "menu.csv" in all_csv_files else all_csv_files[0]
+        if csv_file not in all_csv_files:
+            return {"success": False, "msg": f"未找到 {csv_file}（lang 或 lang/aimerWT）。"}
 
         source_csv = lang_dir / csv_file
 
@@ -2183,8 +2236,9 @@ class AppApi:
 
         if not target_csv.exists():
             try:
-                import shutil
-                shutil.copy2(source_csv, target_csv)
+                if source_csv.exists():
+                    import shutil
+                    shutil.copy2(source_csv, target_csv)
             except Exception as e:
                 return {"success": False, "msg": f"创建 {csv_file} 副本失败: {e}"}
 
@@ -2611,6 +2665,77 @@ class AppApi:
             return {"success": False}
         except Exception as e:
             return {"success": False, "msg": f"选择文件失败: {e}"}
+
+    def select_custom_text_export_folder(self):
+        """打开文件夹选择对话框，选择导出压缩包保存目录。"""
+        try:
+            result = self._window.create_file_dialog(webview.FileDialog.FOLDER)
+            if result and len(result) > 0:
+                return {"success": True, "folder_path": result[0]}
+            return {"success": False}
+        except Exception as e:
+            return {"success": False, "msg": f"选择导出目录失败: {e}"}
+
+    def export_custom_text_package(self, payload=None):
+        """
+        导出自定义文本压缩包：
+        - 包内包含 AimerWT/ 目录（仅当前已修改 CSV）
+        - 仅包含已修改的 blk（目前为 localization.blk）
+        """
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = None
+        payload = payload if isinstance(payload, dict) else {}
+
+        export_folder = str(payload.get("export_folder", "")).strip()
+        if not export_folder:
+            return {"success": False, "msg": "缺少导出目录。"}
+
+        game_path = self._cfg_mgr.get_game_path()
+        if not game_path:
+            return {"success": False, "msg": "请先在主页设置游戏路径。"}
+
+        valid, msg = self._logic.validate_game_path(game_path)
+        if not valid:
+            return {"success": False, "msg": msg or "游戏路径无效。"}
+
+        lang_dir = Path(game_path) / "lang"
+        if not lang_dir.exists() or not lang_dir.is_dir():
+            return {"success": False, "msg": "未找到 lang 文件夹。"}
+
+        csv_files, blk_files = _collect_custom_text_export_items(lang_dir)
+        if not csv_files:
+            return {"success": False, "msg": "未检测到可导出的自定义 CSV（lang/aimerWT/*.csv）。"}
+
+        try:
+            export_dir = Path(export_folder)
+            export_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            return {"success": False, "msg": f"创建导出目录失败: {e}"}
+
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        zip_path = export_dir / f"AimerWT_custom_text_{ts}.zip"
+
+        try:
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for csv_file in csv_files:
+                    zf.write(csv_file, arcname=f"AimerWT/{csv_file.name}")
+                for blk_file in blk_files:
+                    zf.write(blk_file, arcname=blk_file.name)
+        except Exception as e:
+            return {"success": False, "msg": f"导出压缩包失败: {e}"}
+
+        return {
+            "success": True,
+            "msg": f"导出成功：{zip_path.name}",
+            "zip_path": str(zip_path),
+            "csv_count": len(csv_files),
+            "blk_count": len(blk_files),
+            "csv_files": [p.name for p in csv_files],
+            "blk_files": [p.name for p in blk_files],
+        }
 
     def refresh_skins_async(self, opts=None):
         """
