@@ -59,6 +59,10 @@ class ConfigManager:
         "theme_mode": "Light",
         "is_first_run": True,
         "agreement_version": "",
+        "guide_state": {
+            "completed": False,
+            "firstOpenHandled": False
+        },
         "sights_path": "",
         "pending_dir": "",
         "library_dir": "",
@@ -309,6 +313,36 @@ class ConfigManager:
             bool: 是否成功保存
         """
         self.config["agreement_version"] = str(version) if version else ""
+        return self.save_config()
+
+    def get_guide_state(self) -> dict:
+        """读取新手引导状态。"""
+        fallback = {"completed": False, "firstOpenHandled": False}
+        raw = self.config.get("guide_state", {})
+        if not isinstance(raw, dict):
+            return fallback
+        return {
+            "completed": bool(raw.get("completed", False)),
+            "firstOpenHandled": bool(raw.get("firstOpenHandled", False)),
+        }
+
+    def set_guide_state(self, guide_state: dict) -> bool:
+        """
+        更新新手引导状态并写入 settings.json。
+
+        Args:
+            guide_state: 引导状态字典，支持 completed / firstOpenHandled
+
+        Returns:
+            bool: 是否成功保存
+        """
+        current = self.get_guide_state()
+        if isinstance(guide_state, dict):
+            current["completed"] = bool(guide_state.get("completed", current["completed"]))
+            current["firstOpenHandled"] = bool(
+                guide_state.get("firstOpenHandled", current["firstOpenHandled"])
+            )
+        self.config["guide_state"] = current
         return self.save_config()
 
     def get_config_dir(self) -> str:

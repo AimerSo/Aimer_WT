@@ -3104,6 +3104,15 @@ class AppApi:
         self._cfg_mgr.set_agreement_version(version)
         return True
 
+    def get_guide_state(self):
+        # 读取新手引导状态（持久化在 settings.json）。
+        return self._cfg_mgr.get_guide_state()
+
+    def save_guide_state(self, guide_state):
+        # 保存新手引导状态到 settings.json。
+        ok = self._cfg_mgr.set_guide_state(guide_state if isinstance(guide_state, dict) else {})
+        return {"success": bool(ok)}
+
     # --- 主题管理 API ---
     def get_theme_list(self):
         # 扫描 web/themes 目录下的主题 JSON 文件列表，并返回主题元信息供前端下拉框展示。

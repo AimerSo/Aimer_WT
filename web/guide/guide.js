@@ -189,30 +189,84 @@
         relayoutRaf: 0,
         relayoutStartTimer: 0,
         cardTransitionTimer: 0,
-        lastRenderedStep: -1
+        lastRenderedStep: -1,
+        guideStateCache: null,
+        guideStateLoadPromise: null
     };
 
-    function getGuideState() {
-        const fallback = { completed: false, firstOpenHandled: false };
+    function normalizeGuideState(raw) {
+        return {
+            completed: Boolean(raw?.completed),
+            firstOpenHandled: Boolean(raw?.firstOpenHandled)
+        };
+    }
+
+    function getLocalGuideState() {
+        const fallback = normalizeGuideState({});
         try {
             const raw = localStorage.getItem(GUIDE_STATE_KEY);
             if (!raw) return fallback;
-            const parsed = JSON.parse(raw);
-            return {
-                completed: Boolean(parsed?.completed),
-                firstOpenHandled: Boolean(parsed?.firstOpenHandled)
-            };
+            return normalizeGuideState(JSON.parse(raw));
         } catch (_e) {
             return fallback;
         }
     }
 
-    function setGuideState(next) {
+    function setLocalGuideState(next) {
         try {
-            const curr = getGuideState();
+            const curr = getLocalGuideState();
             localStorage.setItem(GUIDE_STATE_KEY, JSON.stringify({ ...curr, ...next }));
         } catch (_e) {
         }
+    }
+
+    function getGuideState() {
+        return state.guideStateCache ? { ...state.guideStateCache } : getLocalGuideState();
+    }
+
+    function persistGuideStateToBackend(guideState) {
+        if (!window.pywebview?.api?.save_guide_state) return;
+        try {
+            window.pywebview.api.save_guide_state(guideState).catch(() => {});
+        } catch (_e) {
+        }
+    }
+
+    async function ensureGuideStateLoaded() {
+        if (state.guideStateCache) return state.guideStateCache;
+        if (state.guideStateLoadPromise) return state.guideStateLoadPromise;
+
+        state.guideStateLoadPromise = (async () => {
+            const local = getLocalGuideState();
+            let merged = { ...local };
+
+            if (window.pywebview?.api?.get_guide_state) {
+                try {
+                    const remote = normalizeGuideState(await window.pywebview.api.get_guide_state());
+                    merged = {
+                        completed: remote.completed || local.completed,
+                        firstOpenHandled: remote.firstOpenHandled || local.firstOpenHandled
+                    };
+                } catch (_e) {
+                }
+            }
+
+            state.guideStateCache = merged;
+            setLocalGuideState(merged);
+            persistGuideStateToBackend(merged);
+            state.guideStateLoadPromise = null;
+            return merged;
+        })();
+
+        return state.guideStateLoadPromise;
+    }
+
+    function setGuideState(next) {
+        const curr = getGuideState();
+        const merged = normalizeGuideState({ ...curr, ...next });
+        state.guideStateCache = merged;
+        setLocalGuideState(merged);
+        persistGuideStateToBackend(merged);
     }
 
     function getHelpButton() {
@@ -732,10 +786,12 @@
         ensureOverlay();
         bindEvents();
         state.inited = true;
+        void ensureGuideStateLoaded();
 
         const autoStart = options.autoStart !== false;
         if (autoStart) {
-            window.setTimeout(() => {
+            window.setTimeout(async () => {
+                await ensureGuideStateLoaded();
                 const guideState = getGuideState();
                 if (guideState.completed) return;
                 if (!guideState.firstOpenHandled) {
