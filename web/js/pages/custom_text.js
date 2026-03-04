@@ -32,6 +32,8 @@ const CustomText = {
                 <div class="resource-view-header-right custom-text-actions">
                     <select id="custom-text-csv-file" class="custom-text-select"></select>
                     <select id="custom-text-language" class="custom-text-select"></select>
+                    <button class="btn-v2" id="btn-custom-text-import"><i class="ri-upload-2-line"></i><span>导入</span></button>
+                    <button class="btn-v2" id="btn-custom-text-export"><i class="ri-download-2-line"></i><span>导出</span></button>
                     <button class="btn-v2" id="btn-custom-text-reload"><i class="ri-refresh-line"></i><span>刷新</span></button>
                     <button class="btn-v2 primary" id="btn-custom-text-save"><i class="ri-save-3-line"></i><span>保存当前语言</span></button>
                 </div>
@@ -59,6 +61,8 @@ const CustomText = {
     bindEvents() {
         const reloadBtn = document.getElementById('btn-custom-text-reload');
         const saveBtn = document.getElementById('btn-custom-text-save');
+        const importBtn = document.getElementById('btn-custom-text-import');
+        const exportBtn = document.getElementById('btn-custom-text-export');
         const searchEl = document.getElementById('custom-text-search');
         const groupSearchEl = document.getElementById('custom-text-group-search');
         const langEl = document.getElementById('custom-text-language');
@@ -66,6 +70,8 @@ const CustomText = {
 
         if (reloadBtn) reloadBtn.onclick = () => this.loadData();
         if (saveBtn) saveBtn.onclick = () => this.saveData();
+        if (importBtn) importBtn.onclick = () => this.importData();
+        if (exportBtn) exportBtn.onclick = () => this.exportData();
         if (searchEl) searchEl.oninput = () => this.renderRows();
         if (groupSearchEl) groupSearchEl.oninput = () => this.renderGroupList();
         if (csvEl) {
@@ -145,9 +151,11 @@ const CustomText = {
         csvEl.innerHTML = '';
         (files || []).forEach((f) => {
             const op = document.createElement('option');
-            op.value = String(f);
-            op.textContent = String(f);
-            if (String(f) === this.currentCsvFile) op.selected = true;
+            const fileName = typeof f === 'string' ? f : (f.name || '');
+            const isModified = typeof f === 'object' && f.modified;
+            op.value = String(fileName);
+            op.textContent = isModified ? `★ ${fileName}` : String(fileName);
+            if (String(fileName) === this.currentCsvFile) op.selected = true;
             csvEl.appendChild(op);
         });
     },
@@ -225,9 +233,12 @@ const CustomText = {
         tableEl.innerHTML = items.map((it, idx) => {
             const id = String(it.id || '');
             const val = String((it.languages && it.languages[this.currentLanguage]) || '');
+            const isModified = it.modified === true;
+            const modifiedClass = isModified ? ' modified' : '';
+            const modifiedMark = isModified ? '<span class="modified-mark" title="已修改">★</span>' : '';
             return `
-                <div class="custom-text-row">
-                    <div class="custom-text-id" title="${this.escapeHtml(id)}">${this.escapeHtml(id)}</div>
+                <div class="custom-text-row${modifiedClass}">
+                    <div class="custom-text-id" title="${this.escapeHtml(id)}">${modifiedMark}${this.escapeHtml(id)}</div>
                     <textarea class="custom-text-input" data-id="${this.escapeHtml(id)}" data-index="${idx}">${this.escapeHtml(val)}</textarea>
                 </div>
             `;
@@ -282,6 +293,346 @@ const CustomText = {
         } catch (e) {
             app.showAlert('错误', `保存失败: ${e.message || e}`, 'error');
         }
+    },
+
+    async importData() {
+        if (!window.pywebview?.api?.import_custom_text) {
+            app.showAlert('错误', '后端导入接口不可用', 'error');
+            return;
+        }
+
+        try {
+            // 使用后端的文件选择对话框
+            const result = await pywebview.api.select_custom_text_file();
+
+            if (!result || !result.success || !result.file_path) {
+                return; // 用户取消选择
+            }
+
+            const res = await pywebview.api.import_custom_text({
+                file_path: result.file_path
+            });
+
+            if (res && res.success) {
+                // 使用新的导入结果模态框
+                this.showImportResult(res, result.file_path);
+                // 重新加载数据
+                this.loadData();
+            } else {
+                // 失败时也使用模态框展示
+                this.showImportResult(res, result.file_path);
+            }
+        } catch (e) {
+            app.showAlert('错误', `导入失败: ${e.message || e}`, 'error');
+        }
+    },
+
+    async exportData() {
+        if (!window.pywebview?.api?.select_custom_text_export_folder || !window.pywebview?.api?.export_custom_text_package) {
+            app.showAlert('错误', '后端导出接口不可用', 'error');
+            return;
+        }
+
+        try {
+            const folderRes = await pywebview.api.select_custom_text_export_folder();
+            if (!folderRes || !folderRes.success || !folderRes.folder_path) {
+                return;
+            }
+
+            const res = await pywebview.api.export_custom_text_package({
+                export_folder: folderRes.folder_path
+            });
+
+            if (res && res.success) {
+                const msg = `${res.msg || '导出成功'}\nCSV: ${Number(res.csv_count || 0)} 个，BLK: ${Number(res.blk_count || 0)} 个\n${res.zip_path || ''}`;
+                app.showAlert('成功', msg, 'success');
+            } else {
+                app.showAlert('错误', (res && res.msg) ? res.msg : '导出失败', 'error');
+            }
+        } catch (e) {
+            app.showAlert('错误', `导出失败: ${e.message || e}`, 'error');
+        }
+    },
+
+    showImportResult(result, originalFilePath) {
+        // 解析导入结果
+        const success = result.success || false;
+        const mappingInfo = result.mapping_info || result.details || [];
+        const importedCount = (result.imported_files || []).length;
+        const skippedCount = (result.skipped_files || []).length;
+        const skippedFiles = result.skipped_files || [];
+        const tempDir = result.temp_dir || null;  // 临时目录路径
+
+        // 分类处理映射信息
+        const successItems = [];
+        const warningItems = [];
+        const errorItems = [];
+
+        mappingInfo.forEach(info => {
+            const infoStr = String(info);
+            if (infoStr.startsWith('✓')) {
+                successItems.push(infoStr.substring(1).trim());
+            } else if (infoStr.startsWith('⚠')) {
+                warningItems.push(infoStr.substring(1).trim());
+            } else if (infoStr.startsWith('✗')) {
+                errorItems.push(infoStr.substring(1).trim());
+            } else {
+                // 默认归类
+                if (infoStr.includes('跳过') || infoStr.includes('无法识别')) {
+                    warningItems.push(infoStr);
+                } else if (infoStr.includes('失败')) {
+                    errorItems.push(infoStr);
+                } else {
+                    successItems.push(infoStr);
+                }
+            }
+        });
+
+        // 创建模态框
+        const overlay = document.createElement('div');
+        overlay.className = 'import-result-overlay';
+        overlay.onclick = (e) => {
+            if (e.target === overlay) {
+                this.closeImportResult(overlay, tempDir);
+            }
+        };
+
+        const modal = document.createElement('div');
+        modal.className = 'import-result-modal';
+        modal.onclick = (e) => e.stopPropagation();
+
+        // 确定图标类型
+        let iconClass = 'success';
+        let iconSymbol = '✓';
+        let titleText = '导入成功';
+
+        if (!success) {
+            iconClass = 'error';
+            iconSymbol = '✗';
+            titleText = '导入失败';
+        } else if (skippedCount > 0) {
+            iconClass = 'warning';
+            iconSymbol = '⚠';
+            titleText = '部分导入成功';
+        }
+
+        // 构建HTML
+        modal.innerHTML = `
+            <div class="import-result-header">
+                <div class="import-result-title">
+                    <div class="import-result-icon ${iconClass}">${iconSymbol}</div>
+                    <span>${titleText}</span>
+                </div>
+                <button class="import-result-close" onclick="CustomText.closeImportResult(this.closest('.import-result-overlay'), ${tempDir ? `'${tempDir}'` : 'null'})">×</button>
+            </div>
+            <div class="import-result-body">
+                ${this.renderImportSummary(result, importedCount, skippedCount)}
+                ${this.renderImportSection('成功导入', successItems, 'success')}
+                ${this.renderImportSection('跳过文件', warningItems, 'warning')}
+                ${this.renderImportSection('导入失败', errorItems, 'error')}
+                ${skippedCount > 0 && tempDir ? this.renderSkippedFilesSection(skippedFiles, tempDir) : ''}
+            </div>
+            <div class="import-result-footer">
+                <button class="import-result-btn import-result-btn-primary" onclick="CustomText.closeImportResult(this.closest('.import-result-overlay'), ${tempDir ? `'${tempDir}'` : 'null'})">
+                    ${skippedCount > 0 && tempDir ? '稍后处理' : '确定'}
+                </button>
+            </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+    },
+
+    renderSkippedFilesSection(skippedFiles, tempDir) {
+        const fileListHtml = skippedFiles.map((fileName) => `
+            <div class="manual-import-file-item">
+                <label class="manual-import-file-label">
+                    <input type="checkbox" class="manual-import-checkbox" value="${this.escapeHtml(fileName)}" checked>
+                    <span class="manual-import-file-name">${this.escapeHtml(fileName)}</span>
+                </label>
+            </div>
+        `).join('');
+
+        return `
+            <div class="import-result-section" style="margin-top: 24px;">
+                <div class="manual-import-warning">
+                    <div class="manual-import-warning-icon">!</div>
+                    <div class="manual-import-warning-text">
+                        <strong>是否导入这些文件？</strong><br>
+                        以下文件无法自动识别，但可能是有效的自定义文本模组。<br>
+                        确认后，这些文件将以<strong>原文件名</strong>直接导入到 <code>lang/aimerWT/</code> 目录，<br>
+                        并在 <code>localization.blk</code> 中添加对应的引用路径。
+                    </div>
+                </div>
+                <div class="import-result-section-title">
+                    选择要导入的文件
+                    <span class="import-result-section-badge warning">${skippedFiles.length}</span>
+                </div>
+                <div class="manual-import-files-list">
+                    ${fileListHtml}
+                </div>
+                <div style="margin-top: 16px; display: flex; gap: 12px; justify-content: flex-end;">
+                    <button class="import-result-btn import-result-btn-primary" onclick="CustomText.confirmManualImportInline(this, '${tempDir}')">
+                        <i class="ri-check-line"></i> 确认导入选中的文件
+                    </button>
+                </div>
+            </div>
+        `;
+    },
+
+    closeImportResult(overlay, tempDir) {
+        overlay.remove();
+
+        // 如果有临时目录，通知后端清理
+        if (tempDir) {
+            this.cleanupTempDir(tempDir);
+        }
+    },
+
+    async cleanupTempDir(tempDir) {
+        try {
+            if (window.pywebview?.api?.cleanup_import_temp) {
+                await pywebview.api.cleanup_import_temp({ temp_dir: tempDir });
+            }
+        } catch (e) {
+            console.error('清理临时目录失败:', e);
+        }
+    },
+
+    confirmManualImportInline(buttonElement, tempDir) {
+        const modal = buttonElement.closest('.import-result-modal');
+        const checkboxes = modal.querySelectorAll('.manual-import-checkbox:checked');
+        const selectedFiles = Array.from(checkboxes).map(cb => cb.value);
+
+        if (selectedFiles.length === 0) {
+            app.showAlert('提示', '未选择任何文件', 'warn');
+            return;
+        }
+
+        // 关闭当前对话框
+        const overlay = buttonElement.closest('.import-result-overlay');
+        overlay.remove();
+
+        // 执行导入
+        this.executeManualImport(tempDir, selectedFiles);
+    },
+
+    async closeImportResult(overlay, tempDir) {
+        // 如果有临时目录，清理它
+        if (tempDir) {
+            try {
+                await pywebview.api.import_custom_text_manual({
+                    selected_files: [],
+                    temp_dir: tempDir
+                });
+            } catch (e) {
+                console.error('清理临时目录失败:', e);
+            }
+        }
+        overlay.remove();
+    },
+
+    async handleSkippedFiles(skippedFiles, originalFilePath) {
+        // 这个方法已经不需要了，因为跳过的文件直接在结果对话框中处理
+    },
+
+    showManualImportDialog(skippedFiles, originalFilePath) {
+        // 这个方法已经不需要了
+    },
+
+    async executeManualImport(tempDir, selectedFiles) {
+        if (!selectedFiles || selectedFiles.length === 0) {
+            app.showAlert('提示', '未选择任何文件', 'warn');
+            return;
+        }
+
+        try {
+            app.showAlert('提示', '正在导入，请稍候...', 'info');
+
+            const res = await pywebview.api.import_custom_text_manual({
+                selected_files: selectedFiles,
+                temp_dir: tempDir
+            });
+
+            if (res && res.success) {
+                this.showImportResult(res, null);
+                this.loadData();
+            } else {
+                this.showImportResult(res, null);
+            }
+        } catch (e) {
+            app.showAlert('错误', `导入失败: ${e.message || e}`, 'error');
+        }
+    },
+
+    renderImportSummary(result, importedCount, skippedCount) {
+        const msg = result.msg || '';
+        const mode = result.mode || 'standard';
+        const modeText = mode === 'custom_blk' ? '智能合并模式' : '标准模式';
+
+        return `
+            <div class="import-result-summary">
+                <p class="import-result-summary-text">
+                    ${this.escapeHtml(msg)}<br>
+                    <span style="font-size: 13px; opacity: 0.8;">导入模式：${modeText}</span>
+                </p>
+            </div>
+        `;
+    },
+
+    renderImportSection(title, items, type) {
+        if (!items || items.length === 0) return '';
+
+        const iconMap = {
+            success: '✓',
+            warning: '⚠',
+            error: '✗'
+        };
+
+        const itemsHtml = items.map(item => {
+            // 解析统计信息（如果有）
+            const statsMatch = item.match(/\(新增 (\d+) 条, 修改 (\d+) 条\)/);
+            let mainText = item;
+            let statsHtml = '';
+
+            if (statsMatch) {
+                mainText = item.replace(statsMatch[0], '').trim();
+                const added = statsMatch[1];
+                const modified = statsMatch[2];
+                statsHtml = `
+                    <div class="import-result-item-stats">
+                        <span class="import-result-item-stat">
+                            <span class="import-result-item-stat-value">+${added}</span> 新增
+                        </span>
+                        <span class="import-result-item-stat">
+                            <span class="import-result-item-stat-value">${modified}</span> 修改
+                        </span>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="import-result-item">
+                    <div class="import-result-item-icon ${type}">${iconMap[type]}</div>
+                    <div class="import-result-item-content">
+                        <div class="import-result-item-text">${this.escapeHtml(mainText)}</div>
+                        ${statsHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="import-result-section">
+                <div class="import-result-section-title">
+                    ${title}
+                    <span class="import-result-section-badge ${type}">${items.length}</span>
+                </div>
+                <div class="import-result-items">
+                    ${itemsHtml}
+                </div>
+            </div>
+        `;
     },
 
     show() {
