@@ -51,11 +51,27 @@ WT模型库
 # Redundant / Test Files
 AimerWT v2 Beta作者端.html
 web/themes/test.json
+web/themes/Theme_Guide主题设计文档
 
-# Themes (Only keep default.json & THEME_GUIDE.md)
+# Themes (local/custom themes, including supporter.json, do not upload)
 web/themes/*.json
+!web/themes/aimer.json
+!web/themes/dark.json
 !web/themes/default.json
+!web/themes/pink.json
+!web/themes/forest.json
+web/themes/beiku.json
+web/themes/bi_an.json
+web/themes/lianying.json
+web/themes/chifeng.json
 
+# Supporter-only theme assets / local unlock module (do not upload)
+web/assets/aifadian.png
+web/redeem/
+services/theme_unlock/
 
 # Temp workdir
 _tmp/
+
+# Local redeem codes (do not upload)
+web/redeem/redeem_codes.local.js

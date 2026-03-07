@@ -76,7 +76,7 @@ class LibraryManager:
         library_dir: 语音包库目录
     """
 
-    SUPPORTED_EXTENSIONS = (".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2")
+    SUPPORTED_EXTENSIONS = (".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2", ".bank")
 
     def __init__(self, pending_dir: str | None = None,
                  library_dir: str | None = None):
@@ -305,7 +305,7 @@ class LibraryManager:
 
     def scan_pending(self) -> list[Path]:
         """
-        扫描待解压区中的 ZIP/RAR 文件列表。
+        扫描待解压区中的可导入压缩包列表。
         
         Returns:
             压缩包文件路径列表
@@ -314,8 +314,13 @@ class LibraryManager:
         try:
             if self.pending_dir.exists():
                 for item in self.pending_dir.iterdir():
-                    if item.suffix.lower() in self.SUPPORTED_EXTENSIONS:
-                        archives.append(item)
+                    ext = item.suffix.lower()
+                    if ext not in self.SUPPORTED_EXTENSIONS:
+                        continue
+                    # .bank 仅接受作者端导出的 AimerWT 包，避免误导入普通 FMOD bank。
+                    if ext == ".bank" and not self._is_importable_aimerwt_bank_archive(item):
+                        continue
+                    archives.append(item)
         except PermissionError as e:
             log.error(f"扫描待解压区失败（权限不足）: {e}")
         except Exception as e:
@@ -355,7 +360,7 @@ class LibraryManager:
                                 continue
                             if f.suffix.lower() != ".bank":
                                 continue
-                            if "aimerwt" in f.name.lower():
+                            if self._is_aimerwt_bank_archive(f):
                                 info_sources.append(f)
                     except PermissionError:
                         log.debug(f"无法访问目录: {d}")
@@ -367,7 +372,7 @@ class LibraryManager:
                         for f in mod_dir.rglob("*.bank"):
                             if not f.is_file():
                                 continue
-                            if "aimerwt" in f.name.lower():
+                            if self._is_aimerwt_bank_archive(f):
                                 info_sources.append(f)
                                 break
                     except Exception:
@@ -451,6 +456,8 @@ class LibraryManager:
             "link_video": "",
             "tags": [],  # 存储标籤列表 ["tank", "radio"]
             "language": [],  # 存储语言列表 ["中", "美"]
+            "preview_use_random_bank": True,
+            "preview_audio_files": [],
             "related_voicepacks": [],
             "size_str": "0 MB",
             "cover_path": None,
@@ -469,9 +476,13 @@ class LibraryManager:
         try:
             info_candidates.extend(list(mod_dir.glob("*（AimerWT）.bank")))
             info_candidates.extend(list(mod_dir.glob("*(AimerWT).bank")))
+            info_candidates.extend(list(mod_dir.glob("*（AimerWT_JSON）.bank")))
+            info_candidates.extend(list(mod_dir.glob("*(AimerWT_JSON).bank")))
             if (mod_dir / "info").exists():
                 info_candidates.extend(list((mod_dir / "info").glob("*（AimerWT）.bank")))
                 info_candidates.extend(list((mod_dir / "info").glob("*(AimerWT).bank")))
+                info_candidates.extend(list((mod_dir / "info").glob("*（AimerWT_JSON）.bank")))
+                info_candidates.extend(list((mod_dir / "info").glob("*(AimerWT_JSON).bank")))
         except PermissionError as e:
             log.warning(f"扫描 info 文件失败（权限不足）: {e}")
         except Exception as e:
@@ -489,7 +500,7 @@ class LibraryManager:
                 if info_jsons:
                     found_info_file = info_jsons[0]
                 else:
-                    aimer_banks = [p for p in mod_dir.rglob("*.bank") if p.is_file() and "aimerwt" in p.name.lower()]
+                    aimer_banks = [p for p in mod_dir.rglob("*.bank") if p.is_file() and self._is_aimerwt_bank_archive(p)]
                     aimer_banks.sort(key=lambda p: len(p.parts))
                     if aimer_banks:
                         found_info_file = aimer_banks[0]
@@ -502,13 +513,20 @@ class LibraryManager:
                 if isinstance(data, dict):
                     for key in ["title", "author", "version", "date", "note", "version_note", "link_bilibili",
                                 "link_qq_group", "link_wtlive", "link_liker", "link_feedback", "link_video", "tags",
-                                "language", "related_voicepacks"]:
+                                "language", "preview_use_random_bank", "preview_audio_files", "related_voicepacks"]:
                         if key in data:
                             details[key] = data[key]
                 else:
                     log.warning(f"读取 info 文件失败 ({found_info_file.name})")
             except Exception as e:
                 log.warning(f"读取 info.json 失败: {e}")
+
+        if not isinstance(details.get("preview_audio_files"), list):
+            details["preview_audio_files"] = []
+        details["preview_use_random_bank"] = self._normalize_preview_use_random_bank(
+            details.get("preview_use_random_bank"),
+            details.get("preview_audio_files"),
+        )
 
         # 文件详情 (按类型分类)
         # 这一步会同时检测文件类型和语言
@@ -628,6 +646,19 @@ class LibraryManager:
         details["_mtime"] = current_mtime
         self._details_cache[mod_name] = details
         return details
+
+    @staticmethod
+    def _normalize_preview_use_random_bank(raw, preview_audio_files=None):
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            return bool(raw)
+        text = str(raw or "").strip().lower()
+        if text in {"1", "true", "yes", "on", "random"}:
+            return True
+        if text in {"0", "false", "no", "off", "manual"}:
+            return False
+        return not bool(preview_audio_files)
 
     def _detect_smart_tags(self, mod_dir):
         # 基于语音包目录内 .bank 文件的命名规则推断功能标签（tags）。
@@ -976,7 +1007,8 @@ class LibraryManager:
         password = None
         while True:
             try:
-                if archive_path.suffix.lower() == ".zip":
+                suffix = archive_path.suffix.lower()
+                if suffix == ".zip" or (suffix == ".bank" and self._is_importable_aimerwt_bank_archive(archive_path)):
                     try:
                         self._extract_zip_safely(archive_path, target_dir, progress_callback, base_progress,
                                                  share_progress, password=password)
@@ -987,7 +1019,7 @@ class LibraryManager:
                                                   share_progress, password=password)
                         else:
                             raise
-                elif archive_path.suffix.lower() in (".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2"):
+                elif suffix in (".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2"):
                     self._extract_with_7z(archive_path, target_dir, progress_callback, base_progress, share_progress,
                                           password=password)
                 else:
@@ -1013,11 +1045,11 @@ class LibraryManager:
     def unzip_single_zip(self, zip_path, progress_callback=None, password_provider=None):
         """
         功能定位:
-        - 将单个 ZIP/RAR 压缩包解压导入到语音包库目录（以压缩包文件名作为语音包目录名）。
+        - 将单个压缩包（ZIP/RAR/7Z/TAR/GZ/BANK）解压导入到语音包库目录（以压缩包文件名作为语音包目录名）。
 
         输入输出:
         - 参数:
-          - zip_path: str | Path，压缩包路径（.zip/.rar）。
+          - zip_path: str | Path，压缩包路径（.zip/.rar/.7z/.tar/.gz/.bz2/.xz/.tgz/.tbz2/.bank）。
           - progress_callback: Callable[[int, str], None] | None，进度回调。
           - password_provider: Callable[[Path, str], str | None] | None，密码提供器；reason 取值 required/incorrect。
         - 返回: None
@@ -1044,6 +1076,8 @@ class LibraryManager:
         if zip_path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
             ext_list = ", ".join(self.SUPPORTED_EXTENSIONS)
             raise ValueError(f"不支持的文件格式。支持的格式: {ext_list}")
+        if zip_path.suffix.lower() == ".bank" and not self._is_importable_aimerwt_bank_archive(zip_path):
+            raise ValueError("仅支持导入带 (AimerWT) 标记且为压缩包结构的 .bank 文件")
 
         # 磁盘空间估算与校验
         try:
@@ -1069,7 +1103,7 @@ class LibraryManager:
                 raise e  # 重新抛出给上层处理
             self.log(f"磁盘空间检查失败 (跳过检查): {e}", "WARN")
 
-        mod_name = zip_path.stem
+        mod_name = self._derive_mod_name_from_archive(zip_path)
         target_dir = self.library_dir / mod_name
 
         if target_dir.exists():
@@ -1110,10 +1144,10 @@ class LibraryManager:
             raise
 
     def unzip_zips_to_library(self, progress_callback=None, password_provider=None):
-        # 批量导入待解压区中的 ZIP/RAR 文件到语音包库，并通过回调输出总体进度。
+        # 批量导入待解压区中的压缩包到语音包库，并通过回调输出总体进度。
         zips = self.scan_pending()
         if not zips:
-            self.log("待解压区没有 ZIP/RAR 文件。", "WARN")
+            self.log("待解压区没有可导入压缩包。", "WARN")
             if progress_callback: progress_callback(100, "没有文件")
             return
 
@@ -1125,7 +1159,7 @@ class LibraryManager:
 
         for idx, zip_file in enumerate(zips):
             try:
-                mod_name = zip_file.stem
+                mod_name = self._derive_mod_name_from_archive(zip_file)
                 target_dir = self.library_dir / mod_name
 
                 # 计算总体进度区间
@@ -1174,6 +1208,30 @@ class LibraryManager:
 
         self.log(f"[INFO] 解压完成: 成功 {success_count}, 跳过 {skipped_count}", "INFO")
         if progress_callback: progress_callback(100, "全部完成")
+
+    def _is_aimerwt_bank_archive(self, path: Path) -> bool:
+        try:
+            if str(path.suffix or "").lower() != ".bank":
+                return False
+            name = str(path.name or "")
+            return bool(re.search(r"[（(]\s*AimerWT(?:_JSON)?\s*[）)]", name, flags=re.IGNORECASE))
+        except Exception:
+            return False
+
+    def _is_importable_aimerwt_bank_archive(self, path: Path) -> bool:
+        try:
+            p = Path(path)
+            if not self._is_aimerwt_bank_archive(p):
+                return False
+            return zipfile.is_zipfile(str(p))
+        except Exception:
+            return False
+
+    def _derive_mod_name_from_archive(self, archive_path: Path) -> str:
+        stem = str(Path(archive_path).stem or "").strip()
+        if str(Path(archive_path).suffix or "").lower() == ".bank":
+            stem = re.sub(r"[（(]\s*AimerWT(?:_JSON)?\s*[）)]", "", stem, flags=re.IGNORECASE).strip()
+        return stem or "imported_voicepack"
 
     def _extract_zip_safely(self, zip_path, target_dir, progress_callback=None, base_progress=0, share_progress=100,
                             password=None):

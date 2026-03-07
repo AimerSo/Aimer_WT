@@ -63,6 +63,7 @@ class ConfigManager:
             "completed": False,
             "firstOpenHandled": False
         },
+        "unlocked_themes": [],
         "sights_path": "",
         "pending_dir": "",
         "library_dir": "",
@@ -348,6 +349,26 @@ class ConfigManager:
     def get_config_dir(self) -> str:
         """读取当前配置文件所在目录路径。"""
         return str(self.config_dir)
+
+    def get_unlocked_themes(self) -> list[str]:
+        """读取已解锁的隐藏主题文件名列表。"""
+        raw = self.config.get("unlocked_themes", [])
+        if not isinstance(raw, list):
+            return []
+        return [str(item) for item in raw if item]
+
+    def set_unlocked_themes(self, filenames: list[str]) -> bool:
+        """更新已解锁的隐藏主题列表并写入 settings.json。"""
+        cleaned = []
+        seen = set()
+        for item in filenames or []:
+            name = str(item or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            cleaned.append(name)
+        self.config["unlocked_themes"] = cleaned
+        return self.save_config()
 
     def get_config_file_path(self) -> str:
         """读取当前 settings.json 的完整路径。"""

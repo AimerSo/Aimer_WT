@@ -141,7 +141,7 @@ const DEFAULT_LIGHT = {
     "--action-trash": "#2C3E50",
     "--action-trash-hover": "#EF4444",
     "--action-refresh": "#2C3E50",
-    "--action-refresh-bg": "#2C3E50",
+    "--action-refresh-bg": "#FF9900",
 
     "--link-bili-normal": "#23ade5",
     "--link-bili-hover": "#23ade5",

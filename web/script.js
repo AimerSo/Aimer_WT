@@ -11,6 +11,12 @@ const DEFAULT_THEME = {
     "--nav-item-hover-bg": "rgba(0, 0, 0, 0.05)",
     "--nav-item-active": "#FF9900",
     "--nav-item-active-bg": "rgba(255, 153, 0, 0.1)",
+    "--nav-btn-active-shadow": "rgba(255, 153, 0, 0.15)",
+    "--nav-btn-active-icon-shadow": "rgba(255, 153, 0, 0.3)",
+    "--nav-btn-after-bg": "rgba(255, 153, 0, 0.3)",
+    "--brand-text-color": "#2C3E50",
+    "--brand-text-gradient": "linear-gradient(135deg, #2C3E50 0%, #7F8C8D 100%)",
+    "--brand-text-fill": "transparent",
     "--status-waiting": "#F59E0B",
     "--status-success": "#10B981",
     "--status-error": "#EF4444",
@@ -22,7 +28,7 @@ const DEFAULT_THEME = {
     "--action-trash": "#2C3E50",
     "--action-trash-hover": "#EF4444",
     "--action-refresh": "#2C3E50",
-    "--action-refresh-bg": "#2C3E50",
+    "--action-refresh-bg": "#FF9900",
     "--link-bili-normal": "#23ade5",
     "--link-bili-hover": "#23ade5",
     "--link-wt-normal": "#2C3E50",
@@ -57,15 +63,15 @@ const DEFAULT_THEME = {
     "--win-close-hover-bg": "#EF4444",
     "--win-close-hover-text": "#FFFFFF",
     "--scrollbar-track-hover": "#ccc",
-    "--notice-hero-bg-start": "#111827",
-    "--notice-hero-bg-end": "#0f172a",
-    "--notice-hero-title": "#ffffff",
-    "--notice-hero-text": "rgba(255, 255, 255, 0.78)",
-    "--notice-hero-subtext": "rgba(255, 255, 255, 0.5)",
+    "--notice-hero-bg-start": "#FFFFFF",
+    "--notice-hero-bg-end": "#F8FAFC",
+    "--notice-hero-title": "#1E293B",
+    "--notice-hero-text": "#64748B",
+    "--notice-hero-subtext": "#64748B",
     "--notice-hero-tag-bg": "rgba(239, 68, 68, 0.95)",
     "--notice-hero-tag-text": "#ffffff",
-    "--notice-hero-shadow": "0 10px 24px rgba(15, 23, 42, 0.25)",
-    "--notice-hero-deco": "rgba(255, 255, 255, 0.2)",
+    "--notice-hero-shadow": "0 4px 12px rgba(15, 23, 42, 0.05)",
+    "--notice-hero-deco": "rgba(100, 116, 139, 0.12)",
     "--notice-section-text": "#9CA3AF",
     "--notice-section-line": "#E5E7EB",
     "--notice-item-hover-bg": "rgba(0, 0, 0, 0.03)",
@@ -79,7 +85,13 @@ const DEFAULT_THEME = {
     "--notice-event-bg": "rgba(249, 115, 22, 0.12)",
     "--notice-event-text": "#F97316",
     "--notice-normal-bg": "rgba(148, 163, 184, 0.2)",
-    "--notice-normal-text": "#64748B"
+    "--notice-normal-text": "#64748B",
+    "--shadow-card": "0 4px 12px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06)",
+    "--shadow-btn-primary": "0 4px 12px rgba(255,153,0,0.25)",
+    "--primary-shadow": "rgba(255,153,0,0.25)",
+    "--primary-shadow-hover": "rgba(255,153,0,0.35)",
+    "--card-shadow-rgb": "0,0,0",
+    "--card-shadow-opacity": "0.12"
 };
 
 /**
@@ -113,6 +125,7 @@ const app = {
     currentModId: null, // 当前正在操作的 mod
     currentTheme: null, // 当前主题对象
     currentThemeData: null, // 当前主题原始数据
+    _appliedThemeKeys: [],
     _libraryLoaded: false,
     _libraryRefreshing: false,
     _skinsLoaded: false,
@@ -124,12 +137,19 @@ const app = {
     // 应用主题的函数
     applyTheme(themeObj) {
         const root = document.documentElement;
+        this._appliedThemeKeys.forEach(key => {
+            root.style.removeProperty(key);
+        });
+
+        const appliedKeys = [];
         for (const [key, value] of Object.entries(themeObj)) {
             if (key.startsWith('--')) {
                 root.style.setProperty(key, value);
+                appliedKeys.push(key);
             }
         }
-        this.currentTheme = { ...DEFAULT_THEME, ...themeObj };
+        this._appliedThemeKeys = appliedKeys;
+        this.currentTheme = { ...themeObj };
     },
 
     resolveThemeColors(themeData) {
@@ -142,21 +162,18 @@ const app = {
     applyThemeData(themeData) {
         if (!themeData) return;
         const themeColors = this.resolveThemeColors(themeData);
-        this.applyTheme(themeColors);
+        this.applyTheme({ ...DEFAULT_THEME, ...themeColors });
         this.currentThemeData = themeData;
     },
 
     // 恢复默认主题（清除内联样式，交给 CSS 处理）
     resetTheme() {
         const root = document.documentElement;
-        if (typeof DEFAULT_THEME !== 'undefined') {
-            for (const key of Object.keys(DEFAULT_THEME)) {
-                if (key.startsWith('--')) {
-                    root.style.removeProperty(key);
-                }
-            }
-        }
-        this.currentTheme = DEFAULT_THEME;
+        this._appliedThemeKeys.forEach(key => {
+            root.style.removeProperty(key);
+        });
+        this._appliedThemeKeys = [];
+        this.currentTheme = { ...DEFAULT_THEME };
         this.currentThemeData = null;
     },
 
@@ -193,9 +210,12 @@ const app = {
             const option = document.createElement('div');
             option.className = 'custom-select-option';
             option.dataset.value = theme.filename;
+            const themeLabel = theme.filename === 'supporter.json'
+                ? `${theme.name} - by ${theme.author}`
+                : `${theme.name} (v${theme.version}) - by ${theme.author}`;
             option.textContent = theme.filename === 'default.json'
                 ? '默认主题 (System Default)'
-                : `${theme.name} (v${theme.version}) - by ${theme.author}`;
+                : themeLabel;
             option.onclick = () => this.selectTheme(theme.filename);
             dropdown.appendChild(option);
         });
@@ -220,9 +240,12 @@ const app = {
         const textEl = document.getElementById('theme-select-text');
         const theme = this.themeListData.find(t => t.filename === filename);
         if (textEl && theme) {
+            const themeLabel = filename === 'supporter.json'
+                ? `${theme.name} - by ${theme.author}`
+                : `${theme.name} (v${theme.version}) - by ${theme.author}`;
             textEl.textContent = filename === 'default.json'
                 ? '默认主题 (System Default)'
-                : `${theme.name} (v${theme.version}) - by ${theme.author}`;
+                : themeLabel;
         }
 
         document.querySelectorAll('#theme-select-dropdown .custom-select-option').forEach(opt => {
@@ -3276,6 +3299,12 @@ app.init = async function () {
     console.log("App initializing...");
     this.recoverToSafeState('init');
     this.initToasts();
+    // 公告先行渲染：即使后续后端初始化异常，也不要让首页公告区域空白。
+    try {
+        this.renderNoticeBoard();
+    } catch (e) {
+        console.warn("Initial notice render failed:", e);
+    }
 
     if (!this._safetyHandlersInstalled) {
         this._safetyHandlersInstalled = true;
@@ -4472,6 +4501,19 @@ app.setupGlobalDragDrop = function () {
             .filter((item) => item.name || item.description || item.link || item.avatar_url);
     }
 
+    function normalizePreviewAudioItems(raw) {
+        if (!Array.isArray(raw)) return [];
+        return raw
+            .map((item, idx) => ({
+                preview_index: idx,
+                display_name: String(item?.display_name || `试听音频${idx + 1}`).trim() || `试听音频${idx + 1}`,
+                source_name: String(item?.source_name || item?.source_file || '').trim(),
+                source_file: String(item?.source_file || '').trim(),
+                ext: String(item?.ext || '').trim().toLowerCase(),
+            }))
+            .filter((item) => item.source_name || item.source_file);
+    }
+
     function buildVersionNoteHtml(mod) {
         const entries = resolveVersionNoteEntries(mod);
         if (!entries.length) {
@@ -4595,6 +4637,15 @@ app.setupGlobalDragDrop = function () {
         });
         const closeBtn = overlay.querySelector('.mod-preview-close-btn');
         if (closeBtn) closeBtn.addEventListener('click', closePreview);
+        if (!overlay.dataset.alignResizeBound) {
+            const onResize = () => {
+                if (overlay.classList.contains('show')) {
+                    schedulePreviewHeaderAlign(overlay);
+                }
+            };
+            window.addEventListener('resize', onResize);
+            overlay.dataset.alignResizeBound = '1';
+        }
 
         return overlay;
     }
@@ -4671,6 +4722,19 @@ app.setupGlobalDragDrop = function () {
         if (auditionBtn) {
             auditionBtn.onclick = async () => {
                 try {
+                    const manualPreviewItems = normalizePreviewAudioItems(mod?.preview_audio_files || []);
+                    const useRandomPreview = mod?.preview_use_random_bank !== false;
+                    if (!useRandomPreview) {
+                        if (!manualPreviewItems.length) {
+                            if (app && typeof app.showAlert === 'function') {
+                                app.showAlert('提示', '作者未提供可用的试听文件', 'warn');
+                            }
+                            return;
+                        }
+                        openAuthorPreviewAudioPicker(mod, manualPreviewItems);
+                        return;
+                    }
+
                     if (!window.pywebview?.api?.start_mod_audition_scan || !window.pywebview?.api?.get_mod_audition_categories_snapshot) {
                         if (app && typeof app.showAlert === 'function') {
                             app.showAlert('错误', '后端试听接口不可用', 'error');
@@ -5113,6 +5177,124 @@ app.setupGlobalDragDrop = function () {
         if (searchEl) searchEl.addEventListener('input', (e) => rebuild(e.target.value));
     }
 
+    function openAuthorPreviewAudioPicker(mod, items) {
+        const app = getApp();
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay show';
+        overlay.style.zIndex = '10003';
+
+        const optionsHtml = items.map((it, idx) => {
+            const nm = escapeHtml(String(it.display_name || `试听音频${idx + 1}`));
+            const src = escapeHtml(String(it.source_name || it.source_file || 'unknown'));
+            return `<option value="${idx}">#${idx + 1} ${nm} [${src}]</option>`;
+        }).join('');
+
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:980px;width:min(94vw,980px);padding:20px;max-height:86vh;display:flex;flex-direction:column;">
+                <h3 style="margin:0 0 12px 0;">作者提供的试听文件</h3>
+                <div style="display:flex;gap:8px;margin-bottom:10px;">
+                    <input id="author-preview-search" type="text" placeholder="搜索试听名称 / 文件名" style="flex:1;padding:10px;border:1px solid var(--border-color);border-radius:10px;">
+                    <span id="author-preview-count" style="align-self:center;color:var(--text-secondary);font-size:13px;line-height:1;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;white-space:nowrap;">共 ${items.length} 条</span>
+                </div>
+                <select id="author-preview-select" size="18" style="width:100%;flex:1;min-height:280px;font-family:Consolas, monospace;padding:10px;border:1px solid var(--border-color);border-radius:10px;">${optionsHtml}</select>
+                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;">
+                    <button class="btn secondary" type="button" id="author-preview-close-btn">关闭</button>
+                    <button class="btn primary" type="button" id="author-preview-play-btn"><i class="ri-play-circle-line"></i> 播放选中试听</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const selectEl = overlay.querySelector('#author-preview-select');
+        const searchEl = overlay.querySelector('#author-preview-search');
+        const countEl = overlay.querySelector('#author-preview-count');
+        const playBtn = overlay.querySelector('#author-preview-play-btn');
+        const closeBtn = overlay.querySelector('#author-preview-close-btn');
+        let viewItems = [...items];
+
+        const close = () => {
+            if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        };
+
+        const rebuild = (keyword) => {
+            const q = String(keyword || '').trim().toLowerCase();
+            const filtered = items.filter((it) => {
+                const name = String(it.display_name || '').toLowerCase();
+                const source = String(it.source_name || it.source_file || '').toLowerCase();
+                return !q || name.includes(q) || source.includes(q);
+            });
+            viewItems = filtered;
+            selectEl.innerHTML = filtered.map((it, idx) => {
+                const nm = escapeHtml(String(it.display_name || `试听音频${idx + 1}`));
+                const src = escapeHtml(String(it.source_name || it.source_file || 'unknown'));
+                return `<option value="${idx}">#${idx + 1} ${nm} [${src}]</option>`;
+            }).join('');
+            if (countEl) countEl.textContent = `显示 ${filtered.length} / ${items.length} 条`;
+        };
+
+        const playSelected = async () => {
+            try {
+                if (!selectEl || !selectEl.value) {
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('提示', '请先选择一个试听文件', 'warn');
+                    }
+                    return;
+                }
+                if (!window.pywebview?.api?.audition_mod_preview_audio) {
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('错误', '后端试听接口不可用', 'error');
+                    }
+                    return;
+                }
+                const selected = viewItems[Number(selectEl.value)];
+                if (!selected) return;
+
+                playBtn.disabled = true;
+                const oldHtml = playBtn.innerHTML;
+                playBtn.innerHTML = '<i class="ri-loader-2-line"></i> 加载试听...';
+                const res = await pywebview.api.audition_mod_preview_audio(
+                    mod.id,
+                    selected.preview_index
+                );
+                playBtn.disabled = false;
+                playBtn.innerHTML = oldHtml;
+                if (!res || !res.success || !res.audio_url) {
+                    const msg = (res && res.msg) ? res.msg : '试听失败';
+                    if (app && typeof app.showAlert === 'function') {
+                        app.showAlert('错误', msg, 'error');
+                    }
+                    return;
+                }
+
+                if (!window.__aimerAuditionAudio) {
+                    window.__aimerAuditionAudio = new Audio();
+                }
+                const player = window.__aimerAuditionAudio;
+                player.pause();
+                player.currentTime = 0;
+                player.src = res.audio_url;
+                await player.play();
+                if (app && typeof app.showInfoToast === 'function') {
+                    app.showInfoToast('试听中', `正在播放：${res.preview_name || selected.display_name}`);
+                }
+            } catch (e) {
+                playBtn.disabled = false;
+                playBtn.innerHTML = '<i class="ri-play-circle-line"></i> 播放选中试听';
+                if (app && typeof app.showAlert === 'function') {
+                    app.showAlert('错误', `试听失败: ${e.message || e}`, 'error');
+                }
+            }
+        };
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
+        if (closeBtn) closeBtn.addEventListener('click', close);
+        if (playBtn) playBtn.addEventListener('click', playSelected);
+        if (selectEl) selectEl.addEventListener('dblclick', playSelected);
+        if (searchEl) searchEl.addEventListener('input', (e) => rebuild(e.target.value));
+    }
+
     app.onAuditionScanUpdate = function (modId, payload) {
         try {
             const st = window.__auditionPickerState;
@@ -5323,6 +5505,37 @@ app.setupGlobalDragDrop = function () {
         });
     }
 
+    function alignPreviewHeaderRows(overlay) {
+        if (!overlay || !overlay.classList.contains('show')) return;
+        const modalEl = overlay.querySelector('.mod-preview-modal-v2');
+        const rightEl = overlay.querySelector('.mod-preview-right');
+        const attrsHeaderEl = overlay.querySelector('.mod-preview-attrs h4');
+        const versionHeaderEl = overlay.querySelector('.mod-preview-bottom-grid .mod-preview-card h4');
+        if (!modalEl || !rightEl || !attrsHeaderEl || !versionHeaderEl) return;
+
+        const rightRect = rightEl.getBoundingClientRect();
+        const attrsRect = attrsHeaderEl.getBoundingClientRect();
+        const versionCardEl = versionHeaderEl.closest('.mod-preview-card');
+        if (!versionCardEl) return;
+        const versionCardRect = versionCardEl.getBoundingClientRect();
+
+        const rowGap = parseFloat(getComputedStyle(rightEl).rowGap || '0') || 0;
+        const headerOffsetInCard = Math.max(0, versionHeaderEl.getBoundingClientRect().top - versionCardRect.top);
+
+        let targetTopRow = attrsRect.top - rightRect.top - rowGap - headerOffsetInCard;
+        if (!Number.isFinite(targetTopRow)) return;
+        targetTopRow = Math.max(120, Math.min(700, targetTopRow));
+        modalEl.style.setProperty('--mod-preview-right-top-row', `${Math.round(targetTopRow)}px`);
+    }
+
+    function schedulePreviewHeaderAlign(overlay) {
+        if (!overlay) return;
+        const run = () => alignPreviewHeaderRows(overlay);
+        requestAnimationFrame(() => requestAnimationFrame(run));
+        setTimeout(run, 60);
+        setTimeout(run, 220);
+    }
+
     function openPreview(mod) {
         const overlay = ensureModal();
         const title = String(mod?.title || '未命名语音包');
@@ -5358,7 +5571,11 @@ app.setupGlobalDragDrop = function () {
             authorAvatarEl.src = authorAvatar;
             authorAvatarEl.onerror = () => { authorAvatarEl.src = FALLBACK_AVATAR; };
         }
-        if (coverEl) coverEl.src = cover;
+        if (coverEl) {
+            coverEl.src = cover;
+            coverEl.onload = () => schedulePreviewHeaderAlign(overlay);
+            coverEl.onerror = () => schedulePreviewHeaderAlign(overlay);
+        }
         if (sizeEl) sizeEl.textContent = sizeText;
         if (langEl) langEl.innerHTML = buildLangHtml(mod);
         if (tagCountEl) tagCountEl.textContent = `${tagCount} 个`;
@@ -5371,6 +5588,7 @@ app.setupGlobalDragDrop = function () {
 
         overlay.classList.remove('hiding');
         overlay.classList.add('show');
+        schedulePreviewHeaderAlign(overlay);
     }
 
     function closePreview() {
