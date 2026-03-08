@@ -1,14 +1,19 @@
 # Aimer WT
 
-用于 War Thunder 的语音包管理/安装工具。桌面端基于 Python + PyWebview，前端静态资源在 `web/` 目录。
+## 本软件的介绍
+AimerWT 是一款专为《战争雷霆》玩家打造的一站式资源管理工具，它支持语音包的一键替换与卸载，并针对涂装、任务、场景及模型提供直观的可视化管理界面。除此之外软件还内置了游戏字体自定义功能，能够自定义功能，基本都有做适配。
 
-**上传的文件都经过了opus重构和注释，应该比我自己的要工整许多。**
+桌面端基于 Python + PyWebview，前端静态资源在 `web/` 目录。
+
+## ENGLISH
+AimerWT is a comprehensive, all-in-one resource management tool designed specifically for WarThunder players. It features one-click installation and removal of voice packs, alongside an intuitive visual interface for managing camouflages, missions, hangars, and models. Additionally, it includes a built-in font customization engine with broad compatibility for personalizing in-game text.
 
 ## 开发者信息
 
 - **作者：** AimerSo
 - **B站主页：** [个人主页](https://space.bilibili.com/1379084732)
-
+**上传的文件都经过了opus重构和注释，应该比我自己的要工整许多。**
+  
 ## 功能
 
 - 自动检测/配置游戏路径
