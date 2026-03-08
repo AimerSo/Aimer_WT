@@ -1,3 +1,4 @@
+# 来个牛逼的给拆分了吧，屎山了 byAimer
 # -*- coding: utf-8 -*-
 import argparse
 import base64
@@ -40,6 +41,7 @@ from services.bank_preview_service import BankPreviewService
 from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
 from services.telemetry_manager import init_telemetry, get_hwid, get_telemetry_connection_status
+from services.theme_unlock import ThemeUnlockService
 from utils.custom_text_processor import extract_prefix_group
 from utils.custom_text_importer import (
     extract_archive,
@@ -257,6 +259,7 @@ class AppApi:
         # 管理器实例：配置、语音包库、涂装、炮镜、游戏目录操作
         # 注意：所有管理器现在统一使用 logger.py 的日誌系统
         self._cfg_mgr = ConfigManager()
+        self._theme_unlock = ThemeUnlockService(self._cfg_mgr)
 
         # 从配置读取自定义路径
         custom_pending = self._cfg_mgr.get_pending_dir()
@@ -535,11 +538,15 @@ class AppApi:
                 sights_path = ""
                 self._cfg_mgr.set_sights_path("")
 
+        active_theme = self._theme_unlock.get_accessible_active_theme(self._cfg_mgr.get_active_theme())
+        if active_theme != self._cfg_mgr.get_active_theme():
+            self._cfg_mgr.set_active_theme(active_theme)
+
         return {
             "game_path": path,
             "path_valid": is_valid,
             "theme": theme,
-            "active_theme": self._cfg_mgr.get_active_theme(),
+            "active_theme": active_theme,
             "installed_mods": self._logic.get_installed_mods(),
             "sights_path": sights_path,
             "launch_mode": launch_mode,
@@ -553,7 +560,8 @@ class AppApi:
 
     def save_theme_selection(self, filename):
         # 保存前端选择的主题文件名到配置。
-        self._cfg_mgr.set_active_theme(filename)
+        filename = self._theme_unlock.get_accessible_active_theme(filename)
+        return self._cfg_mgr.set_active_theme(filename)
 
     def set_theme(self, mode):
         # 保存前端选择的主题模式（Light/Dark）到配置。
@@ -1542,6 +1550,72 @@ class AppApi:
             log.error(f"指定语音试听失败: {e}")
             return {"success": False, "msg": "试听失败"}
 
+    def audition_mod_preview_audio(self, mod_name, preview_index):
+        """
+        播放作者手动提供的试听音频文件（mp3/wav）。
+        """
+        try:
+            mod_id = str(mod_name or "").strip()
+            if not mod_id:
+                return {"success": False, "msg": "语音包名称为空"}
+
+            try:
+                idx = int(preview_index)
+            except Exception:
+                return {"success": False, "msg": "参数不正确"}
+
+            details = self._lib_mgr.get_mod_details(mod_id)
+            preview_items = details.get("preview_audio_files") or []
+            if idx < 0 or idx >= len(preview_items):
+                return {"success": False, "msg": "试听条目不存在"}
+
+            item = preview_items[idx] or {}
+            source_rel = str(item.get("source_file") or "").replace("\\", "/").strip()
+            if not source_rel:
+                return {"success": False, "msg": "试听文件未配置"}
+
+            mod_dir = self._lib_mgr.library_dir / mod_id
+            mod_dir_resolved = mod_dir.resolve()
+            file_path = (mod_dir / source_rel).resolve()
+            try:
+                file_path.relative_to(mod_dir_resolved)
+            except ValueError:
+                return {"success": False, "msg": "参数不正确"}
+            if not file_path.exists() or not file_path.is_file():
+                return {"success": False, "msg": "试听文件不存在"}
+
+            audio_url = self._read_audio_file_to_data_url(file_path)
+            if not audio_url:
+                return {"success": False, "msg": "试听文件格式不支持"}
+
+            return {
+                "success": True,
+                "audio_url": audio_url,
+                "preview_name": str(item.get("display_name") or file_path.stem),
+                "source_name": str(item.get("source_name") or file_path.name),
+            }
+        except Exception as e:
+            log.error(f"作者试听文件播放失败: {e}")
+            return {"success": False, "msg": "试听失败"}
+
+    @staticmethod
+    def _read_audio_file_to_data_url(file_path):
+        try:
+            p = Path(file_path)
+            ext = p.suffix.lower().lstrip(".")
+            mime_map = {
+                "mp3": "audio/mpeg",
+                "wav": "audio/wav",
+            }
+            mime = mime_map.get(ext)
+            if not mime:
+                return ""
+            raw = p.read_bytes()
+            b64 = base64.b64encode(raw).decode("utf-8")
+            return f"data:{mime};base64,{b64}"
+        except Exception:
+            return ""
+
     def open_folder(self, folder_type):
         # 按类型打开资源相关目录（待解压区/语音包库/游戏目录/UserSkins）。
         if folder_type == "pending":
@@ -1757,10 +1831,11 @@ class AppApi:
 
         # 打开文件选择对话框（返回列表，即使为单选）
         file_types = (
-            "Archive Files (*.zip;*.rar;*.7z;*.tar;*.gz;*.bz2;*.xz;*.tgz;*.tbz2)",
+            "Archive Files (*.zip;*.rar;*.7z;*.tar;*.gz;*.bz2;*.xz;*.tgz;*.tbz2;*.bank)",
             "Zip Files (*.zip)",
             "Rar Files (*.rar)",
             "7zip Files (*.7z)",
+            "AimerWT Bank Files (*.bank)",
             "All files (*.*)"
         )
 
@@ -3251,21 +3326,30 @@ class AppApi:
                 data = self._load_json_with_fallback(file)
                 if isinstance(data, dict):
                     meta = data.get("meta", {})
+                    sort_order = meta.get("sort_order", 100)
+                    try:
+                        sort_order = int(sort_order)
+                    except (TypeError, ValueError):
+                        sort_order = 100
                     theme_list.append(
                         {
                             "filename": file.name,
                             "name": meta.get("name", file.stem),
                             "author": meta.get("author", "Unknown"),
                             "version": meta.get("version", "1.0"),
+                            "sort_order": sort_order,
                         }
                     )
             except Exception as e:
                 log.error(f"读取主题 {file.name} 失败: {e}")
 
-        return theme_list
+        theme_list.sort(key=lambda item: item.get("sort_order", 100))
+        return self._theme_unlock.filter_theme_list(theme_list)
 
     def load_theme_content(self, filename):
         # 读取指定主题文件的完整 JSON 内容并返回给前端应用。
+        if not self._theme_unlock.is_theme_accessible(filename):
+            return None
         themes_dir = (WEB_DIR / "themes").resolve()
         theme_path = (themes_dir / str(filename)).resolve()
         if os.path.commonpath([str(theme_path), str(themes_dir)]) != str(themes_dir):
@@ -3281,6 +3365,17 @@ class AppApi:
         except Exception as e:
             log.error(f"加载主题失败: {e}")
             return None
+
+    def redeem_theme_code(self, code):
+        # 校验兑换口令并解锁对应的隐藏主题。
+        return self._theme_unlock.redeem_theme_code(code)
+
+    def reset_unlocked_themes(self):
+        # 清空已解锁的隐藏主题，并回退到默认主题。
+        ok = self._theme_unlock.reset_unlocked_themes()
+        if ok:
+            self._cfg_mgr.set_active_theme("default.json")
+        return {"success": bool(ok)}
 
     # --- 炮镜管理 API ---
     def discover_usersights_paths(self):
@@ -3795,7 +3890,7 @@ def main() -> int:
                     if not full_paths:
                         return
 
-                    archive_exts = (".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2")
+                    archive_exts = (".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2", ".bank")
                     zip_files = [p for p in full_paths if p.lower().endswith(archive_exts)]
                     if not zip_files:
                         return

@@ -46,6 +46,15 @@
         },
         {
             id: 2,
+            type: 'urgent',
+            tag: '紧急',
+            title: '更新后请重新扫描语音包',
+            date: '2026年3月5日',
+            content: '由于公告、试听与资源识别规则已更新，升级后建议重新扫描一次语音包库，避免旧缓存影响显示或试听结果。',
+            isPinned: false
+        },
+        {
+            id: 3,
             type: 'update',
             tag: '更新',
             title: '测试标题',
@@ -54,7 +63,7 @@
             isPinned: false
         },
         {
-            id: 3,
+            id: 4,
             type: 'event',
             tag: '活动',
             title: '测试标题',
@@ -63,7 +72,7 @@
             isPinned: false
         },
         {
-            id: 4,
+            id: 5,
             type: 'normal',
             tag: '日常',
             title: '测试标题',
