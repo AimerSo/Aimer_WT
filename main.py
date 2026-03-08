@@ -41,7 +41,10 @@ from services.bank_preview_service import BankPreviewService
 from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
 from services.telemetry_manager import init_telemetry, get_hwid, get_telemetry_connection_status
-from services.theme_unlock import ThemeUnlockService
+try:
+    from services.theme_unlock import ThemeUnlockService
+except Exception:
+    ThemeUnlockService = None
 from utils.custom_text_processor import extract_prefix_group
 from utils.custom_text_importer import (
     extract_archive,
@@ -70,6 +73,33 @@ else:
 WEB_DIR = BASE_DIR / "web"
 
 log = get_logger(__name__)
+
+
+class _ThemeUnlockFallbackService:
+    """GitHub 公开版缺少口令模块时的降级实现。"""
+
+    def __init__(self, config_manager):
+        self._cfg_mgr = config_manager
+
+    def is_hidden_theme(self, filename: str) -> bool:
+        return False
+
+    def is_theme_accessible(self, filename: str) -> bool:
+        return True
+
+    def filter_theme_list(self, theme_list: list[dict]) -> list[dict]:
+        return theme_list
+
+    def get_accessible_active_theme(self, filename: str) -> str:
+        filename = str(filename or "default.json")
+        theme_path = WEB_DIR / "themes" / filename
+        return filename if theme_path.exists() else "default.json"
+
+    def redeem_theme_code(self, code: str) -> dict:
+        return {"success": False, "message": "GitHub版本不支持，请使用分发版本。"}
+
+    def reset_unlocked_themes(self) -> bool:
+        return self._cfg_mgr.set_unlocked_themes([])
 
 
 def _is_localization_blk_modified_for_export(lang_dir: Path) -> bool:
@@ -259,7 +289,11 @@ class AppApi:
         # 管理器实例：配置、语音包库、涂装、炮镜、游戏目录操作
         # 注意：所有管理器现在统一使用 logger.py 的日誌系统
         self._cfg_mgr = ConfigManager()
-        self._theme_unlock = ThemeUnlockService(self._cfg_mgr)
+        if ThemeUnlockService is not None:
+            self._theme_unlock = ThemeUnlockService(self._cfg_mgr)
+        else:
+            log.info("Theme unlock module unavailable; using GitHub fallback mode.")
+            self._theme_unlock = _ThemeUnlockFallbackService(self._cfg_mgr)
 
         # 从配置读取自定义路径
         custom_pending = self._cfg_mgr.get_pending_dir()
