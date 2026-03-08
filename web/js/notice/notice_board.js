@@ -74,11 +74,25 @@
         app._noticeEventsBound = true;
     }
 
+    function getDefaultData() {
+        if (window.NoticeDataModule && typeof window.NoticeDataModule.getDefaultNoticeData === 'function') {
+            return window.NoticeDataModule.getDefaultNoticeData();
+        }
+        return [];
+    }
+
     function renderNoticeBoard(app) {
         const container = document.getElementById('notice-board') || document.querySelector('.notice-content');
         if (!container) return;
 
-        const data = normalizeData(app && Array.isArray(app.noticeData) ? app.noticeData : []);
+        let data = normalizeData(app && Array.isArray(app.noticeData) ? app.noticeData : []);
+        if (!data.length) {
+            const fallback = normalizeData(getDefaultData());
+            if (fallback.length) {
+                data = fallback;
+                if (app) app.noticeData = fallback;
+            }
+        }
         if (!data.length) {
             container.innerHTML = '';
             return;

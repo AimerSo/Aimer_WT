@@ -412,7 +412,7 @@
 
 .btn.primary:hover {
     background: var(--primary-hover);
-    box-shadow: 0 4px 12px rgba(255, 153, 0, 0.3);
+    box-shadow: 0 4px 12px var(--primary-shadow-hover, rgba(255, 153, 0, 0.3));
 }
 
 .btn.secondary {
@@ -489,7 +489,7 @@
 .btn-v2.primary:hover {
     background: var(--primary-hover);
     color: rgba(0, 0, 0, 0.85);
-    box-shadow: 0 4px 12px rgba(255, 153, 0, 0.3);
+    box-shadow: 0 4px 12px var(--primary-shadow-hover, rgba(255, 153, 0, 0.3));
 }
 
 .btn-v2.icon-only {

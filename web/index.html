@@ -112,7 +112,7 @@
             <div class="drop-overlay-content">
                 <i class="ri-file-zip-line drop-overlay-icon"></i>
                 <div class="drop-overlay-text">放下并导入语音包</div>
-                <div style="font-size: 14px; color: var(--text-sec);">支持 ZIP / RAR / 7Z 等格式</div>
+                <div style="font-size: 14px; color: var(--text-sec);">支持 ZIP / RAR / 7Z / BANK 等格式</div>
             </div>
         </div>
 
@@ -862,6 +862,11 @@
                     <div class="card-header">
                         <h2>个性化</h2>
                         <span class="subtitle">Appearance & Themes</span>
+                        <div style="flex: 1;"></div>
+                        <button class="btn secondary icon-only theme-redeem-help-btn" onclick="app.openRedeemCodeModal()"
+                            title="兑换主题" aria-label="兑换主题">
+                            <i class="ri-question-line"></i>
+                        </button>
                     </div>
                     <div style="padding: 20px;">
                         <label style="font-size: 12px; color: var(--text-sec); display: block; margin-bottom: 8px;">
@@ -1082,6 +1087,32 @@
                 <button class="btn secondary" id="btn-confirm-cancel">取消</button>
                 <button class="btn danger" id="btn-confirm-ok">
                     <i class="ri-delete-bin-line"></i> 确认删除
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-redeem-code">
+        <div class="modal-content" style="max-width: 440px;">
+            <h2 style="margin-top: 0; color: var(--text-main);">兑换</h2>
+            <p style="margin-bottom: 16px; color: var(--text-sec); font-size: 13px; line-height: 1.5;">
+                输入口令解锁对应内容
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <label for="redeem-code-input" style="font-size: 12px; color: var(--text-sec);">兑换口令</label>
+                <input type="text" id="redeem-code-input" placeholder="请输入兑换口令" autocomplete="off"
+                    style="height: 42px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--bg-body); color: var(--text-main); padding: 0 12px; font-size: 14px;">
+            </div>
+            <div class="modal-actions" style="margin-top: 20px;">
+                <button class="btn secondary" onclick="app.closeModal('modal-redeem-code')">取消</button>
+                <button class="btn primary" onclick="app.submitRedeemCode()">
+                    <i class="ri-check-line"></i> 确定
+                </button>
+            </div>
+            <div style="margin-top: 10px; text-align: right;">
+                <button class="btn secondary" onclick="app.resetUnlockedThemes()"
+                    style="padding: 0; border: none; background: transparent; color: var(--text-sec); font-size: 12px;">
+                    重置已解锁主题
                 </button>
             </div>
         </div>
@@ -1639,6 +1670,7 @@
     <script src="js/notice/notice_board.js?v=20260228_1"></script>
     <script src="guide/guide.js"></script>
     <script src="script.js?v=20260228"></script>
+    <script src="redeem/redeem_ui.js"></script>
     <script src="ads/ad_carousel_config.js"></script>
     <script src="ads/ad_carousel.js"></script>
 
