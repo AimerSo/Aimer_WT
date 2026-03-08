@@ -21,7 +21,8 @@ from utils.utils import get_app_data_dir
 log = get_logger(__name__)
 
 # 定义标准文件夹名称
-DIR_HANGAR_LIBRARY = "../WT机库"
+DIR_RESOURCE_ROOT = "../AimerWT资源库"
+DIR_HANGAR_LIBRARY = f"{DIR_RESOURCE_ROOT}/WT机库"
 
 
 class HangarManager:

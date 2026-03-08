@@ -21,7 +21,8 @@ from utils.utils import get_app_data_dir
 log = get_logger(__name__)
 
 # 定义标准文件夹名称
-DIR_MODEL_LIBRARY = "../WT模型库"
+DIR_RESOURCE_ROOT = "../AimerWT资源库"
+DIR_MODEL_LIBRARY = f"{DIR_RESOURCE_ROOT}/WT模型库"
 
 
 class ModelManager:

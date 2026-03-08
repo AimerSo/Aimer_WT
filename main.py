@@ -64,6 +64,9 @@ from wt.wt_text import (
 
 APP_VERSION = "2.1.0"
 AGREEMENT_VERSION = "2026-01-10"
+DEFAULT_PENDING_DIR_NAME = "待解压区"
+DEFAULT_RESOURCE_ROOT_DIR_NAME = "AimerWT资源库"
+DEFAULT_VOICE_LIBRARY_DIR_NAME = "WT语音包库"
 
 # 资源目录定位：打包环境使用 _MEIPASS，开发环境使用源码目录
 if getattr(sys, "frozen", False):
@@ -3609,7 +3612,7 @@ class AppApi:
             if pending_dir == "":
                 # 重设为预设
                 self._cfg_mgr.set_pending_dir("")
-                default_pending = self._lib_mgr.root_dir / "WT待解压区"
+                default_pending = self._lib_mgr.root_dir / ".." / DEFAULT_PENDING_DIR_NAME
                 self._lib_mgr.update_paths(pending_dir=str(default_pending))
                 log.info(f"待解压区已重设为预设路径: {default_pending}")
                 return {"success": True}
@@ -3640,7 +3643,9 @@ class AppApi:
             if library_dir == "":
                 # 重设为预设
                 self._cfg_mgr.set_library_dir("")
-                default_library = self._lib_mgr.root_dir / "WT语音包库"
+                default_library = (
+                    self._lib_mgr.root_dir / ".." / DEFAULT_RESOURCE_ROOT_DIR_NAME / DEFAULT_VOICE_LIBRARY_DIR_NAME
+                )
                 self._lib_mgr.update_paths(library_dir=str(default_library))
                 log.info(f"语音包库已重设为预设路径: {default_library}")
                 return {"success": True}
