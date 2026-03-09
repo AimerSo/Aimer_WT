@@ -28,6 +28,9 @@ func initDB() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 	db.AutoMigrate(&TelemetryRecord{})
+	db.AutoMigrate(&SystemConfig{})
+	db.AutoMigrate(&DrilldownResponse{})
+	db.AutoMigrate(&StatsResponse{})
 }
 
 func loadDashboard() {
