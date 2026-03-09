@@ -2,10 +2,11 @@ import sys
 import threading
 from pathlib import Path
 
-CURRENT_DIR = Path(__file__).parent
-if str(CURRENT_DIR) not in sys.path:
-    sys.path.insert(0, str(CURRENT_DIR))
-PROJECT_ROOT = CURRENT_DIR.parents[1]
+SOURCE_DIR = Path(__file__).resolve().parent
+CURRENT_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else SOURCE_DIR
+if str(SOURCE_DIR) not in sys.path:
+    sys.path.insert(0, str(SOURCE_DIR))
+PROJECT_ROOT = SOURCE_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -23,7 +24,7 @@ APP_VERSION = "0.1.0"
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys._MEIPASS)
 else:
-    BASE_DIR = Path(__file__).parent
+    BASE_DIR = SOURCE_DIR
 
 WEB_DIR = BASE_DIR / "web"
 
@@ -33,10 +34,14 @@ class AppApi:
         self._window = None
         self._topmost_lock = threading.Lock()
         self._voicepack = AuthorVoicepackService(app_base_dir=CURRENT_DIR, web_dir=WEB_DIR)
-        self._toolbox = ToolboxService()
+        self._toolbox = ToolboxService(app_base_dir=CURRENT_DIR)
 
     def set_window(self, window):
         self._window = window
+        try:
+            self._voicepack.set_window(window)
+        except Exception:
+            pass
 
     def get_app_info(self):
         return build_app_info(
@@ -88,6 +93,12 @@ class AppApi:
         except Exception as e:
             return {"success": False, "msg": str(e)}
 
+    def rename_voicepack_title(self, folder_name, new_title):
+        try:
+            return self._voicepack.rename_voicepack_title(folder_name, new_title)
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
+
     def delete_voicepack_folder(self, folder_name):
         try:
             return self._voicepack.delete_voicepack_folder(folder_name)
@@ -115,15 +126,69 @@ class AppApi:
         except Exception as e:
             return {"success": False, "msg": str(e)}
 
-    def export_voicepack_bank(self, folder_name, package_name=""):
+    def export_voicepack_bank(self, folder_name, package_name="", export_mode="full"):
         try:
-            return self._voicepack.export_voicepack_bank(folder_name, package_name or "")
+            return self._voicepack.export_voicepack_bank(folder_name, package_name or "", export_mode or "full")
         except Exception as e:
             return {"success": False, "msg": str(e)}
 
     def import_voicepack_bank(self, file_name, data_url):
         try:
             return self._voicepack.import_voicepack_bank(file_name, data_url)
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
+
+    def start_mod_audition_scan(self, mod_name):
+        try:
+            return self._voicepack.start_mod_audition_scan(mod_name)
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
+
+    def set_mod_audition_scan_paused(self, mod_name, paused):
+        try:
+            return self._voicepack.set_mod_audition_scan_paused(mod_name, paused)
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
+
+    def stop_mod_audition_scan(self, mod_name):
+        try:
+            return self._voicepack.stop_mod_audition_scan(mod_name)
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
+
+    def get_mod_audition_categories_snapshot(self, mod_name):
+        try:
+            return self._voicepack.get_mod_audition_categories_snapshot(mod_name)
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
+
+    def list_mod_audition_items_by_type(self, mod_name, voice_type_code):
+        try:
+            return self._voicepack.list_mod_audition_items_by_type(mod_name, voice_type_code)
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
+
+    def audition_mod_random_by_type(self, mod_name, voice_type_code, max_seconds=12):
+        try:
+            return self._voicepack.audition_mod_random_by_type(mod_name, voice_type_code, max_seconds)
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
+
+    def audition_mod_stream(self, mod_name, bank_rel, chunk_index, stream_index, max_seconds=12):
+        try:
+            return self._voicepack.audition_mod_stream(mod_name, bank_rel, chunk_index, stream_index, max_seconds)
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
+
+    def audition_mod_preview_audio(self, mod_name, preview_index):
+        try:
+            return self._voicepack.audition_mod_preview_audio(mod_name, preview_index)
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
+
+    def clear_audition_cache(self, mod_name=None):
+        try:
+            return self._voicepack.clear_audition_cache(mod_name)
         except Exception as e:
             return {"success": False, "msg": str(e)}
 

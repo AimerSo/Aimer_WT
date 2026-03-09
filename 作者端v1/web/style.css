@@ -2376,13 +2376,32 @@ body {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
+}
+
+.voicepack-pack-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
 }
 
 .voicepack-pack-title {
+    min-width: 0;
+    flex: 0 1 auto;
     font-size: 15px;
     font-weight: 700;
     color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.voicepack-pack-folder-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-size: 12px;
+    color: #94a3b8;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3012,6 +3031,83 @@ body {
     line-height: 1.6;
     color: #475569;
     white-space: pre-wrap;
+}
+
+.author-dialog-options {
+    display: none;
+}
+
+.author-dialog-options-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.author-dialog-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.author-dialog-option:hover {
+    border-color: #fdba74;
+    background: #fff7ed;
+}
+
+.author-dialog-option input {
+    margin-top: 3px;
+    accent-color: #f97316;
+}
+
+.author-dialog-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.author-dialog-option-title {
+    display: block;
+    font-size: 14px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.author-dialog-option-desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #64748b;
+}
+
+.author-dialog-option.compact {
+    align-items: center;
+    padding: 10px 12px;
+}
+
+.author-dialog-option.compact .author-dialog-option-text {
+    gap: 0;
+}
+
+.author-dialog-option.compact .author-dialog-option-desc {
+    display: none;
+}
+
+@media (max-width: 720px) {
+    .author-dialog-options-list {
+        grid-template-columns: 1fr;
+    }
+
+    .voicepack-pack-title-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+    }
 }
 
 .author-dialog-footer {

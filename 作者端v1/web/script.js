@@ -416,7 +416,12 @@ const app = {
         const onCancel = () => this._finishDialog({ ok: false, value: "" });
         const onConfirm = () => {
             const input = document.getElementById("author-dialog-input");
-            this._finishDialog({ ok: true, value: String(input?.value || "") });
+            const selectedChoice = document.querySelector("input[name='author-dialog-choice']:checked");
+            this._finishDialog({
+                ok: true,
+                value: String(input?.value || ""),
+                choice: String(selectedChoice?.value || "")
+            });
         };
 
         if (closeBtn) closeBtn.addEventListener("click", onCancel);
@@ -449,12 +454,31 @@ const app = {
         });
     },
 
+    showChoiceInputDialog(options = {}) {
+        return this._openDialog({
+            mode: "choice-input",
+            title: options.title || "请选择",
+            message: options.message || "",
+            inputLabel: options.inputLabel || "内容",
+            placeholder: options.placeholder || "",
+            value: String(options.value || ""),
+            choiceValue: String(options.choiceValue || ""),
+            choices: Array.isArray(options.choices) ? options.choices : [],
+            choicesCompact: Boolean(options.choicesCompact),
+            choiceDefaults: options.choiceDefaults || {},
+            confirmText: options.confirmText || "确定",
+            cancelText: options.cancelText || "取消"
+        });
+    },
+
     _openDialog(options) {
         return new Promise((resolve) => {
             this.bindDialogModal();
             const modal = document.getElementById("author-dialog-modal");
             const titleEl = document.getElementById("author-dialog-title");
             const msgEl = document.getElementById("author-dialog-message");
+            const optionsWrap = document.getElementById("author-dialog-options-wrap");
+            const optionsEl = document.getElementById("author-dialog-options");
             const inputWrap = document.getElementById("author-dialog-input-wrap");
             const inputLabel = document.getElementById("author-dialog-input-label");
             const input = document.getElementById("author-dialog-input");
@@ -474,7 +498,47 @@ const app = {
             cancelBtn.textContent = String(options.cancelText || "取消");
             confirmBtn.textContent = String(options.confirmText || "确定");
 
-            if (String(options.mode) === "input") {
+            const choices = Array.isArray(options.choices) ? options.choices.filter((item) => item && item.value) : [];
+            const selectedChoice = String(options.choiceValue || choices[0]?.value || "");
+            const choiceDefaults = options.choiceDefaults && typeof options.choiceDefaults === "object"
+                ? options.choiceDefaults
+                : {};
+            if (optionsWrap && optionsEl) {
+                if (choices.length > 0) {
+                    optionsEl.innerHTML = choices.map((item) => {
+                        const value = String(item.value || "");
+                        const checked = value === selectedChoice ? "checked" : "";
+                        const optionClass = options.choicesCompact ? "author-dialog-option compact" : "author-dialog-option";
+                        return `
+                            <label class="${optionClass}">
+                                <input type="radio" name="author-dialog-choice" value="${this.escapeHtml(value)}" ${checked}>
+                                <span class="author-dialog-option-text">
+                                    <span class="author-dialog-option-title">${this.escapeHtml(item.title || value)}</span>
+                                    <span class="author-dialog-option-desc">${this.escapeHtml(item.description || "")}</span>
+                                </span>
+                            </label>
+                        `;
+                    }).join("");
+                    optionsWrap.style.display = "block";
+                    if (input) {
+                        optionsEl.querySelectorAll("input[name='author-dialog-choice']").forEach((radio) => {
+                            radio.addEventListener("change", () => {
+                                const nextValue = choiceDefaults[radio.value];
+                                if (typeof nextValue === "string") {
+                                    input.value = nextValue;
+                                    requestAnimationFrame(() => input.select());
+                                }
+                            });
+                        });
+                    }
+                } else {
+                    optionsEl.innerHTML = "";
+                    optionsWrap.style.display = "none";
+                }
+            }
+
+            const showInput = String(options.mode) === "input" || String(options.mode) === "choice-input";
+            if (showInput) {
                 if (inputWrap) inputWrap.style.display = "";
                 if (inputLabel) inputLabel.textContent = String(options.inputLabel || "内容");
                 if (input) {
@@ -489,7 +553,7 @@ const app = {
             this._dialogResolver = resolve;
             this.showOverlay(modal);
 
-            if (input && String(options.mode) === "input") {
+            if (input && showInput) {
                 requestAnimationFrame(() => input.focus());
             }
 
@@ -502,10 +566,11 @@ const app = {
                     this._finishDialog({ ok: false, value: "" });
                 }
                 if (e.key === "Enter") {
-                    if (String(options.mode) !== "input" || (document.activeElement && document.activeElement.id === "author-dialog-input")) {
+                    if (!showInput || (document.activeElement && document.activeElement.id === "author-dialog-input")) {
                         e.preventDefault();
                         const v = String(input?.value || "");
-                        this._finishDialog({ ok: true, value: v });
+                        const selected = document.querySelector("input[name='author-dialog-choice']:checked");
+                        this._finishDialog({ ok: true, value: v, choice: String(selected?.value || "") });
                     }
                 }
             };
@@ -534,7 +599,18 @@ const app = {
             item.addEventListener("click", () => {
                 const parent = item.closest(".side-dropdown");
                 if (!parent) return;
-                parent.classList.toggle("open");
+                const subPages = String(parent.getAttribute("data-subpages") || "")
+                    .split(",").map((v) => v.trim()).filter(Boolean);
+                const currentInGroup = subPages.includes(this.currentPage);
+                const isOpen = parent.classList.contains("open");
+
+                if (currentInGroup) {
+                    parent.classList.toggle("open", !isOpen);
+                    return;
+                }
+
+                parent.classList.add("open");
+                if (subPages.length > 0) this.switchPage(subPages[0]);
             });
         });
         this._navBound = true;
@@ -1713,7 +1789,7 @@ const app = {
     },
 
     async _toolboxPickFilesNative() {
-        if (!window.pywebview) {
+        if (!window.pywebview?.api?.toolbox_select_files) {
             // 浏览器降级：触发 file input
             const input = document.getElementById("toolbox-file-input");
             if (input) input.click();
@@ -1725,8 +1801,7 @@ const app = {
                 await this._toolboxAddNativeFiles(res.files);
             }
         } catch (e) {
-            const input = document.getElementById("toolbox-file-input");
-            if (input) input.click();
+            this.notifyToast("warn", "系统文件选择失败，请重试");
         }
     },
 
@@ -1758,7 +1833,10 @@ const app = {
             const key = file.name + "_" + Math.round(file.size / 1024);
             if (existing.has(key)) continue;
             const sizeKB = Math.round(file.size / 1024);
-            const entry = { path: file.name, name: file.name, sizeKB, thumb: "", status: "pending", result: null, _file: file };
+            const virtualPath = window.pywebview
+                ? `upload://${Date.now()}_${Math.random().toString(36).slice(2)}/${file.name}`
+                : file.name;
+            const entry = { path: virtualPath, name: file.name, sizeKB, thumb: "", status: "pending", result: null, _file: file };
             this._toolboxFiles.push(entry);
             existing.add(key);
             // 做本地 URL 缩略图
@@ -1766,6 +1844,29 @@ const app = {
             entry.thumb = url;
         }
         this._updateToolboxUI();
+    },
+
+    _toolboxExtractNativeDropPaths(fileList) {
+        const out = [];
+        for (const file of Array.from(fileList || [])) {
+            const path = String(file?.path || file?._path || "").trim();
+            if (path) out.push(path);
+        }
+        return out;
+    },
+
+    async _toolboxBuildUploadPayload(entries) {
+        const uploads = [];
+        for (const entry of Array.from(entries || [])) {
+            if (!entry?._file) continue;
+            const dataUrl = await this.readFileAsDataUrl(entry._file);
+            uploads.push({
+                client_id: String(entry.path || ""),
+                name: String(entry.name || entry._file?.name || "upload.png"),
+                data_url: String(dataUrl || "")
+            });
+        }
+        return uploads;
     },
 
     // —— 拖拽 ——
@@ -1777,16 +1878,18 @@ const app = {
         zone.addEventListener("drop", async (e) => {
             e.preventDefault();
             zone.classList.remove("drag-over");
-            const items = Array.from(e.dataTransfer.items || []);
             const files = Array.from(e.dataTransfer.files || []);
-            // 尝试获取绝对路径（pywebview EdgeChromium 支持）
-            const paths = [];
-            let hasPath = false;
-            for (const item of items) {
-                if (item.kind === "file") {
-                    const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
-                    if (entry && entry.fullPath && entry.fullPath.length > 1) hasPath = true;
+            if (window.pywebview) {
+                const nativePaths = this._toolboxExtractNativeDropPaths(files);
+                if (nativePaths.length > 0) {
+                    await this._toolboxAddNativeFiles(nativePaths);
+                    return;
                 }
+                if (files.length > 0) {
+                    this._toolboxAddBrowserFiles(files);
+                    this.notifyToast("info", "已接收拖拽文件，转换时将输出到所选目录或工具箱默认目录");
+                }
+                return;
             }
             if (files.length > 0) {
                 this._toolboxAddBrowserFiles(files);
@@ -1918,23 +2021,52 @@ const app = {
 
         const quality = parseInt(document.getElementById("toolbox-quality-slider")?.value || "85", 10);
         const lossless = document.getElementById("toolbox-lossless")?.checked || false;
-        const files = pending.map(f => f.path);
+        const nativeFiles = pending.filter(f => !f._file).map(f => f.path);
+        const uploadEntries = pending.filter(f => !!f._file);
+        if (uploadEntries.length > 0 && saveMode !== "folder") {
+            this.notifyToast("info", "拖拽导入文件无法保留原目录，已改为输出到工具箱目录");
+        }
 
         // 标记为转换中
         pending.forEach(f => { f.status = "converting"; });
         this._renderToolboxFileList();
 
         try {
-            const res = await window.pywebview.api.toolbox_convert_webp({
-                files,
-                quality,
-                lossless,
-                save_mode: saveMode,
-                output_folder: outputFolder
-            });
+            const allResults = [];
+            const responseMessages = [];
+            const outputFolders = [];
 
-            if (res && res.results) {
-                const resultMap = new Map(res.results.map(r => [r.src, r]));
+            if (nativeFiles.length > 0) {
+                const nativeRes = await window.pywebview.api.toolbox_convert_webp({
+                    files: nativeFiles,
+                    uploads: [],
+                    quality,
+                    lossless,
+                    save_mode: saveMode,
+                    output_folder: outputFolder
+                });
+                if (nativeRes?.results) allResults.push(...nativeRes.results);
+                if (nativeRes?.msg) responseMessages.push(String(nativeRes.msg));
+                if (nativeRes?.output_folder_used) outputFolders.push(String(nativeRes.output_folder_used));
+            }
+
+            if (uploadEntries.length > 0) {
+                const uploads = await this._toolboxBuildUploadPayload(uploadEntries);
+                const uploadRes = await window.pywebview.api.toolbox_convert_webp({
+                    files: [],
+                    uploads,
+                    quality,
+                    lossless,
+                    save_mode: saveMode,
+                    output_folder: outputFolder
+                });
+                if (uploadRes?.results) allResults.push(...uploadRes.results);
+                if (uploadRes?.msg) responseMessages.push(String(uploadRes.msg));
+                if (uploadRes?.output_folder_used) outputFolders.push(String(uploadRes.output_folder_used));
+            }
+
+            if (allResults.length > 0) {
+                const resultMap = new Map(allResults.map(r => [r.src, r]));
                 this._toolboxFiles.forEach(f => {
                     if (f.status !== "converting") return;
                     const r = resultMap.get(f.path);
@@ -1942,12 +2074,17 @@ const app = {
                     f.status = r.ok ? "success" : "fail";
                     f.result = r;
                     if (r.ok && r.dst) {
-                        // 记录输出目录供"打开目录"按钮使用
                         const parts = r.dst.replace(/\\/g, "/").split("/");
                         parts.pop();
                         this._toolboxLastFolder = parts.join("/");
                     }
                 });
+            }
+            if (outputFolders.length > 0) {
+                this._toolboxLastFolder = outputFolders[outputFolders.length - 1];
+            }
+            if (responseMessages.length > 0) {
+                this.notifyToast("info", responseMessages[responseMessages.length - 1]);
             }
         } catch (e) {
             pending.forEach(f => { if (f.status === "converting") { f.status = "fail"; f.result = { ok: false, error: String(e) }; } });
@@ -2268,24 +2405,43 @@ const app = {
         }
 
         await this.saveCurrentVoicepackInfo();
-        const dialogRes = await this.showInputDialog({
+        const dialogRes = await this.showChoiceInputDialog({
             title: "导出 BANK 包",
-            message: "请输入导出的文件名（不需要后缀）",
+            message: "请选择导出方式，并输入导出的文件名（不需要后缀）",
             inputLabel: "文件名",
             value: modName,
             placeholder: "例如：莉可丽丝",
+            choiceValue: "full",
+            choices: [
+                {
+                    value: "full",
+                    title: "完整导出",
+                    description: "保留现有规则，语音包文件也会一并打进 .bank。"
+                },
+                {
+                    value: "split",
+                    title: "分离导出",
+                    description: "仅配置和图片打进 .bank，语音包文件会单独放进同名文件夹。"
+                }
+            ],
+            choicesCompact: true,
             confirmText: "开始导出"
         });
         if (!dialogRes?.ok) return;
         const packageName = String(dialogRes.value || "").trim() || modName;
+        const exportMode = String(dialogRes.choice || "full").trim() || "full";
 
         try {
-            const res = await window.pywebview.api.export_voicepack_bank(modName, packageName);
+            const res = await window.pywebview.api.export_voicepack_bank(modName, packageName, exportMode);
             if (!res?.success) {
                 this.notifyToast("warn", res?.msg || "导出失败");
                 return;
             }
-            this.notifyToast("success", `导出完成：${res.file_name || ""}`);
+            if (res.export_mode === "split") {
+                this.notifyToast("success", `分离导出完成：${res.folder_name || res.file_name || ""}`);
+            } else {
+                this.notifyToast("success", `导出完成：${res.file_name || ""}`);
+            }
         } catch (_e) {
             this.notifyToast("warn", "导出失败");
         }
@@ -2646,14 +2802,486 @@ const app = {
             };
         }
         if (auditionBtn) {
-            auditionBtn.onclick = () => {
-                const video = String(mod?.link_video || "").trim();
-                if (!video) {
-                    this.notifyToast("warn", "该语音包未配置试听链接");
+            auditionBtn.onclick = async () => {
+                if (String(mod?.id || "").startsWith("author-related-")) {
+                    this.notifyToast("warn", "关联语音包详情不支持本地试听");
                     return;
                 }
-                this.openExternal(video);
+                const modName = String(this.currentVoicepackName || "").trim();
+                if (!modName) {
+                    this.notifyToast("warn", "请先在语音包库中选择一个语音包");
+                    return;
+                }
+                try {
+                    await this.saveCurrentVoicepackInfo();
+                    const manualPreviewItems = this.normalizePreviewAudioList(mod?.preview_audio_files || [])
+                        .map((item, idx) => ({ ...item, preview_index: idx }));
+                    const useRandomPreview = mod?.preview_use_random_bank !== false || !manualPreviewItems.length;
+                    if (mod?.preview_use_random_bank === false && !manualPreviewItems.length) {
+                        this.notifyToast("info", "未配置作者试听文件，已回退到随机试听");
+                    }
+                    if (!useRandomPreview) {
+                        this.openAuthorPreviewAudioPicker(modName, manualPreviewItems);
+                        return;
+                    }
+                    if (!window.pywebview?.api?.start_mod_audition_scan || !window.pywebview?.api?.get_mod_audition_categories_snapshot) {
+                        this.notifyToast("warn", "后端试听接口不可用");
+                        return;
+                    }
+
+                    auditionBtn.disabled = true;
+                    const oldHtml = auditionBtn.innerHTML;
+                    auditionBtn.innerHTML = '<i class="ri-loader-2-line"></i> 初始化试听...';
+                    const currentState = window.__auditionPickerState;
+                    if (currentState && currentState.modId === modName) {
+                        auditionBtn.innerHTML = oldHtml;
+                        auditionBtn.disabled = false;
+                        this.notifyToast("info", "该语音包试听窗口已打开");
+                        return;
+                    }
+                    if (currentState && typeof currentState.close === "function") {
+                        currentState.close(true);
+                    }
+                    this.openAuditionPicker(modName, []);
+                    await pywebview.api.start_mod_audition_scan(modName);
+                    const snap = await pywebview.api.get_mod_audition_categories_snapshot(modName);
+                    auditionBtn.innerHTML = oldHtml;
+                    auditionBtn.disabled = false;
+                    if (!snap || !snap.success) {
+                        this.notifyToast("warn", snap?.msg || "试听初始化失败");
+                        return;
+                    }
+                    if (window.__auditionPickerState && typeof window.__auditionPickerState.update === "function") {
+                        window.__auditionPickerState.update(snap);
+                    }
+                } catch (_e) {
+                    auditionBtn.disabled = false;
+                    auditionBtn.innerHTML = '<i class="ri-play-circle-line"></i> 试听语音';
+                    this.notifyToast("warn", "试听失败");
+                }
             };
+        }
+    },
+
+    formatAuditionDuration(sec) {
+        const n = Number(sec || 0);
+        if (!Number.isFinite(n) || n <= 0) return "0:00";
+        const m = Math.floor(n / 60);
+        const s = Math.floor(n % 60);
+        return `${m}:${String(s).padStart(2, "0")}`;
+    },
+
+    openAuditionPicker(modName, categories) {
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay show";
+        overlay.style.zIndex = "10002";
+        let categoriesData = Array.isArray(categories) ? [...categories] : [];
+        let snapshotStatusText = "准备中...";
+
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:980px;width:min(94vw,980px);padding:20px;max-height:86vh;display:flex;flex-direction:column;">
+                <h3 style="margin:0 0 12px 0;">选择试听分类</h3>
+                <div style="display:flex;gap:8px;margin-bottom:10px;">
+                    <input id="audition-search" type="text" placeholder="搜索分类名 / code" style="flex:1;padding:10px;border:1px solid var(--border-color);border-radius:10px;">
+                    <span id="audition-count" style="align-self:center;color:var(--text-secondary);font-size:13px;line-height:1;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;white-space:nowrap;">等待解析...</span>
+                </div>
+                <div style="margin-bottom:10px;">
+                    <div id="audition-progress-text" style="font-size:13px;color:var(--text-secondary);margin-bottom:6px;">准备中...</div>
+                    <div style="height:8px;background:var(--bg-card-soft, rgba(127,127,127,0.2));border-radius:999px;overflow:hidden;border:1px solid var(--border-color);">
+                        <div id="audition-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--primary),#ffb347);transition:width .2s ease;"></div>
+                    </div>
+                </div>
+                <select id="audition-select" size="22" style="width:100%;flex:1;min-height:320px;font-family:Consolas, monospace;padding:10px;border:1px solid var(--border-color);border-radius:10px;"></select>
+                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;">
+                    <button class="btn secondary" type="button" id="audition-pause-btn">暂停解析</button>
+                    <button class="btn secondary" type="button" id="audition-close-btn">关闭</button>
+                    <button class="btn primary" type="button" id="audition-play-btn"><i class="ri-play-circle-line"></i> 随机试听该分类</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const selectEl = overlay.querySelector("#audition-select");
+        const searchEl = overlay.querySelector("#audition-search");
+        const countEl = overlay.querySelector("#audition-count");
+        const progressTextEl = overlay.querySelector("#audition-progress-text");
+        const progressBarEl = overlay.querySelector("#audition-progress-bar");
+        const playBtn = overlay.querySelector("#audition-play-btn");
+        const closeBtn = overlay.querySelector("#audition-close-btn");
+        const pauseBtn = overlay.querySelector("#audition-pause-btn");
+
+        const close = (switching = false) => {
+            if (window.__aimerAuditionAudio) {
+                try {
+                    window.__aimerAuditionAudio.pause();
+                    window.__aimerAuditionAudio.currentTime = 0;
+                    window.__aimerAuditionAudio.src = "";
+                } catch (_e) {
+                }
+            }
+            if (window.pywebview?.api?.stop_mod_audition_scan) {
+                pywebview.api.stop_mod_audition_scan(modName).catch(() => { });
+            }
+            if (window.pywebview?.api?.clear_audition_cache) {
+                pywebview.api.clear_audition_cache(modName).catch(() => { });
+            }
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            if (window.__auditionPickerState && window.__auditionPickerState.modId === modName) {
+                window.__auditionPickerState = null;
+            }
+            if (!switching) {
+                this.notifyToast("info", "已关闭试听窗口");
+            }
+        };
+
+        const rebuildOptions = (keyword) => {
+            const q = String(keyword || "").trim().toLowerCase();
+            let visible = 0;
+            selectEl.innerHTML = categoriesData.map((it, idx) => {
+                const name = String(it.name || "");
+                const code = String(it.code || "");
+                const hit = !q || name.toLowerCase().includes(q) || code.toLowerCase().includes(q);
+                if (!hit) return "";
+                visible += 1;
+                const label = `${this.escapeHtml(name)} (${Number(it.count || 0)} 条) [${this.escapeHtml(code)}]`;
+                return `<option value="${idx}">${label}</option>`;
+            }).join("");
+            if (progressTextEl) {
+                const base = snapshotStatusText || "解析中...";
+                progressTextEl.textContent = visible !== categoriesData.length
+                    ? `${base} · 当前筛选 ${visible}/${categoriesData.length} 类`
+                    : base;
+            }
+        };
+
+        const updateFromSnapshot = (snap) => {
+            if (!snap) return;
+            if (Array.isArray(snap.categories)) categoriesData = snap.categories;
+            if (countEl) {
+                const p = Number(snap.progress || 0);
+                const msg = String(snap.message || "");
+                countEl.textContent = `${categoriesData.length} 类 / ${Number(snap.count || 0)} 条`;
+                snapshotStatusText = `${msg || "解析中"} (${p}%)`;
+                if (snap.done) {
+                    snapshotStatusText = snap.error
+                        ? `解析结束：${snap.error}`
+                        : `解析完成：${categoriesData.length} 类，${Number(snap.count || 0)} 条语音`;
+                }
+                if (progressTextEl) progressTextEl.textContent = snapshotStatusText;
+                if (progressBarEl) progressBarEl.style.width = `${Math.max(0, Math.min(100, p))}%`;
+            }
+            rebuildOptions(searchEl ? searchEl.value : "");
+            if (pauseBtn) {
+                if (snap.done) {
+                    pauseBtn.disabled = true;
+                    pauseBtn.textContent = "解析已完成";
+                } else {
+                    pauseBtn.disabled = false;
+                    pauseBtn.textContent = snap.paused ? "继续解析" : "暂停解析";
+                }
+            }
+        };
+
+        const playSelected = async () => {
+            try {
+                if (!selectEl || !selectEl.value) {
+                    this.notifyToast("warn", "请先选择一个分类");
+                    return;
+                }
+                const selected = categoriesData[Number(selectEl.value)];
+                if (!selected) return;
+                if (String(selected.code || "").toLowerCase() === "preview") {
+                    if (!window.pywebview?.api?.list_mod_audition_items_by_type) {
+                        this.notifyToast("warn", "后端手动试听接口不可用");
+                        return;
+                    }
+                    playBtn.disabled = true;
+                    const oldHtml = playBtn.innerHTML;
+                    playBtn.innerHTML = '<i class="ri-loader-2-line"></i> 加载试听条目...';
+                    const listRes = await pywebview.api.list_mod_audition_items_by_type(modName, selected.code);
+                    playBtn.disabled = false;
+                    playBtn.innerHTML = oldHtml;
+                    if (!listRes || !listRes.success || !Array.isArray(listRes.items) || !listRes.items.length) {
+                        this.notifyToast("warn", listRes?.msg || "未获取到可试听条目");
+                        return;
+                    }
+                    this.openManualPreviewPicker(modName, selected, listRes.items);
+                    return;
+                }
+
+                if (!window.pywebview?.api?.audition_mod_random_by_type) {
+                    this.notifyToast("warn", "后端试听接口不可用");
+                    return;
+                }
+                playBtn.disabled = true;
+                const oldHtml = playBtn.innerHTML;
+                playBtn.innerHTML = '<i class="ri-loader-2-line"></i> 随机抽取中...';
+                const res = await pywebview.api.audition_mod_random_by_type(modName, selected.code, 12);
+                playBtn.disabled = false;
+                playBtn.innerHTML = oldHtml;
+                if (!res || !res.success || !res.audio_url) {
+                    this.notifyToast("warn", res?.msg || "试听失败");
+                    return;
+                }
+                if (!window.__aimerAuditionAudio) {
+                    window.__aimerAuditionAudio = new Audio();
+                }
+                const player = window.__aimerAuditionAudio;
+                player.pause();
+                player.currentTime = 0;
+                player.src = res.audio_url;
+                await player.play();
+                this.notifyToast("success", `正在播放：${String(res.picked_name || "随机语音")}`);
+            } catch (_e) {
+                playBtn.disabled = false;
+                playBtn.innerHTML = '<i class="ri-play-circle-line"></i> 随机试听该分类';
+                this.notifyToast("warn", "试听失败");
+            }
+        };
+
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) close();
+        });
+        if (searchEl) searchEl.addEventListener("input", (e) => rebuildOptions(e.target.value));
+        if (closeBtn) closeBtn.addEventListener("click", close);
+        if (pauseBtn) {
+            pauseBtn.addEventListener("click", async () => {
+                try {
+                    if (!window.pywebview?.api?.set_mod_audition_scan_paused) {
+                        this.notifyToast("warn", "后端暂停接口不可用");
+                        return;
+                    }
+                    const willPause = pauseBtn.textContent.includes("暂停");
+                    pauseBtn.disabled = true;
+                    const res = await pywebview.api.set_mod_audition_scan_paused(modName, willPause);
+                    if (!res || !res.success) {
+                        this.notifyToast("warn", res?.msg || "操作失败");
+                        pauseBtn.disabled = false;
+                        return;
+                    }
+                    pauseBtn.textContent = res.paused ? "继续解析" : "暂停解析";
+                    pauseBtn.disabled = false;
+                } catch (_e) {
+                    pauseBtn.disabled = false;
+                    this.notifyToast("warn", "操作失败");
+                }
+            });
+        }
+        if (playBtn) playBtn.addEventListener("click", playSelected);
+        if (selectEl) selectEl.addEventListener("dblclick", playSelected);
+
+        window.__auditionPickerState = {
+            modId: modName,
+            update: updateFromSnapshot,
+            close,
+        };
+        updateFromSnapshot({ categories: categoriesData, progress: 0, message: "等待解析", done: false, count: 0 });
+    },
+
+    openManualPreviewPicker(modName, category, items) {
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay show";
+        overlay.style.zIndex = "10003";
+        let viewItems = [...items];
+
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:980px;width:min(94vw,980px);padding:20px;max-height:86vh;display:flex;flex-direction:column;">
+                <h3 style="margin:0 0 12px 0;">手动选择试听语音 - ${this.escapeHtml(String(category?.name || "试听"))}</h3>
+                <div style="display:flex;gap:8px;margin-bottom:10px;">
+                    <input id="manual-preview-search" type="text" placeholder="搜索语音名 / bank 文件名" style="flex:1;padding:10px;border:1px solid var(--border-color);border-radius:10px;">
+                    <span id="manual-preview-count" style="align-self:center;color:var(--text-secondary);font-size:13px;line-height:1;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;white-space:nowrap;">共 ${items.length} 条</span>
+                </div>
+                <select id="manual-preview-select" size="22" style="width:100%;flex:1;min-height:320px;font-family:Consolas, monospace;padding:10px;border:1px solid var(--border-color);border-radius:10px;"></select>
+                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;">
+                    <button class="btn secondary" type="button" id="manual-preview-close-btn">关闭</button>
+                    <button class="btn primary" type="button" id="manual-preview-play-btn"><i class="ri-play-circle-line"></i> 播放选中语音</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const selectEl = overlay.querySelector("#manual-preview-select");
+        const searchEl = overlay.querySelector("#manual-preview-search");
+        const countEl = overlay.querySelector("#manual-preview-count");
+        const playBtn = overlay.querySelector("#manual-preview-play-btn");
+        const closeBtn = overlay.querySelector("#manual-preview-close-btn");
+
+        const rebuild = (keyword) => {
+            const q = String(keyword || "").trim().toLowerCase();
+            viewItems = items.filter((it) => {
+                const n = String(it.name || "").toLowerCase();
+                const b = String(it.bank_file || "").toLowerCase();
+                return !q || n.includes(q) || b.includes(q);
+            });
+            selectEl.innerHTML = viewItems.map((it, idx) => {
+                const nm = this.escapeHtml(String(it.name || `stream_${it.stream_index}`));
+                const bk = this.escapeHtml(String(it.bank_file || "unknown.bank"));
+                const d = this.formatAuditionDuration(it.duration_sec);
+                return `<option value="${idx}">#${idx + 1} ${nm} (${d}) [${bk}]</option>`;
+            }).join("");
+            if (countEl) countEl.textContent = `显示 ${viewItems.length} / ${items.length} 条`;
+        };
+
+        const close = () => {
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        };
+
+        const playSelected = async () => {
+            try {
+                if (!selectEl || !selectEl.value) {
+                    this.notifyToast("warn", "请先选择一条语音");
+                    return;
+                }
+                if (!window.pywebview?.api?.audition_mod_stream) {
+                    this.notifyToast("warn", "后端播放接口不可用");
+                    return;
+                }
+                const selected = viewItems[Number(selectEl.value)];
+                if (!selected) return;
+                playBtn.disabled = true;
+                const oldHtml = playBtn.innerHTML;
+                playBtn.innerHTML = '<i class="ri-loader-2-line"></i> 解析中...';
+                const res = await pywebview.api.audition_mod_stream(
+                    modName,
+                    selected.bank_rel,
+                    selected.chunk_index,
+                    selected.stream_index,
+                    12
+                );
+                playBtn.disabled = false;
+                playBtn.innerHTML = oldHtml;
+                if (!res || !res.success || !res.audio_url) {
+                    this.notifyToast("warn", res?.msg || "试听失败");
+                    return;
+                }
+                if (!window.__aimerAuditionAudio) {
+                    window.__aimerAuditionAudio = new Audio();
+                }
+                const player = window.__aimerAuditionAudio;
+                player.pause();
+                player.currentTime = 0;
+                player.src = res.audio_url;
+                await player.play();
+                this.notifyToast("success", `正在播放：${selected.name || ("#" + selected.stream_index)}`);
+            } catch (_e) {
+                playBtn.disabled = false;
+                playBtn.innerHTML = '<i class="ri-play-circle-line"></i> 播放选中语音';
+                this.notifyToast("warn", "试听失败");
+            }
+        };
+
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) close();
+        });
+        if (closeBtn) closeBtn.addEventListener("click", close);
+        if (playBtn) playBtn.addEventListener("click", playSelected);
+        if (selectEl) selectEl.addEventListener("dblclick", playSelected);
+        if (searchEl) searchEl.addEventListener("input", (e) => rebuild(e.target.value));
+        rebuild("");
+    },
+
+    openAuthorPreviewAudioPicker(modName, items) {
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay show";
+        overlay.style.zIndex = "10003";
+        let viewItems = [...items];
+
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:980px;width:min(94vw,980px);padding:20px;max-height:86vh;display:flex;flex-direction:column;">
+                <h3 style="margin:0 0 12px 0;">作者提供的试听文件</h3>
+                <div style="display:flex;gap:8px;margin-bottom:10px;">
+                    <input id="author-preview-search" type="text" placeholder="搜索试听名称 / 文件名" style="flex:1;padding:10px;border:1px solid var(--border-color);border-radius:10px;">
+                    <span id="author-preview-count" style="align-self:center;color:var(--text-secondary);font-size:13px;line-height:1;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;white-space:nowrap;">共 ${items.length} 条</span>
+                </div>
+                <select id="author-preview-select" size="18" style="width:100%;flex:1;min-height:280px;font-family:Consolas, monospace;padding:10px;border:1px solid var(--border-color);border-radius:10px;"></select>
+                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;">
+                    <button class="btn secondary" type="button" id="author-preview-close-btn">关闭</button>
+                    <button class="btn primary" type="button" id="author-preview-play-btn"><i class="ri-play-circle-line"></i> 播放选中试听</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const selectEl = overlay.querySelector("#author-preview-select");
+        const searchEl = overlay.querySelector("#author-preview-search");
+        const countEl = overlay.querySelector("#author-preview-count");
+        const playBtn = overlay.querySelector("#author-preview-play-btn");
+        const closeBtn = overlay.querySelector("#author-preview-close-btn");
+
+        const rebuild = (keyword) => {
+            const q = String(keyword || "").trim().toLowerCase();
+            viewItems = items.filter((it) => {
+                const name = String(it.display_name || "").toLowerCase();
+                const source = String(it.source_name || it.source_file || "").toLowerCase();
+                return !q || name.includes(q) || source.includes(q);
+            });
+            selectEl.innerHTML = viewItems.map((it, idx) => {
+                const nm = this.escapeHtml(String(it.display_name || `试听音频${idx + 1}`));
+                const src = this.escapeHtml(String(it.source_name || it.source_file || "unknown"));
+                return `<option value="${idx}">#${idx + 1} ${nm} [${src}]</option>`;
+            }).join("");
+            if (countEl) countEl.textContent = `显示 ${viewItems.length} / ${items.length} 条`;
+        };
+
+        const close = () => {
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        };
+
+        const playSelected = async () => {
+            try {
+                if (!selectEl || !selectEl.value) {
+                    this.notifyToast("warn", "请先选择一个试听文件");
+                    return;
+                }
+                if (!window.pywebview?.api?.audition_mod_preview_audio) {
+                    this.notifyToast("warn", "后端试听接口不可用");
+                    return;
+                }
+                const selected = viewItems[Number(selectEl.value)];
+                if (!selected) return;
+                playBtn.disabled = true;
+                const oldHtml = playBtn.innerHTML;
+                playBtn.innerHTML = '<i class="ri-loader-2-line"></i> 加载试听...';
+                const res = await pywebview.api.audition_mod_preview_audio(modName, selected.preview_index);
+                playBtn.disabled = false;
+                playBtn.innerHTML = oldHtml;
+                if (!res || !res.success || !res.audio_url) {
+                    this.notifyToast("warn", res?.msg || "试听失败");
+                    return;
+                }
+                if (!window.__aimerAuditionAudio) {
+                    window.__aimerAuditionAudio = new Audio();
+                }
+                const player = window.__aimerAuditionAudio;
+                player.pause();
+                player.currentTime = 0;
+                player.src = res.audio_url;
+                await player.play();
+                this.notifyToast("success", `正在播放：${res.preview_name || selected.display_name}`);
+            } catch (_e) {
+                playBtn.disabled = false;
+                playBtn.innerHTML = '<i class="ri-play-circle-line"></i> 播放选中试听';
+                this.notifyToast("warn", "试听失败");
+            }
+        };
+
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) close();
+        });
+        if (closeBtn) closeBtn.addEventListener("click", close);
+        if (playBtn) playBtn.addEventListener("click", playSelected);
+        if (selectEl) selectEl.addEventListener("dblclick", playSelected);
+        if (searchEl) searchEl.addEventListener("input", (e) => rebuild(e.target.value));
+        rebuild("");
+    },
+
+    onAuditionScanUpdate(modId, payload) {
+        try {
+            const st = window.__auditionPickerState;
+            if (!st || !payload) return;
+            if (String(st.modId || "") !== String(modId || "")) return;
+            if (typeof st.update === "function") st.update(payload);
+        } catch (_e) {
         }
     },
 

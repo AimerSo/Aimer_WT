@@ -4723,14 +4723,13 @@ app.setupGlobalDragDrop = function () {
             auditionBtn.onclick = async () => {
                 try {
                     const manualPreviewItems = normalizePreviewAudioItems(mod?.preview_audio_files || []);
-                    const useRandomPreview = mod?.preview_use_random_bank !== false;
-                    if (!useRandomPreview) {
-                        if (!manualPreviewItems.length) {
-                            if (app && typeof app.showAlert === 'function') {
-                                app.showAlert('提示', '作者未提供可用的试听文件', 'warn');
-                            }
-                            return;
+                    const useRandomPreview = mod?.preview_use_random_bank !== false || !manualPreviewItems.length;
+                    if (mod?.preview_use_random_bank === false && !manualPreviewItems.length) {
+                        if (app && typeof app.showInfoToast === 'function') {
+                            app.showInfoToast('提示', '未配置作者试听文件，已回退到随机试听');
                         }
+                    }
+                    if (!useRandomPreview) {
                         openAuthorPreviewAudioPicker(mod, manualPreviewItems);
                         return;
                     }

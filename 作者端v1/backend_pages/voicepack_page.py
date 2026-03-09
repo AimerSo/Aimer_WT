@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import os
+import random
 import re
 import shutil
 import stat
 import subprocess
 import sys
+import threading
 import time
 import zipfile
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+from services.bank_preview_service import BankPreviewService
+from wt.wt_sound import Country, VoiceType
 
 SUPPORTED_INFO_KEYS = [
     "title",
@@ -47,6 +54,10 @@ MAX_RELATED_PACK_COUNT = 2
 MAX_RELATED_DESC_LENGTH = 50
 ALLOWED_AUDIO_EXTS = {"mp3", "wav"}
 ALLOWED_IMAGE_EXTS = {"png", "jpg", "jpeg", "webp", "bmp", "gif", "svg"}
+EXPORT_CONFIG_EXTS = {".json"}
+EXPORT_IMAGE_EXTS = {f".{ext}" for ext in ALLOWED_IMAGE_EXTS}
+EXPORT_MODE_FULL = "full"
+EXPORT_MODE_SPLIT = "split"
 
 
 class LibraryManager:
@@ -118,6 +129,7 @@ class LibraryManager:
                 preview_audio_files,
             ),
             "preview_audio_files": preview_audio_files,
+            "files": self._detect_mod_files(pack_dir),
             "related_voicepacks": info.get("related_voicepacks") or [],
             "size_str": size_str,
             "cover_path": str(cover_path) if cover_path else "",
@@ -138,6 +150,109 @@ class LibraryManager:
         if text in {"0", "false", "no", "off", "manual"}:
             return False
         return not bool(preview_audio_files)
+
+    def _get_v_type_cls(self, v_type):
+        if not v_type:
+            return "default"
+        code = v_type.code.lower()
+        tag = (v_type.tag or "").lower()
+
+        if any(k in code or k in tag for k in ["ground", "tank", "陆战"]):
+            return "tank"
+        if any(k in code or k in tag for k in ["air", "aircraft", "空战", "座舱"]):
+            return "air"
+        if any(k in code or k in tag for k in ["naval", "ships", "海战"]):
+            return "naval"
+        if any(k in code or k in tag for k in ["radio", "common", "dialogs", "无线电", "对话"]):
+            return "radio"
+        if any(k in code or k in tag for k in ["missile", "guns", "weapons", "导弹", "武器"]):
+            return "missile"
+        if any(k in code or k in tag for k in ["music", "音乐"]):
+            return "music"
+        if any(k in code or k in tag for k in ["noise", "masterbank", "降噪"]):
+            return "noise"
+        if any(k in code or k in tag for k in ["pilot", "飞行员", "infantry", "步兵"]):
+            return "pilot"
+        return "default"
+
+    def _detect_mod_files(self, mod_dir: Path) -> list[dict[str, Any]]:
+        type_groups: dict[str, dict[str, Any]] = {}
+        try:
+            all_files_set = set(mod_dir.rglob("*.bank"))
+            all_files_set.update(mod_dir.rglob("*.BANK"))
+            for f in all_files_set:
+                if not f.is_file():
+                    continue
+                try:
+                    rel_path_str = f.relative_to(mod_dir).as_posix()
+                except ValueError:
+                    continue
+
+                matched = self.match_voice_type(f.name.lower())
+                if not matched:
+                    continue
+                v_type, v_country, _ = matched
+                type_key = v_type.code
+                if type_key not in type_groups:
+                    type_groups[type_key] = {
+                        "type": v_type.tag,
+                        "code": v_type.code,
+                        "cls": self._get_v_type_cls(v_type),
+                        "files": [],
+                        "count": 0,
+                        "langs": set(),
+                    }
+                type_groups[type_key]["files"].append(rel_path_str)
+                type_groups[type_key]["count"] += 1
+                if v_country:
+                    type_groups[type_key]["langs"].add(v_country.code)
+        except Exception:
+            return []
+
+        rows = []
+        for group in type_groups.values():
+            group["merged_langs"] = sorted(list(group["langs"]))
+            del group["langs"]
+            rows.append(group)
+        return sorted(rows, key=lambda x: str(x.get("type") or ""))
+
+    @staticmethod
+    def match_voice_type(filename_lower):
+        base_name = filename_lower
+        if base_name.endswith(".assets.bank"):
+            base_name = base_name.replace(".assets.bank", "")
+        elif base_name.endswith(".bank"):
+            base_name = base_name.replace(".bank", "")
+        else:
+            return None
+
+        if base_name.startswith("_"):
+            base_name = base_name[1:]
+
+        if base_name == "preview" or base_name.startswith("preview_") or base_name.startswith("audition_preview"):
+            return VoiceType.PREVIEW, None, base_name
+
+        detected_country = None
+        sorted_countries = sorted(list(Country), key=lambda x: len(x.code), reverse=True)
+        for country in sorted_countries:
+            if base_name.endswith("_" + country.code):
+                base_name = base_name.rsplit("_", 1)[0]
+                detected_country = country
+                break
+
+        for v_type in VoiceType:
+            if not v_type.tag:
+                continue
+            if base_name == v_type.code or base_name == "_" + v_type.code:
+                return v_type, detected_country, base_name
+
+        for v_type in VoiceType:
+            if not v_type.tag:
+                continue
+            if v_type.code in base_name:
+                return v_type, detected_country, base_name
+
+        return None
 
     def _find_info_file(self, pack_dir: Path) -> Path | None:
         if not pack_dir.exists():
@@ -263,6 +378,14 @@ class AuthorVoicepackService:
 
         self._lib_mgr = LibraryManager(pending_dir=str(self.pending_dir), library_dir=str(self.library_dir))
         self._default_cover = self.web_dir / "assets" / "card_image.png"
+        preview_base_dir = self.app_base_dir.parent if (self.app_base_dir.parent / "tools").exists() else self.app_base_dir
+        self._bank_preview_mgr = BankPreviewService(preview_base_dir)
+        self._window = None
+        self._audition_items_cache: dict[str, dict[str, Any]] = {}
+        self._audition_scan_lock = threading.Lock()
+
+    def set_window(self, window) -> None:
+        self._window = window
 
     def get_workspace_info(self) -> dict[str, str]:
         return {
@@ -329,6 +452,27 @@ class AuthorVoicepackService:
         old_dir.rename(new_dir)
         self._invalidate_cache()
         return {"success": True, "name": new_safe}
+
+    def rename_voicepack_title(self, folder_name: str, new_title: str) -> dict[str, Any]:
+        safe_name = self._validate_pack_name(folder_name)
+        title = str(new_title or "").strip()
+        if not title:
+            return {"success": False, "msg": "语音包名称不能为空"}
+
+        pack_dir = self._pack_dir(safe_name)
+        if not pack_dir.exists():
+            return {"success": False, "msg": "语音包文件夹不存在"}
+
+        details = self._lib_mgr.get_mod_details(safe_name)
+        info_file = self._find_info_file(pack_dir) or (pack_dir / "info.json")
+        raw_payload = self._lib_mgr._load_json_with_fallback(info_file) or {}
+        raw_payload["title"] = title
+        normalized = self._normalize_payload(raw_payload, details, safe_name)
+        normalized = self._persist_info_media_assets(pack_dir, normalized)
+        self._write_info_json(pack_dir / "info.json", normalized)
+
+        self._invalidate_cache(safe_name)
+        return {"success": True, "name": safe_name, "title": title}
 
     def delete_voicepack_folder(self, folder_name: str) -> dict[str, Any]:
         safe_name = self._validate_pack_name(folder_name)
@@ -431,7 +575,12 @@ class AuthorVoicepackService:
         except Exception as e:
             return {"success": False, "msg": str(e)}
 
-    def export_voicepack_bank(self, folder_name: str, package_name: str = "") -> dict[str, Any]:
+    def export_voicepack_bank(
+        self,
+        folder_name: str,
+        package_name: str = "",
+        export_mode: str = EXPORT_MODE_FULL,
+    ) -> dict[str, Any]:
         safe_name = self._validate_pack_name(folder_name)
         pack_dir = self._pack_dir(safe_name)
         if not pack_dir.exists():
@@ -444,28 +593,49 @@ class AuthorVoicepackService:
         normalized = self._persist_info_media_assets(pack_dir, normalized)
         self._write_info_json(pack_dir / "info.json", normalized)
 
+        export_mode = self._normalize_export_mode(export_mode)
         out_name = self._normalize_export_bank_name(package_name or safe_name)
-        out_path = self._next_available_path(self.pending_dir / out_name)
+        package_files, external_files = self._collect_export_files(pack_dir, export_mode)
+
+        if export_mode == EXPORT_MODE_SPLIT:
+            export_dir = self._next_available_dir(self.pending_dir / safe_name)
+            export_dir.mkdir(parents=True, exist_ok=False)
+            out_path = export_dir / out_name
+        else:
+            export_dir = None
+            out_path = self._next_available_path(self.pending_dir / out_name)
+
         temp_zip = out_path.with_suffix(".tmp.zip")
 
         try:
             with zipfile.ZipFile(temp_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                for file_path in pack_dir.rglob("*"):
-                    if not file_path.is_file():
-                        continue
-                    arcname = file_path.relative_to(pack_dir).as_posix()
+                for file_path, arcname in package_files:
                     zf.write(file_path, arcname=arcname)
-                self._append_preview_bank_alias_entries(zf, pack_dir, normalized)
+                if export_mode == EXPORT_MODE_FULL:
+                    self._append_preview_bank_alias_entries(zf, pack_dir, normalized)
             os.replace(str(temp_zip), str(out_path))
+            if export_mode == EXPORT_MODE_SPLIT and export_dir is not None:
+                self._copy_export_files(pack_dir, export_dir, external_files)
         except Exception as e:
             try:
                 if temp_zip.exists():
                     temp_zip.unlink()
             except Exception:
                 pass
+            if export_mode == EXPORT_MODE_SPLIT and export_dir is not None:
+                self._remove_tree_safely(export_dir)
             return {"success": False, "msg": str(e)}
 
-        return {"success": True, "output_file": str(out_path), "file_name": out_path.name}
+        result = {
+            "success": True,
+            "output_file": str(out_path),
+            "file_name": out_path.name,
+            "export_mode": export_mode,
+        }
+        if export_dir is not None:
+            result["output_dir"] = str(export_dir)
+            result["folder_name"] = export_dir.name
+        return result
 
     def import_voicepack_bank(self, file_name: str, data_url: str) -> dict[str, Any]:
         raw_name = str(file_name or "").strip()
@@ -498,6 +668,543 @@ class AuthorVoicepackService:
 
         self._invalidate_cache()
         return {"success": True, "name": safe_name}
+
+    @staticmethod
+    def _resolve_mod_relative_path(mod_dir: Path, rel_path: str):
+        rel = str(rel_path or "").replace("\\", "/").strip()
+        if not rel:
+            return None
+        try:
+            base = Path(mod_dir).resolve()
+            target = (base / rel).resolve()
+            target.relative_to(base)
+            return target
+        except Exception:
+            return None
+
+    @staticmethod
+    def _get_mod_audition_cache_signature(mod_dir: Path) -> str:
+        base = Path(mod_dir)
+        rows = []
+        try:
+            if base.exists() and base.is_dir():
+                for p in sorted(base.rglob("*.bank"), key=lambda x: str(x).lower()):
+                    try:
+                        if not p.is_file():
+                            continue
+                        rel = p.relative_to(base).as_posix().lower()
+                        st = p.stat()
+                        rows.append(f"{rel}|{st.st_mtime_ns}|{st.st_size}")
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+        if not rows:
+            try:
+                st = base.stat()
+                rows.append(f"dir|{st.st_mtime_ns}|{st.st_size}")
+            except Exception:
+                rows.append("dir|0|0")
+        return hashlib.sha1("\n".join(rows).encode("utf-8")).hexdigest()
+
+    def _get_mod_audition_items(self, mod_id: str, progress_cb=None):
+        mod_dir = self._pack_dir(mod_id)
+        if not mod_dir.exists() or not mod_dir.is_dir():
+            return None, {"success": False, "msg": "语音包不存在"}
+
+        mod_sig = self._get_mod_audition_cache_signature(mod_dir)
+        cached = self._audition_items_cache.get(mod_id)
+        if cached and cached.get("sig") == mod_sig:
+            return cached.get("items", []), None
+
+        details = self._lib_mgr.get_mod_details(mod_id)
+        groups = details.get("files") or []
+
+        rel_to_type = {}
+        for g in groups:
+            t_code = str(g.get("code") or "").strip().lower()
+            t_name = str(g.get("type") or "").strip() or t_code
+            t_cls = str(g.get("cls") or "").strip()
+            for rel in g.get("files", []):
+                rp = str(rel).replace("\\", "/").strip()
+                if rp:
+                    rel_to_type[rp] = {"code": t_code, "name": t_name, "cls": t_cls}
+
+        candidates = []
+        for rel, t in rel_to_type.items():
+            lp = rel.lower()
+            if not lp.endswith(".bank"):
+                continue
+            if "/info/" in lp or lp.startswith("info/"):
+                continue
+            if lp.endswith("masterbank.bank"):
+                continue
+            candidates.append((rel, t))
+
+        candidates = sorted(candidates, key=lambda x: (0 if x[0].lower().endswith(".assets.bank") else 1, x[0]))
+        if not candidates:
+            return None, {"success": False, "msg": "未找到可试听的 bank 文件"}
+
+        all_items = []
+        total_candidates = len(candidates)
+        for idx, (rel, type_info) in enumerate(candidates, start=1):
+            p = self._resolve_mod_relative_path(mod_dir, rel)
+            if progress_cb and p is not None:
+                progress = int(5 + (idx / max(1, total_candidates)) * 90)
+                progress_cb(progress, f"正在扫描 {p.name} ({idx}/{total_candidates})")
+            if p is None or not p.exists() or not p.is_file():
+                continue
+            if not self._bank_preview_mgr.is_supported_bank(p):
+                continue
+            try:
+                streams = self._bank_preview_mgr.list_streams(p)
+            except Exception:
+                continue
+
+            for s in streams:
+                all_items.append(
+                    {
+                        "bank_rel": rel,
+                        "bank_file": p.name,
+                        "chunk_index": s.get("chunk_index"),
+                        "stream_index": s.get("stream_index"),
+                        "name": s.get("name") or f"stream_{s.get('stream_index')}",
+                        "duration_sec": s.get("duration_sec") or 0.0,
+                        "voice_type_code": type_info.get("code") or "unknown",
+                        "voice_type_name": type_info.get("name") or "未分类",
+                        "voice_type_cls": type_info.get("cls") or "default",
+                    }
+                )
+
+        if not all_items:
+            return None, {"success": False, "msg": "未解析到可试听语音，文件不正确"}
+
+        self._audition_items_cache[mod_id] = {"sig": mod_sig, "items": all_items}
+        return all_items, None
+
+    @staticmethod
+    def _build_audition_categories(items):
+        grouped = defaultdict(lambda: {"code": "", "name": "", "cls": "default", "count": 0})
+        for it in items:
+            code = it.get("voice_type_code") or "unknown"
+            row = grouped[code]
+            row["code"] = code
+            row["name"] = it.get("voice_type_name") or code
+            row["cls"] = it.get("voice_type_cls") or "default"
+            row["count"] += 1
+        return sorted(grouped.values(), key=lambda x: x["name"])
+
+    def _emit_audition_scan_update(self, mod_id: str):
+        if not self._window:
+            return
+        try:
+            with self._audition_scan_lock:
+                state = dict(self._audition_items_cache.get(mod_id, {}))
+            items = list(state.get("items", []))
+            categories = self._build_audition_categories(items)
+            payload = {
+                "running": bool(state.get("running", False)),
+                "done": bool(state.get("complete", False)),
+                "paused": bool(state.get("paused", False)),
+                "progress": int(state.get("progress", 0)),
+                "message": str(state.get("message", "") or ""),
+                "count": len(items),
+                "category_count": len(categories),
+                "categories": categories,
+                "error": str(state.get("error", "") or ""),
+            }
+            mod_js = json.dumps(str(mod_id), ensure_ascii=False)
+            payload_js = json.dumps(payload, ensure_ascii=False)
+            self._window.evaluate_js(
+                f"if(window.app && app.onAuditionScanUpdate) app.onAuditionScanUpdate({mod_js}, {payload_js})"
+            )
+        except Exception:
+            pass
+
+    def start_mod_audition_scan(self, mod_name):
+        mod_id = self._validate_pack_name(mod_name)
+        mod_dir = self._pack_dir(mod_id)
+        if not mod_dir.exists() or not mod_dir.is_dir():
+            return {"success": False, "msg": "语音包不存在"}
+
+        mod_sig = self._get_mod_audition_cache_signature(mod_dir)
+        need_emit = False
+        with self._audition_scan_lock:
+            state = self._audition_items_cache.get(mod_id)
+            if state and state.get("sig") == mod_sig:
+                if state.get("running"):
+                    if state.get("paused"):
+                        state["paused"] = False
+                        state["message"] = "继续解析中..."
+                        self._audition_items_cache[mod_id] = state
+                        need_emit = True
+                    return {"success": True, "running": True}
+                if state.get("complete"):
+                    need_emit = True
+                    result = {"success": True, "running": False}
+                else:
+                    result = None
+            else:
+                result = None
+
+            if result is None:
+                self._audition_items_cache[mod_id] = {
+                    "sig": mod_sig,
+                    "items": [],
+                    "running": True,
+                    "complete": False,
+                    "paused": False,
+                    "progress": 1,
+                    "message": "正在准备解析...",
+                    "error": "",
+                }
+                need_emit = True
+                result = {"success": True, "running": True}
+
+        if need_emit:
+            self._emit_audition_scan_update(mod_id)
+        if result.get("running") is False:
+            return result
+
+        def _worker():
+            try:
+                details = self._lib_mgr.get_mod_details(mod_id)
+                groups = details.get("files") or []
+                rel_to_type = {}
+                for g in groups:
+                    t_code = str(g.get("code") or "").strip().lower()
+                    t_name = str(g.get("type") or "").strip() or t_code
+                    t_cls = str(g.get("cls") or "").strip()
+                    for rel in g.get("files", []):
+                        rp = str(rel).replace("\\", "/").strip()
+                        if rp:
+                            rel_to_type[rp] = {"code": t_code, "name": t_name, "cls": t_cls}
+
+                candidates = []
+                for rel, t in rel_to_type.items():
+                    lp = rel.lower()
+                    if not lp.endswith(".bank"):
+                        continue
+                    if "/info/" in lp or lp.startswith("info/"):
+                        continue
+                    if lp.endswith("masterbank.bank"):
+                        continue
+                    candidates.append((rel, t))
+                candidates = sorted(candidates, key=lambda x: (0 if x[0].lower().endswith(".assets.bank") else 1, x[0]))
+                total = len(candidates)
+                if total <= 0:
+                    with self._audition_scan_lock:
+                        st = self._audition_items_cache.get(mod_id, {})
+                        st.update({"running": False, "complete": True, "progress": 100, "message": "未找到可试听语音", "error": "未找到可试听的 bank 文件"})
+                        self._audition_items_cache[mod_id] = st
+                    self._emit_audition_scan_update(mod_id)
+                    return
+
+                parsed_items = []
+                for idx, (rel, type_info) in enumerate(candidates, start=1):
+                    while True:
+                        with self._audition_scan_lock:
+                            paused = bool(self._audition_items_cache.get(mod_id, {}).get("paused", False))
+                            running = bool(self._audition_items_cache.get(mod_id, {}).get("running", False))
+                        if not running:
+                            return
+                        if not paused:
+                            break
+                        with self._audition_scan_lock:
+                            st = self._audition_items_cache.get(mod_id, {})
+                            st.update({"message": "解析已暂停"})
+                            self._audition_items_cache[mod_id] = st
+                        self._emit_audition_scan_update(mod_id)
+                        time.sleep(0.2)
+
+                    p = self._resolve_mod_relative_path(mod_dir, rel)
+                    progress = int(5 + (idx / max(1, total)) * 90)
+                    if p is None or not p.exists() or not p.is_file() or not self._bank_preview_mgr.is_supported_bank(p):
+                        with self._audition_scan_lock:
+                            st = self._audition_items_cache.get(mod_id, {})
+                            st.update({"items": parsed_items, "progress": progress, "message": f"跳过 {(p.name if p else rel)} ({idx}/{total})"})
+                            self._audition_items_cache[mod_id] = st
+                        self._emit_audition_scan_update(mod_id)
+                        continue
+                    try:
+                        streams = self._bank_preview_mgr.list_streams(p)
+                    except Exception:
+                        streams = []
+
+                    for s in streams:
+                        parsed_items.append(
+                            {
+                                "bank_rel": rel,
+                                "bank_file": p.name,
+                                "chunk_index": s.get("chunk_index"),
+                                "stream_index": s.get("stream_index"),
+                                "name": s.get("name") or f"stream_{s.get('stream_index')}",
+                                "duration_sec": s.get("duration_sec") or 0.0,
+                                "voice_type_code": type_info.get("code") or "unknown",
+                                "voice_type_name": type_info.get("name") or "未分类",
+                                "voice_type_cls": type_info.get("cls") or "default",
+                            }
+                        )
+                    with self._audition_scan_lock:
+                        st = self._audition_items_cache.get(mod_id, {})
+                        st.update(
+                            {
+                                "items": parsed_items,
+                                "progress": progress,
+                                "message": f"已解析 {idx}/{total} 个 bank，累计 {len(parsed_items)} 条语音",
+                            }
+                        )
+                        self._audition_items_cache[mod_id] = st
+                    self._emit_audition_scan_update(mod_id)
+
+                with self._audition_scan_lock:
+                    st = self._audition_items_cache.get(mod_id, {})
+                    err = "" if parsed_items else "未解析到可试听语音，文件不正确"
+                    st.update(
+                        {
+                            "items": parsed_items,
+                            "running": False,
+                            "complete": True,
+                            "progress": 100,
+                            "message": f"解析完成，共 {len(parsed_items)} 条语音",
+                            "error": err,
+                        }
+                    )
+                    self._audition_items_cache[mod_id] = st
+                self._emit_audition_scan_update(mod_id)
+            except Exception as e:
+                with self._audition_scan_lock:
+                    st = self._audition_items_cache.get(mod_id, {})
+                    st.update({"running": False, "complete": True, "progress": 100, "message": "解析失败", "error": str(e)})
+                    self._audition_items_cache[mod_id] = st
+                self._emit_audition_scan_update(mod_id)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return {"success": True, "running": True}
+
+    def set_mod_audition_scan_paused(self, mod_name, paused):
+        mod_id = self._validate_pack_name(mod_name)
+        with self._audition_scan_lock:
+            st = self._audition_items_cache.get(mod_id)
+            if not st:
+                return {"success": False, "msg": "当前没有解析任务"}
+            if st.get("complete"):
+                return {"success": False, "msg": "解析已完成"}
+            st["paused"] = bool(paused)
+            st["message"] = "解析已暂停" if paused else "继续解析中..."
+            self._audition_items_cache[mod_id] = st
+        self._emit_audition_scan_update(mod_id)
+        return {"success": True, "paused": bool(paused)}
+
+    def stop_mod_audition_scan(self, mod_name):
+        mod_id = self._validate_pack_name(mod_name)
+        with self._audition_scan_lock:
+            st = self._audition_items_cache.get(mod_id)
+            if not st:
+                return {"success": True, "stopped": False}
+            st["running"] = False
+            st["paused"] = False
+            if not st.get("complete"):
+                st["complete"] = True
+                st["message"] = "已停止解析"
+            self._audition_items_cache[mod_id] = st
+        self._emit_audition_scan_update(mod_id)
+        return {"success": True, "stopped": True}
+
+    def get_mod_audition_categories_snapshot(self, mod_name):
+        mod_id = self._validate_pack_name(mod_name)
+        with self._audition_scan_lock:
+            st = dict(self._audition_items_cache.get(mod_id, {}))
+        items = list(st.get("items", []))
+        categories = self._build_audition_categories(items)
+        return {
+            "success": True,
+            "running": bool(st.get("running", False)),
+            "done": bool(st.get("complete", False)),
+            "paused": bool(st.get("paused", False)),
+            "progress": int(st.get("progress", 0)),
+            "message": str(st.get("message", "") or ""),
+            "count": len(items),
+            "category_count": len(categories),
+            "categories": categories,
+            "error": str(st.get("error", "") or ""),
+        }
+
+    def list_mod_audition_items_by_type(self, mod_name, voice_type_code):
+        mod_id = self._validate_pack_name(mod_name)
+        vt_code = str(voice_type_code or "").strip().lower()
+        if not vt_code:
+            return {"success": False, "msg": "参数不完整"}
+        with self._audition_scan_lock:
+            st = dict(self._audition_items_cache.get(mod_id, {}))
+        items = list(st.get("items", []))
+        if not items:
+            if st.get("running"):
+                return {"success": False, "msg": "该语音包仍在解析中，请稍后再试"}
+            return {"success": False, "msg": "暂无可试听语音，请先开始解析"}
+
+        pool = [it for it in items if str(it.get("voice_type_code") or "").lower() == vt_code]
+        if not pool:
+            return {"success": False, "msg": "该分类暂无可手动选择的语音"}
+        pool = sorted(
+            pool,
+            key=lambda x: (
+                str(x.get("name") or ""),
+                str(x.get("bank_file") or ""),
+                int(x.get("chunk_index") or 0),
+                int(x.get("stream_index") or 0),
+            ),
+        )
+        out_items = []
+        for i, it in enumerate(pool, start=1):
+            out_items.append(
+                {
+                    "id": f"{it.get('bank_rel')}|{it.get('chunk_index')}|{it.get('stream_index')}",
+                    "index": i,
+                    "name": it.get("name") or f"stream_{it.get('stream_index')}",
+                    "duration_sec": it.get("duration_sec") or 0.0,
+                    "bank_file": it.get("bank_file") or "",
+                    "bank_rel": it.get("bank_rel") or "",
+                    "chunk_index": int(it.get("chunk_index") or 0),
+                    "stream_index": int(it.get("stream_index") or 0),
+                }
+            )
+        return {"success": True, "count": len(out_items), "items": out_items}
+
+    def audition_mod_random_by_type(self, mod_name, voice_type_code, max_seconds=12):
+        try:
+            mod_id = self._validate_pack_name(mod_name)
+            vt_code = str(voice_type_code or "").strip().lower()
+            if not vt_code:
+                return {"success": False, "msg": "参数不完整"}
+
+            with self._audition_scan_lock:
+                st = dict(self._audition_items_cache.get(mod_id, {}))
+            all_items = list(st.get("items", []))
+            if not all_items:
+                if st.get("running"):
+                    return {"success": False, "msg": "该语音包仍在解析中，请稍后再试"}
+                return {"success": False, "msg": "暂无可试听语音，请先开始解析"}
+
+            pool = [it for it in all_items if str(it.get("voice_type_code") or "").lower() == vt_code]
+            if not pool:
+                return {"success": False, "msg": "该分类暂无可试听语音"}
+
+            selected = random.choice(pool)
+            sec = int(max_seconds) if max_seconds else 12
+            sec = max(3, min(30, sec))
+            mod_dir = self._pack_dir(mod_id)
+            bank_path = self._resolve_mod_relative_path(mod_dir, selected.get("bank_rel") or "")
+            if bank_path is None:
+                return {"success": False, "msg": "参数不正确"}
+            if not bank_path.exists() or not bank_path.is_file():
+                return {"success": False, "msg": "bank 文件不存在"}
+
+            ci = int(selected.get("chunk_index") or 0)
+            si = int(selected.get("stream_index") or 0)
+            audio_url = self._bank_preview_mgr.create_preview_data_url_for_stream(
+                bank_path, chunk_index=ci, stream_index=si, max_seconds=sec
+            )
+            return {
+                "success": True,
+                "audio_url": audio_url,
+                "voice_type_code": vt_code,
+                "voice_type_name": selected.get("voice_type_name") or vt_code,
+                "picked_name": selected.get("name") or f"stream_{si}",
+                "bank_file": selected.get("bank_file") or bank_path.name,
+                "seconds": sec,
+            }
+        except ValueError:
+            return {"success": False, "msg": "文件不正确"}
+        except RuntimeError as e:
+            return {"success": False, "msg": str(e).strip() or "试听失败"}
+        except Exception:
+            return {"success": False, "msg": "试听失败"}
+
+    def audition_mod_stream(self, mod_name, bank_rel, chunk_index, stream_index, max_seconds=12):
+        try:
+            mod_id = self._validate_pack_name(mod_name)
+            rel = str(bank_rel or "").replace("\\", "/").strip()
+            if not rel:
+                return {"success": False, "msg": "参数不完整"}
+            mod_dir = self._pack_dir(mod_id)
+            bank_path = self._resolve_mod_relative_path(mod_dir, rel)
+            if bank_path is None:
+                return {"success": False, "msg": "参数不正确"}
+            if not bank_path.exists() or not bank_path.is_file():
+                return {"success": False, "msg": "bank 文件不存在"}
+            try:
+                ci = int(chunk_index)
+                si = int(stream_index)
+            except Exception:
+                return {"success": False, "msg": "参数不正确"}
+            sec = int(max_seconds) if max_seconds else 12
+            sec = max(3, min(30, sec))
+            audio_url = self._bank_preview_mgr.create_preview_data_url_for_stream(
+                bank_path, chunk_index=ci, stream_index=si, max_seconds=sec
+            )
+            return {
+                "success": True,
+                "audio_url": audio_url,
+                "bank_file": bank_path.name,
+                "chunk_index": ci,
+                "stream_index": si,
+                "seconds": sec,
+            }
+        except ValueError:
+            return {"success": False, "msg": "文件不正确"}
+        except RuntimeError as e:
+            return {"success": False, "msg": str(e).strip() or "试听失败"}
+        except Exception:
+            return {"success": False, "msg": "试听失败"}
+
+    def audition_mod_preview_audio(self, mod_name, preview_index):
+        try:
+            mod_id = self._validate_pack_name(mod_name)
+            idx = int(preview_index)
+            details = self._lib_mgr.get_mod_details(mod_id)
+            preview_items = details.get("preview_audio_files") or []
+            if idx < 0 or idx >= len(preview_items):
+                return {"success": False, "msg": "试听条目不存在"}
+            item = preview_items[idx] or {}
+            file_path = self._resolve_mod_relative_path(self._pack_dir(mod_id), item.get("source_file") or "")
+            if file_path is None:
+                return {"success": False, "msg": "参数不正确"}
+            if not file_path.exists() or not file_path.is_file():
+                return {"success": False, "msg": "试听文件不存在"}
+            audio_url = self._read_audio_file_to_data_url(file_path)
+            if not audio_url:
+                return {"success": False, "msg": "试听文件格式不支持"}
+            return {
+                "success": True,
+                "audio_url": audio_url,
+                "preview_name": str(item.get("display_name") or file_path.stem),
+                "source_name": str(item.get("source_name") or file_path.name),
+            }
+        except Exception:
+            return {"success": False, "msg": "试听失败"}
+
+    @staticmethod
+    def _read_audio_file_to_data_url(file_path):
+        try:
+            p = Path(file_path)
+            ext = p.suffix.lower().lstrip(".")
+            mime_map = {"mp3": "audio/mpeg", "wav": "audio/wav"}
+            mime = mime_map.get(ext)
+            if not mime:
+                return ""
+            raw = p.read_bytes()
+            b64 = base64.b64encode(raw).decode("utf-8")
+            return f"data:{mime};base64,{b64}"
+        except Exception:
+            return ""
+
+    def clear_audition_cache(self, mod_name=None):
+        try:
+            removed = self._bank_preview_mgr.clear_cache()
+            return {"success": True, "removed": int(removed)}
+        except Exception:
+            return {"success": False, "msg": "清理试听缓存失败"}
 
     def _build_default_info_payload(self, mod_name: str, details: dict[str, Any]) -> dict[str, Any]:
         seed = {
@@ -951,6 +1658,50 @@ class AuthorVoicepackService:
         safe = self._validate_pack_name(name or "voicepack")
         return f"{safe}(AimerWT).bank"
 
+    def _normalize_export_mode(self, raw_mode: str) -> str:
+        mode = str(raw_mode or "").strip().lower()
+        if mode == EXPORT_MODE_SPLIT:
+            return EXPORT_MODE_SPLIT
+        return EXPORT_MODE_FULL
+
+    def _collect_export_files(
+        self,
+        pack_dir: Path,
+        export_mode: str,
+    ) -> tuple[list[tuple[Path, str]], list[tuple[Path, str]]]:
+        package_files: list[tuple[Path, str]] = []
+        external_files: list[tuple[Path, str]] = []
+
+        for file_path in pack_dir.rglob("*"):
+            if not file_path.is_file():
+                continue
+            arcname = file_path.relative_to(pack_dir).as_posix()
+            if export_mode == EXPORT_MODE_FULL or self._should_include_in_split_bank(file_path):
+                package_files.append((file_path, arcname))
+            else:
+                external_files.append((file_path, arcname))
+
+        return package_files, external_files
+
+    def _should_include_in_split_bank(self, file_path: Path) -> bool:
+        ext = file_path.suffix.lower()
+        return ext in EXPORT_CONFIG_EXTS or ext in EXPORT_IMAGE_EXTS
+
+    def _copy_export_files(
+        self,
+        pack_dir: Path,
+        export_dir: Path,
+        files: list[tuple[Path, str]],
+    ) -> None:
+        base = pack_dir.resolve()
+        for file_path, rel_path in files:
+            src = file_path.resolve()
+            if not str(src).lower().startswith(str(base).lower()):
+                continue
+            dst = export_dir / rel_path
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+
     def _next_available_path(self, path: Path) -> Path:
         if not path.exists():
             return path
@@ -959,6 +1710,17 @@ class AuthorVoicepackService:
         idx = 2
         while True:
             cand = path.with_name(f"{stem}_{idx}{suffix}")
+            if not cand.exists():
+                return cand
+            idx += 1
+
+    def _next_available_dir(self, path: Path) -> Path:
+        if not path.exists():
+            return path
+        stem = path.name
+        idx = 2
+        while True:
+            cand = path.with_name(f"{stem}_{idx}")
             if not cand.exists():
                 return cand
             idx += 1

@@ -3,6 +3,7 @@
 import argparse
 import base64
 import csv
+import hashlib
 import itertools
 import json
 import os
@@ -284,9 +285,7 @@ class AppApi:
         # 连接 logger -> 前端 UI（窗口未创建时会自动忽略）
         set_ui_callback(self._append_log_to_ui)
 
-        # [关键修复] 将 window 改为 _window。
-        # 加下划线表示私有变量，pywebview 就不会尝试去扫描和序列化整个窗口对象，
-        # 从而避免了 "window.native... maximum recursion depth" 错误。
+        # _window 为私有变量，避免 pywebview 扫描序列化窗口对象导致递归错误
         self._window = None
 
         # 管理器实例：配置、语音包库、涂装、炮镜、游戏目录操作
@@ -462,10 +461,7 @@ class AppApi:
             # 避免在日志回调中抛异常导致业务中断
             log.exception("日志推送失败")
 
-        # 2. 处理 Toast 通知
-        # 我们可以根据 record.message 或 record.levelname 判断是否弹窗。
-        # 以前的逻辑是：如果 levelKey in (WARN, ERROR, SUCCESS) 则弹窗。
-        # 这里我们需要从 message 探测 [SUCCESS] 这种自定义标签，因为 standard logging 只有 INFO/WARN/ERROR。
+        # 2. 处理 Toast 通知：从消息内容探测 [SUCCESS]/[WARN]/[ERROR] 等自定义标签
 
         try:
             level_key = record.levelname  # INFO, WARNING, ERROR, DEBUG
@@ -1018,18 +1014,53 @@ class AppApi:
             log.error(f"试听生成失败: {e}")
             return {"success": False, "msg": "试听生成失败"}
 
+    @staticmethod
+    def _resolve_mod_relative_path(mod_dir: Path, rel_path: str):
+        rel = str(rel_path or "").replace("\\", "/").strip()
+        if not rel:
+            return None
+        try:
+            base = Path(mod_dir).resolve()
+            target = (base / rel).resolve()
+            target.relative_to(base)
+            return target
+        except Exception:
+            return None
+
+    @staticmethod
+    def _get_mod_audition_cache_signature(mod_dir: Path) -> str:
+        base = Path(mod_dir)
+        rows = []
+        try:
+            if base.exists() and base.is_dir():
+                for p in sorted(base.rglob("*.bank"), key=lambda x: str(x).lower()):
+                    try:
+                        if not p.is_file():
+                            continue
+                        rel = p.relative_to(base).as_posix().lower()
+                        st = p.stat()
+                        rows.append(f"{rel}|{st.st_mtime_ns}|{st.st_size}")
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+        if not rows:
+            try:
+                st = base.stat()
+                rows.append(f"dir|{st.st_mtime_ns}|{st.st_size}")
+            except Exception:
+                rows.append("dir|0|0")
+        return hashlib.sha1("\n".join(rows).encode("utf-8")).hexdigest()
+
     def _get_mod_audition_items(self, mod_id: str, progress_cb=None):
         mod_dir = self._lib_mgr.library_dir / mod_id
         if not mod_dir.exists() or not mod_dir.is_dir():
             return None, {"success": False, "msg": "语音包不存在"}
 
-        try:
-            mod_mtime = mod_dir.stat().st_mtime_ns
-        except Exception:
-            mod_mtime = 0
+        mod_sig = self._get_mod_audition_cache_signature(mod_dir)
 
         cached = self._audition_items_cache.get(mod_id)
-        if cached and cached.get("mtime") == mod_mtime:
+        if cached and cached.get("sig") == mod_sig:
             return cached.get("items", []), None
 
         details = self._lib_mgr.get_mod_details(mod_id)
@@ -1095,7 +1126,7 @@ class AppApi:
         if not all_items:
             return None, {"success": False, "msg": "未解析到可试听语音，文件不正确"}
 
-        self._audition_items_cache[mod_id] = {"mtime": mod_mtime, "items": all_items}
+        self._audition_items_cache[mod_id] = {"sig": mod_sig, "items": all_items}
         return all_items, None
 
     @staticmethod
@@ -1149,15 +1180,12 @@ class AppApi:
         if not mod_dir.exists() or not mod_dir.is_dir():
             return {"success": False, "msg": "语音包不存在"}
 
-        try:
-            mod_mtime = mod_dir.stat().st_mtime_ns
-        except Exception:
-            mod_mtime = 0
+        mod_sig = self._get_mod_audition_cache_signature(mod_dir)
 
         need_emit = False
         with self._audition_scan_lock:
             state = self._audition_items_cache.get(mod_id)
-            if state and state.get("mtime") == mod_mtime:
+            if state and state.get("sig") == mod_sig:
                 if state.get("running"):
                     if state.get("paused"):
                         state["paused"] = False
@@ -1175,7 +1203,7 @@ class AppApi:
 
             if result is None:
                 self._audition_items_cache[mod_id] = {
-                    "mtime": mod_mtime,
+                    "sig": mod_sig,
                     "items": [],
                     "running": True,
                     "complete": False,
@@ -1513,9 +1541,8 @@ class AppApi:
 
             mod_dir = self._lib_mgr.library_dir / mod_id
             rel = str(selected.get("bank_rel") or "").replace("\\", "/")
-            bank_path = (mod_dir / rel).resolve()
-            mod_dir_resolved = mod_dir.resolve()
-            if not str(bank_path).lower().startswith(str(mod_dir_resolved).lower()):
+            bank_path = self._resolve_mod_relative_path(mod_dir, rel)
+            if bank_path is None:
                 return {"success": False, "msg": "参数不正确"}
             if not bank_path.exists() or not bank_path.is_file():
                 return {"success": False, "msg": "bank 文件不存在"}
@@ -1553,9 +1580,8 @@ class AppApi:
                 return {"success": False, "msg": "参数不完整"}
 
             mod_dir = self._lib_mgr.library_dir / mod_id
-            mod_dir_resolved = mod_dir.resolve()
-            bank_path = (mod_dir / rel).resolve()
-            if not str(bank_path).lower().startswith(str(mod_dir_resolved).lower()):
+            bank_path = self._resolve_mod_relative_path(mod_dir, rel)
+            if bank_path is None:
                 return {"success": False, "msg": "参数不正确"}
             if not bank_path.exists() or not bank_path.is_file():
                 return {"success": False, "msg": "bank 文件不存在"}

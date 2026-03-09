@@ -50,6 +50,28 @@ def _open_folder_in_explorer(folder: str) -> None:
         pass
 
 
+def _save_image_to_webp(
+    img,
+    dst: Path,
+    quality: int,
+    lossless: bool,
+) -> dict:
+    if img.mode in ("P", "PA"):
+        img = img.convert("RGBA")
+    elif img.mode not in ("RGB", "RGBA", "L", "LA"):
+        img = img.convert("RGBA")
+
+    save_kwargs: dict = {
+        "format": "WEBP",
+        "quality": quality,
+        "lossless": lossless,
+    }
+    if img.mode == "RGBA":
+        save_kwargs["method"] = 6
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    img.save(dst, **save_kwargs)
+
+
 def _convert_single(
     src: Path,
     dst: Path,
@@ -61,21 +83,7 @@ def _convert_single(
 
     try:
         with Image.open(src) as img:
-            # 处理调色板/RGBA透明度
-            if img.mode in ("P", "PA"):
-                img = img.convert("RGBA")
-            elif img.mode not in ("RGB", "RGBA", "L", "LA"):
-                img = img.convert("RGBA")
-
-            save_kwargs: dict = {
-                "format": "WEBP",
-                "quality": quality,
-                "lossless": lossless,
-            }
-            if img.mode == "RGBA":
-                save_kwargs["method"] = 6
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            img.save(dst, **save_kwargs)
+            _save_image_to_webp(img, dst, quality, lossless)
 
         src_kb = src.stat().st_size / 1024
         dst_kb = dst.stat().st_size / 1024
@@ -102,11 +110,76 @@ def _convert_single(
         }
 
 
+def _decode_data_url_bytes(data_url: str) -> bytes | None:
+    try:
+        raw = str(data_url or "").strip()
+        if not raw.startswith("data:") or ";base64," not in raw:
+            return None
+        _, b64 = raw.split(";base64,", 1)
+        return base64.b64decode(b64)
+    except Exception:
+        return None
+
+
+def _convert_uploaded(
+    client_id: str,
+    name: str,
+    data_url: str,
+    dst: Path,
+    quality: int,
+    lossless: bool,
+) -> dict:
+    from PIL import Image  # 延迟导入，防止未安装时崩溃
+
+    raw = _decode_data_url_bytes(data_url)
+    if raw is None:
+        return {
+            "ok": False,
+            "src": client_id,
+            "dst": "",
+            "src_kb": 0,
+            "dst_kb": 0,
+            "ratio": 0,
+            "name": name,
+            "error": "文件内容无效",
+        }
+
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            _save_image_to_webp(img, dst, quality, lossless)
+
+        src_kb = len(raw) / 1024
+        dst_kb = dst.stat().st_size / 1024
+        ratio = (1 - dst_kb / src_kb) * 100 if src_kb > 0 else 0
+        return {
+            "ok": True,
+            "src": client_id,
+            "dst": str(dst),
+            "src_kb": round(src_kb, 1),
+            "dst_kb": round(dst_kb, 1),
+            "ratio": round(ratio, 1),
+            "name": name,
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "src": client_id,
+            "dst": "",
+            "src_kb": 0,
+            "dst_kb": 0,
+            "ratio": 0,
+            "name": name,
+            "error": str(e),
+        }
+
+
 class ToolboxService:
     """工具箱服务，被 AppApi 持有"""
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, app_base_dir: str | Path | None = None) -> None:
+        base_dir = Path(app_base_dir).resolve() if app_base_dir else Path.cwd().resolve()
+        self.app_base_dir = base_dir
+        self.default_output_dir = self.app_base_dir / "AimerWT作者端" / "工具箱输出"
 
     # ------------------------------------------------------------------
     # 公共 API（由 AppApi 转发给前端 pywebview js_api）
@@ -118,18 +191,20 @@ class ToolboxService:
 
         payload 字段：
             files        : list[str]  —— 源文件绝对路径列表
+            uploads      : list[dict] —— 拖拽上传的文件对象（client_id/name/data_url）
             quality      : int        —— 1~100，默认 85
             lossless     : bool       —— 是否无损，默认 False
             save_mode    : str        —— "replace" | "beside" | "folder"
             output_folder: str        —— save_mode=="folder" 时的目标目录
         """
         files: list[str] = list(payload.get("files") or [])
+        uploads: list[dict[str, Any]] = list(payload.get("uploads") or [])
         quality = _norm_quality(payload.get("quality", QUALITY_DEFAULT))
         lossless = bool(payload.get("lossless", False))
         save_mode = str(payload.get("save_mode", "beside")).strip()
         output_folder = str(payload.get("output_folder", "")).strip()
 
-        if not files:
+        if not files and not uploads:
             return {"success": False, "msg": "未选择任何文件", "results": []}
 
         results = []
@@ -181,15 +256,41 @@ class ToolboxService:
 
             results.append(result)
 
+        upload_output_dir = None
+        upload_mode_notice = ""
+        if uploads:
+            if save_mode == "folder" and output_folder:
+                upload_output_dir = Path(output_folder)
+            else:
+                upload_output_dir = self.default_output_dir
+                upload_mode_notice = "拖拽导入文件无法定位原目录，已输出到作者端工具箱目录"
+
+            for item in uploads:
+                client_id = str(item.get("client_id") or "").strip()
+                name = str(item.get("name") or "").strip() or "upload.png"
+                data_url = str(item.get("data_url") or "").strip()
+                if not client_id:
+                    continue
+                dst = upload_output_dir / f"{Path(name).stem}.webp"
+                result = _convert_uploaded(client_id, name, data_url, dst, quality, lossless)
+                if upload_mode_notice:
+                    result["notice"] = upload_mode_notice
+                results.append(result)
+
         success_cnt = sum(1 for r in results if r["ok"])
         fail_cnt = len(results) - success_cnt
-        return {
+        response = {
             "success": True,
             "total": len(results),
             "success_cnt": success_cnt,
             "fail_cnt": fail_cnt,
             "results": results,
         }
+        if upload_output_dir is not None:
+            response["output_folder_used"] = str(upload_output_dir)
+        if upload_mode_notice:
+            response["msg"] = upload_mode_notice
+        return response
 
     def open_output_folder(self, folder_path: str) -> dict:
         """打开输出目录"""

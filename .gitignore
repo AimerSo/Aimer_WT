@@ -27,6 +27,8 @@ dist/
 # App data (large / local content)
 WT待解压区/
 WT语音包库/
+待解压区/
+AimerWT资源库/
 
 # Local config (often contains personal game path)
 settings.json
@@ -44,6 +46,10 @@ WT待解压区/*
 !WT待解压区/.gitkeep
 WT语音包库/*
 !WT语音包库/.gitkeep
+作者端v1/AimerWT作者端/待解压区/*
+!作者端v1/AimerWT作者端/待解压区/.gitkeep
+作者端v1/AimerWT作者端/语音包库/*
+!作者端v1/AimerWT作者端/语音包库/.gitkeep
 WT任务库
 WT机库
 WT模型库

@@ -161,6 +161,7 @@ window.AuthorPageModules.voicepack = {
             const cover = this._app.escapeHtml(pack.cover_url || "assets/card_image.png");
             const name = this._app.escapeHtml(pack.name || "");
             const title = this._app.escapeHtml(pack.title || pack.name || "未命名语音包");
+            const folderLabel = this._app.escapeHtml(`（文件夹名：${pack.name || ""}）`);
             const author = this._app.escapeHtml(pack.author || "未知作者");
             const version = this._app.escapeHtml(String(pack.version || "1.0"));
             const date = this._app.escapeHtml(pack.date || "-");
@@ -171,7 +172,10 @@ window.AuthorPageModules.voicepack = {
                 <article class="voicepack-pack-card" data-pack-name="${name}">
                     <img class="voicepack-pack-cover" src="${cover}" alt="${title}" onerror="this.src='assets/card_image.png'">
                     <div class="voicepack-pack-main">
-                        <div class="voicepack-pack-title">${title}</div>
+                        <div class="voicepack-pack-title-row">
+                            <div class="voicepack-pack-title">${title}</div>
+                            <div class="voicepack-pack-folder-name" title="${name}">${folderLabel}</div>
+                        </div>
                         <div class="voicepack-pack-meta">
                             <span><i class="ri-user-3-line"></i> ${author}</span>
                             <span><i class="ri-price-tag-3-line"></i> v${version}</span>
@@ -210,7 +214,10 @@ window.AuthorPageModules.voicepack = {
                     e.stopPropagation();
                     const action = actionBtn.getAttribute("data-action") || "";
                     if (action === "open") return this.openFolder(name);
-                    if (action === "rename") return this.renameFolder(name);
+                    if (action === "rename") {
+                        const title = card.querySelector(".voicepack-pack-title")?.textContent || name;
+                        return this.renamePack(name, title);
+                    }
                     if (action === "delete") return this.deleteFolder(name);
                     return;
                 }
@@ -234,24 +241,47 @@ window.AuthorPageModules.voicepack = {
         }
     },
 
-    async renameFolder(oldName) {
-        const dialog = await this._app.showInputDialog({
+    async renamePack(folderName, currentTitle) {
+        const dialog = await this._app.showChoiceInputDialog({
             title: "重命名语音包",
-            message: "请输入新的语音包文件夹名称",
+            message: `当前语音包名称：${currentTitle}\n当前文件夹名：${folderName}`,
             inputLabel: "新名称",
-            value: oldName
+            value: currentTitle,
+            choiceValue: "title",
+            choicesCompact: true,
+            choiceDefaults: {
+                title: currentTitle,
+                folder: folderName
+            },
+            choices: [
+                { value: "title", title: "改语音包名称", description: "" },
+                { value: "folder", title: "改文件夹名", description: "" }
+            ]
         });
         if (!dialog?.ok) return;
         const next = String(dialog.value || "").trim();
-        if (!next || next === oldName) return;
+        const mode = String(dialog.choice || "title").trim() || "title";
+        const currentValue = mode === "folder" ? folderName : currentTitle;
+        if (!next || next === currentValue) return;
 
         try {
-            const res = await window.pywebview?.api?.rename_voicepack_folder?.(oldName, next);
+            const res = mode === "folder"
+                ? await window.pywebview?.api?.rename_voicepack_folder?.(folderName, next)
+                : await window.pywebview?.api?.rename_voicepack_title?.(folderName, next);
             if (!res?.success) {
                 this._app.notifyToast("warn", res?.msg || "重命名失败");
                 return;
             }
             this._app.notifyToast("success", "重命名成功");
+            if (mode === "folder" && this._app.currentVoicepackName === folderName) {
+                this._app.setCurrentVoicepackContext(next);
+            }
+            if (mode === "title" && this._app.currentVoicepackName === folderName) {
+                this._app.state.modForm.title = next;
+                this._app.persistState();
+                this._app.syncVoiceFormInputs();
+                this._app.renderPreviewLists();
+            }
             await this.refreshList();
         } catch (_e) {
             this._app.notifyToast("warn", "重命名失败");
