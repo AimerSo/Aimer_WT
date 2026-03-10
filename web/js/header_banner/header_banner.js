@@ -66,6 +66,9 @@
             });
         }
 
+        if (item.color) el.style.setProperty('--banner_text_color', item.color);
+        if (item.icon_color) el.style.setProperty('--banner_icon_color', item.icon_color);
+
         // 从右侧滚入的动画
         requestAnimationFrame(function () {
             var textEl = el.querySelector('.header_banner_text');
@@ -96,9 +99,12 @@
         if (!_tooltipEl) {
             _tooltipEl = document.createElement('div');
             _tooltipEl.className = 'header_banner_tooltip';
-            _container.appendChild(_tooltipEl);
+            document.body.appendChild(_tooltipEl);
         }
         _tooltipEl.textContent = text;
+        var rect = _container.getBoundingClientRect();
+        _tooltipEl.style.left = rect.left + 'px';
+        _tooltipEl.style.top = (rect.bottom + 6) + 'px';
         requestAnimationFrame(function () {
             if (_tooltipEl) _tooltipEl.classList.add('visible');
         });

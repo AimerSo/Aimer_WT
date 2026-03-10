@@ -41,6 +41,7 @@
     font-size: 14px;
     flex-shrink: 0;
     transform: translateY(1px);
+    color: var(--banner_icon_color, inherit);
 }
 
 /* 文字裁切容器：限制滚动范围，防止文字穿过图标 */
@@ -57,6 +58,7 @@
     overflow: hidden;
     white-space: nowrap;
     display: inline-block;
+    color: var(--banner_text_color, inherit);
 }
 
 /* 超长文字横向滚动 */
@@ -210,9 +212,7 @@
 
 /* Hover Tooltip */
 .header_banner_tooltip {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
+    position: fixed;
     background: var(--bg-card, #fff);
     color: var(--text-main, #2C3E50);
     font-size: 12px;
