@@ -404,15 +404,18 @@ func initRouter(r *gin.Engine) {
 		}
 
 		var pendingCmd string
+		var userSeqID uint
 		db.Model(&TelemetryRecord{}).Where("machine_id = ?", record.MachineID).Select("pending_command").Scan(&pendingCmd)
+		db.Model(&TelemetryRecord{}).Where("machine_id = ?", record.MachineID).Select("id").Scan(&userSeqID)
 		if pendingCmd != "" {
 			db.Model(&TelemetryRecord{}).Where("machine_id = ?", record.MachineID).Update("pending_command", "")
 		}
 
 		c.JSON(200, gin.H{
-			"status":       "success",
-			"sys_config":   clientConfig,
-			"user_command": pendingCmd,
+			"status":        "success",
+			"sys_config":    clientConfig,
+			"user_command":  pendingCmd,
+			"user_seq_id":   userSeqID,
 		})
 	})
 

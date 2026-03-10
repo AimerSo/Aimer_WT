@@ -132,6 +132,7 @@ const app = {
     _sightsLoaded: false,
     _guideReady: false,
     telemetryConnected: false,
+    userSeqId: 0,
     _telemetryStatusTimer: 0,
 
     // 应用主题的函数
@@ -1508,8 +1509,12 @@ const app = {
         try {
             const connected = await pywebview.api.get_telemetry_connection_status();
             this.telemetryConnected = !!connected;
+            if (window.pywebview?.api?.init_app_state && connected && !this.userSeqId) {
+                const st = await pywebview.api.init_app_state();
+                if (st && st.user_seq_id) this.userSeqId = st.user_seq_id;
+            }
             if (window.NoticeBoardModule && typeof window.NoticeBoardModule.updateServerStatusFooter === 'function') {
-                window.NoticeBoardModule.updateServerStatusFooter(this.telemetryConnected);
+                window.NoticeBoardModule.updateServerStatusFooter(this.telemetryConnected, this.userSeqId);
             }
         } catch (_e) {
         }
@@ -2556,10 +2561,10 @@ const app = {
         const img = document.getElementById('image-preview-img');
         const titleEl = document.getElementById('image-preview-title');
         if (!modal || !img) return;
-        
+
         img.src = src;
         if (titleEl) titleEl.textContent = title || '图片预览';
-        
+
         modal.classList.remove('hiding');
         modal.classList.add('show');
     },
@@ -3361,6 +3366,7 @@ app.init = async function () {
             installed_mods: [],
         };
         this.telemetryConnected = !!state.telemetry_connected;
+        this.userSeqId = state.user_seq_id || 0;
         this.currentLaunchMode = state.launch_mode || 'launcher';
         this.updatePathUI(state.game_path, state.path_valid);
 
@@ -3476,7 +3482,7 @@ app.init = async function () {
 };
 
 // 添加上下文菜单功能
-app.showContextMenu = function(event, menuItems) {
+app.showContextMenu = function (event, menuItems) {
     event.preventDefault();
     event.stopPropagation();
 
@@ -4845,10 +4851,10 @@ app.setupGlobalDragDrop = function () {
                 }
             }
             if (window.pywebview?.api?.stop_mod_audition_scan) {
-                pywebview.api.stop_mod_audition_scan(mod.id).catch(() => {});
+                pywebview.api.stop_mod_audition_scan(mod.id).catch(() => { });
             }
             if (window.pywebview?.api?.clear_audition_cache) {
-                pywebview.api.clear_audition_cache(mod.id).catch(() => {});
+                pywebview.api.clear_audition_cache(mod.id).catch(() => { });
             }
             if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
             if (window.__auditionPickerState && window.__auditionPickerState.modId === String(mod.id || '')) {

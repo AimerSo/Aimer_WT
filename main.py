@@ -42,7 +42,7 @@ from services.hangar_manager import HangarManager
 from services.bank_preview_service import BankPreviewService
 from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
-from services.telemetry_manager import init_telemetry, get_hwid, get_telemetry_connection_status
+from services.telemetry_manager import init_telemetry, get_hwid, get_telemetry_connection_status, get_user_seq_id
 try:
     from services.theme_unlock import ThemeUnlockService
 except Exception:
@@ -587,6 +587,7 @@ class AppApi:
             "hwid": get_hwid(),
             "telemetry_enabled": self._cfg_mgr.get_telemetry_enabled(),
             "telemetry_connected": get_telemetry_connection_status(),
+            "user_seq_id": get_user_seq_id(),
             "autostart_enabled": self._cfg_mgr.get_autostart_enabled(),
             "tray_mode": self._cfg_mgr.get_tray_mode(),
             "close_confirm": self._cfg_mgr.get_close_confirm()
