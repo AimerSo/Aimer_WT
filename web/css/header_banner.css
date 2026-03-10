@@ -82,12 +82,37 @@
 
 /* 更新提示样式 */
 .header_banner[data-type="update"] {
-    background: rgba(16, 185, 129, 0.12);
-    color: #10B981;
+    background: rgba(239, 68, 68, 0.1);
+    color: #EF4444;
+    justify-content: center;
+    margin-left: 30px;
 }
 
 .header_banner[data-type="update"]:hover {
-    background: rgba(16, 185, 129, 0.2);
+    background: rgba(239, 68, 68, 0.16);
+}
+
+.header_banner[data-type="update"] .header_banner_text_clip {
+    -webkit-mask-image: none;
+    mask-image: none;
+}
+
+.header_banner[data-type="update"] i {
+    animation: bannerIconBreath 2s ease-in-out infinite;
+}
+
+@keyframes bannerIconBreath {
+
+    0%,
+    100% {
+        opacity: 1;
+        filter: drop-shadow(0 0 0 transparent);
+    }
+
+    50% {
+        opacity: 0.6;
+        filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.6));
+    }
 }
 
 /* 系统公告样式 */
@@ -125,7 +150,7 @@
 }
 
 .header_banner[data-type="update"] .header_banner_dot {
-    background: #10B981;
+    background: #EF4444;
 }
 
 .header_banner[data-type="announcement"] .header_banner_dot {
@@ -177,16 +202,16 @@
 
 /* 深色模式适配 */
 [data-theme="dark"] .header_banner[data-type="update"] {
-    background: rgba(52, 211, 153, 0.12);
-    color: #34D399;
+    background: rgba(248, 113, 113, 0.12);
+    color: #F87171;
 }
 
 [data-theme="dark"] .header_banner[data-type="update"]:hover {
-    background: rgba(52, 211, 153, 0.2);
+    background: rgba(248, 113, 113, 0.2);
 }
 
 [data-theme="dark"] .header_banner[data-type="update"] .header_banner_dot {
-    background: #34D399;
+    background: #F87171;
 }
 
 [data-theme="dark"] .header_banner[data-type="announcement"] {
@@ -208,6 +233,35 @@
 
 [data-theme="dark"] .header_banner[data-type="slogan"]:hover {
     background: rgba(255, 255, 255, 0.04);
+}
+
+/* 更新提示关闭按钮 */
+.header_banner_close {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0.5;
+    flex-shrink: 0;
+    padding: 0;
+    margin-left: 2px;
+    transition: opacity 0.15s;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
+.header_banner:hover .header_banner_close {
+    display: flex;
+}
+
+.header_banner_close:hover {
+    opacity: 1;
 }
 
 /* Hover Tooltip */

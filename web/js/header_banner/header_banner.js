@@ -19,6 +19,7 @@
     var _items = [];
     var _currentIndex = 0;
     var _timer = null;
+    var _update_dismissed = false;
 
     var DEFAULT_SLOGANS = [
         { type: 'slogan', icon: 'ri-gamepad-line', text: '这是第一段测试内容' },
@@ -44,7 +45,7 @@
     function renderItem(item) {
         if (!_container) return;
 
-        var hasDot = (item.type === 'update' || item.type === 'announcement');
+        var hasDot = (item.type === 'announcement');
 
         var html = '<div class="header_banner banner_fade_in" data-type="' + escapeHtml(item.type) + '"'
             + (item.action ? ' data-action-type="' + escapeHtml(item.action.type || '') + '"' : '')
@@ -52,6 +53,7 @@
             + (hasDot ? '<span class="header_banner_dot"></span>' : '')
             + '<i class="' + escapeHtml(item.icon || 'ri-information-line') + '"></i>'
             + '<span class="header_banner_text_clip"><span class="header_banner_text">' + escapeHtml(item.text) + '</span></span>'
+            + (item.type === 'update' ? '<button class="header_banner_close" title="本次不再提示"><i class="ri-close-line"></i></button>' : '')
             + '</div>';
 
         _container.innerHTML = html;
@@ -69,19 +71,31 @@
         if (item.color) el.style.setProperty('--banner_text_color', item.color);
         if (item.icon_color) el.style.setProperty('--banner_icon_color', item.icon_color);
 
-        // 从右侧滚入的动画
-        requestAnimationFrame(function () {
-            var textEl = el.querySelector('.header_banner_text');
-            if (!textEl) return;
-            var clipWidth = textEl.parentElement.clientWidth;
-            var textWidth = textEl.scrollWidth;
-            textEl.style.setProperty('--clip-width', clipWidth + 'px');
-            textEl.style.setProperty('--scroll-offset', '-' + textWidth + 'px');
-            var totalTravel = clipWidth + textWidth;
-            var duration = Math.max(5, totalTravel / 30);
-            textEl.style.setProperty('--scroll-duration', duration + 's');
-            textEl.classList.add('is_scrolling');
-        });
+        var closeBtn = el.querySelector('.header_banner_close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                _update_dismissed = true;
+                removeByType('update');
+                refreshDisplay();
+            });
+        }
+
+        // 从右侧滚入的动画（update 类型固定显示不滚动）
+        if (item.type !== 'update') {
+            requestAnimationFrame(function () {
+                var textEl = el.querySelector('.header_banner_text');
+                if (!textEl) return;
+                var clipWidth = textEl.parentElement.clientWidth;
+                var textWidth = textEl.scrollWidth;
+                textEl.style.setProperty('--clip-width', clipWidth + 'px');
+                textEl.style.setProperty('--scroll-offset', '-' + textWidth + 'px');
+                var totalTravel = clipWidth + textWidth;
+                var duration = Math.max(5, totalTravel / 30);
+                textEl.style.setProperty('--scroll-duration', duration + 's');
+                textEl.classList.add('is_scrolling');
+            });
+        }
 
         // Hover tooltip
         el.addEventListener('mouseenter', function () {
@@ -191,11 +205,12 @@
     // === 公开 API ===
 
     function pushUpdate(text, url) {
+        if (_update_dismissed) return;
         removeByType('update');
         _items.unshift({
             type: 'update',
-            icon: 'ri-download-cloud-line',
-            text: text || '发现新版本',
+            icon: 'ri-error-warning-line',
+            text: '有新版本',
             action: {
                 type: url ? 'url' : 'alert',
                 url: url || '',
