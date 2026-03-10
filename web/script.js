@@ -70,7 +70,7 @@ const DEFAULT_THEME = {
     "--notice-hero-subtext": "#64748B",
     "--notice-hero-tag-bg": "rgba(239, 68, 68, 0.95)",
     "--notice-hero-tag-text": "#ffffff",
-    "--notice-hero-shadow": "0 4px 12px rgba(15, 23, 42, 0.05)",
+    "--notice-hero-shadow": "0 4px 12px rgba(15, 23, 42, 0.06)",
     "--notice-hero-deco": "rgba(100, 116, 139, 0.12)",
     "--notice-section-text": "#9CA3AF",
     "--notice-section-line": "#E5E7EB",
