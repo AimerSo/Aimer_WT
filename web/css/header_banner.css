@@ -1,6 +1,6 @@
 /* Header Banner 信息带 */
 #header_banner_slot {
-    display: flex;
+    display: none;
     align-items: center;
     max-width: 160px;
     height: 100%;
@@ -9,6 +9,10 @@
     -webkit-app-region: no-drag;
     app-region: no-drag;
     position: relative;
+}
+
+#header_banner_slot.has-content {
+    display: flex;
 }
 
 .header_banner {

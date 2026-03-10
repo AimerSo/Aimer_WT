@@ -754,7 +754,14 @@ const app = {
     },
 
     async applyCroppedCover() {
-        if (!this.currentEditSkin && !this.currentEditSight) return;
+        const target = this._cropCoverTarget;
+        // 扩展支持: skin / sight / task / model / hangar
+        const has_edit_target = this.currentEditSkin || this.currentEditSight
+            || (typeof TaskLibrary !== 'undefined' && TaskLibrary._current_edit_name)
+            || (typeof ModelLibrary !== 'undefined' && ModelLibrary._current_edit_name)
+            || (typeof Hangar !== 'undefined' && Hangar._current_edit_name);
+        if (!has_edit_target) return;
+
         const canvas = document.getElementById('crop-canvas');
         const state = this._cropCoverState;
         if (!canvas || !state) return;
@@ -778,7 +785,8 @@ const app = {
 
         const dataUrl = out.toDataURL('image/png');
         try {
-            if (this._cropCoverTarget === "sight") {
+            // --- 炮镜 ---
+            if (target === "sight") {
                 if (!window.pywebview?.api?.update_sight_cover_data) {
                     this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
                     return;
@@ -796,6 +804,64 @@ const app = {
                 return;
             }
 
+            // --- 任务库 ---
+            if (target === "task") {
+                if (!window.pywebview?.api?.update_task_cover_data || typeof TaskLibrary === 'undefined') {
+                    this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
+                    return;
+                }
+                const res = await pywebview.api.update_task_cover_data(TaskLibrary._current_edit_name, dataUrl);
+                if (res && res.success) {
+                    const coverImg = document.getElementById('edit-task-cover');
+                    if (coverImg) coverImg.src = dataUrl;
+                    this.showAlert("成功", "封面已更新！", "success");
+                    TaskLibrary.refresh_list();
+                    this.closeModal('modal-crop-cover');
+                } else {
+                    this.showAlert("错误", (res && res.msg) ? res.msg : "封面更新失败", "error");
+                }
+                return;
+            }
+
+            // --- 模型库 ---
+            if (target === "model") {
+                if (!window.pywebview?.api?.update_model_cover_data || typeof ModelLibrary === 'undefined') {
+                    this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
+                    return;
+                }
+                const res = await pywebview.api.update_model_cover_data(ModelLibrary._current_edit_name, dataUrl);
+                if (res && res.success) {
+                    const coverImg = document.getElementById('edit-model-cover');
+                    if (coverImg) coverImg.src = dataUrl;
+                    this.showAlert("成功", "封面已更新！", "success");
+                    ModelLibrary.refresh_list();
+                    this.closeModal('modal-crop-cover');
+                } else {
+                    this.showAlert("错误", (res && res.msg) ? res.msg : "封面更新失败", "error");
+                }
+                return;
+            }
+
+            // --- 机库 ---
+            if (target === "hangar") {
+                if (!window.pywebview?.api?.update_hangar_cover_data || typeof Hangar === 'undefined') {
+                    this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
+                    return;
+                }
+                const res = await pywebview.api.update_hangar_cover_data(Hangar._current_edit_name, dataUrl);
+                if (res && res.success) {
+                    const coverImg = document.getElementById('edit-hangar-cover');
+                    if (coverImg) coverImg.src = dataUrl;
+                    this.showAlert("成功", "封面已更新！", "success");
+                    Hangar.refresh_list();
+                    this.closeModal('modal-crop-cover');
+                } else {
+                    this.showAlert("错误", (res && res.msg) ? res.msg : "封面更新失败", "error");
+                }
+                return;
+            }
+
+            // --- 涂装（默认） ---
             if (!window.pywebview?.api?.update_skin_cover_data) {
                 this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
                 return;
@@ -2463,65 +2529,15 @@ const app = {
     },
 
     refreshHangar(opts) {
-        const listEl = document.getElementById('hangar-list');
-        const countEl = document.getElementById('hangar-count');
-        if (!listEl || !countEl) return;
-
-        const refreshBtn = document.getElementById('btn-refresh-hangar');
-        if (this._hangarRefreshing) return;
-        this._hangarRefreshing = true;
-        if (refreshBtn) {
-            refreshBtn.disabled = true;
-            refreshBtn.classList.add('is-loading');
+        if (typeof Hangar !== 'undefined') {
+            Hangar.refresh_list(opts);
         }
-        countEl.textContent = '刷新中...';
-
-        setTimeout(() => {
-            this._hangarRefreshing = false;
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.classList.remove('is-loading');
-            }
-            countEl.textContent = '本地: 0';
-            listEl.innerHTML = `
-                <div class="empty-state" style="grid-column: 1 / -1;">
-                    <i class="ri-plane-line"></i>
-                    <h3>还没有机库配置</h3>
-                    <p>点击左侧"打开机库"按钮，导入机库配置文件</p>
-                </div>
-            `;
-        }, 300);
     },
 
     refreshModels(opts) {
-        const listEl = document.getElementById('models-list');
-        const countEl = document.getElementById('models-count');
-        if (!listEl || !countEl) return;
-
-        const refreshBtn = document.getElementById('btn-refresh-models');
-        if (this._modelsRefreshing) return;
-        this._modelsRefreshing = true;
-        if (refreshBtn) {
-            refreshBtn.disabled = true;
-            refreshBtn.classList.add('is-loading');
+        if (typeof ModelLibrary !== 'undefined') {
+            ModelLibrary.refresh_list(opts);
         }
-        countEl.textContent = '刷新中...';
-
-        setTimeout(() => {
-            this._modelsRefreshing = false;
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.classList.remove('is-loading');
-            }
-            countEl.textContent = '本地: 0';
-            listEl.innerHTML = `
-                <div class="empty-state" style="grid-column: 1 / -1;">
-                    <i class="ri-box-3-line"></i>
-                    <h3>还没有模型</h3>
-                    <p>点击左侧"打开模型库"按钮，导入模型文件</p>
-                </div>
-            `;
-        }, 300);
     },
 
     openBiliSpace() {
@@ -3657,6 +3673,12 @@ app.switchResourceView = function (target) {
         if (!this._skinsLoaded) this.refreshSkins();
     } else if (target === 'sights') {
         if (!this._sightsLoaded) this.loadSightsView();
+    } else if (target === 'tasks') {
+        if (typeof TaskLibrary !== 'undefined' && !TaskLibrary._loaded) TaskLibrary.refresh_list();
+    } else if (target === 'models') {
+        if (typeof ModelLibrary !== 'undefined' && !ModelLibrary._loaded) ModelLibrary.refresh_list();
+    } else if (target === 'hangar') {
+        if (typeof Hangar !== 'undefined' && !Hangar._loaded) Hangar.refresh_list();
     }
 };
 

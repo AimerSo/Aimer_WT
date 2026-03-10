@@ -21,11 +21,7 @@
     var _timer = null;
     var _update_dismissed = false;
 
-    var DEFAULT_SLOGANS = [
-        { type: 'slogan', icon: 'ri-gamepad-line', text: '这是第一段测试内容' },
-        { type: 'slogan', icon: 'ri-volume-up-line', text: '这是第二段测试内容' },
-        { type: 'slogan', icon: 'ri-heart-3-line', text: '这是第三段测试内容' }
-    ];
+    var DEFAULT_SLOGANS = [];
 
     function escapeHtml(str) {
         var div = document.createElement('div');
@@ -40,6 +36,11 @@
             return (priority[a.type] || 9) - (priority[b.type] || 9);
         });
         return sorted;
+    }
+
+    function syncContainerState(hasContent) {
+        if (!_container) return;
+        _container.classList.toggle('has-content', !!hasContent);
     }
 
     function renderItem(item) {
@@ -186,9 +187,11 @@
         var sorted = getSortedItems();
         if (!sorted.length) {
             if (_container) _container.innerHTML = '';
+            syncContainerState(false);
             return;
         }
 
+        syncContainerState(true);
         _currentIndex = 0;
         renderItem(sorted[0]);
         startRotation();

@@ -4018,6 +4018,101 @@ class AppApi:
         """打开语音包库目录。"""
         self._lib_mgr.open_library_folder()
 
+    # ==================== 任务库 / 模型库 / 机库 卡片管理 API ====================
+
+    def get_tasks_list(self):
+        """扫描任务库目录，返回子文件夹列表供前端卡片展示。"""
+        try:
+            items = self._task_mgr.scan_items()
+            return {"valid": True, "items": items}
+        except Exception as e:
+            log.error(f"获取任务列表失败: {e}")
+            return {"valid": False, "items": []}
+
+    def rename_task(self, old_name, new_name):
+        """重命名任务库中的子文件夹。"""
+        try:
+            self._task_mgr.rename_item(old_name, new_name)
+            return {"success": True}
+        except (ValueError, FileExistsError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"任务重命名异常: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def update_task_cover_data(self, item_name, data_url):
+        """将前端裁切后的 base64 图片写入任务封面。"""
+        try:
+            self._task_mgr.update_cover_data(item_name, data_url)
+            return {"success": True}
+        except (ValueError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"任务封面更新异常: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def get_models_list(self):
+        """扫描模型库目录，返回子文件夹列表供前端卡片展示。"""
+        try:
+            items = self._model_mgr.scan_items()
+            return {"valid": True, "items": items}
+        except Exception as e:
+            log.error(f"获取模型列表失败: {e}")
+            return {"valid": False, "items": []}
+
+    def rename_model(self, old_name, new_name):
+        """重命名模型库中的子文件夹。"""
+        try:
+            self._model_mgr.rename_item(old_name, new_name)
+            return {"success": True}
+        except (ValueError, FileExistsError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"模型重命名异常: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def update_model_cover_data(self, item_name, data_url):
+        """将前端裁切后的 base64 图片写入模型封面。"""
+        try:
+            self._model_mgr.update_cover_data(item_name, data_url)
+            return {"success": True}
+        except (ValueError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"模型封面更新异常: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def get_hangar_list(self):
+        """扫描机库目录，返回子文件夹列表供前端卡片展示。"""
+        try:
+            items = self._hangar_mgr.scan_items()
+            return {"valid": True, "items": items}
+        except Exception as e:
+            log.error(f"获取机库列表失败: {e}")
+            return {"valid": False, "items": []}
+
+    def rename_hangar(self, old_name, new_name):
+        """重命名机库中的子文件夹。"""
+        try:
+            self._hangar_mgr.rename_item(old_name, new_name)
+            return {"success": True}
+        except (ValueError, FileExistsError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"机库重命名异常: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def update_hangar_cover_data(self, item_name, data_url):
+        """将前端裁切后的 base64 图片写入机库封面。"""
+        try:
+            self._hangar_mgr.update_cover_data(item_name, data_url)
+            return {"success": True}
+        except (ValueError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"机库封面更新异常: {e}")
+            return {"success": False, "msg": str(e)}
+
 
 def _setup_tray(window):
     """
