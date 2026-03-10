@@ -243,7 +243,7 @@
         document.body.appendChild(overlay);
 
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) closeNoticeDetail();
+            if (!e.target.closest('.notice-detail-modal')) closeNoticeDetail();
         });
 
         return overlay;
