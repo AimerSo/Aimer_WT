@@ -66,17 +66,18 @@
             });
         }
 
-        // 溢出检测：启用滚动动画
+        // 从右侧滚入的动画
         requestAnimationFrame(function () {
             var textEl = el.querySelector('.header_banner_text');
             if (!textEl) return;
-            if (textEl.scrollWidth > textEl.parentElement.clientWidth - 30) {
-                var offset = textEl.scrollWidth - textEl.parentElement.clientWidth + 40;
-                textEl.style.setProperty('--scroll-offset', '-' + offset + 'px');
-                var duration = Math.max(4, offset / 15);
-                textEl.style.setProperty('--scroll-duration', duration + 's');
-                textEl.classList.add('is_scrolling');
-            }
+            var clipWidth = textEl.parentElement.clientWidth;
+            var textWidth = textEl.scrollWidth;
+            textEl.style.setProperty('--clip-width', clipWidth + 'px');
+            textEl.style.setProperty('--scroll-offset', '-' + textWidth + 'px');
+            var totalTravel = clipWidth + textWidth;
+            var duration = Math.max(5, totalTravel / 30);
+            textEl.style.setProperty('--scroll-duration', duration + 's');
+            textEl.classList.add('is_scrolling');
         });
 
         // Hover tooltip

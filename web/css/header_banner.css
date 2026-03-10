@@ -70,15 +70,7 @@
 
 @keyframes bannerTextScroll {
     0% {
-        transform: translateX(0);
-    }
-
-    10% {
-        transform: translateX(0);
-    }
-
-    90% {
-        transform: translateX(var(--scroll-offset, -60px));
+        transform: translateX(var(--clip-width, 120px));
     }
 
     100% {
@@ -164,24 +156,20 @@
 @keyframes bannerFadeIn {
     from {
         opacity: 0;
-        transform: translateY(6px);
     }
 
     to {
         opacity: 1;
-        transform: translateY(0);
     }
 }
 
 @keyframes bannerFadeOut {
     from {
         opacity: 1;
-        transform: translateY(0);
     }
 
     to {
         opacity: 0;
-        transform: translateY(-6px);
     }
 }
 
