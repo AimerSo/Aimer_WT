@@ -380,6 +380,9 @@ class AppApi:
                 if content and (self._last_alert_content != full_alert_key):
                     self._logger.info(f"[通知] {title}")
                     self._window.evaluate_js(safe_js_call("showAlert", title, content, "info"))
+                    self._window.evaluate_js(
+                        f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({json.dumps(content, ensure_ascii=False)})"
+                    )
                     self._last_alert_content = full_alert_key
 
             # 3. 公告栏常驻内容 (Notice - 发现有效内容则覆盖首页公告)
@@ -399,6 +402,9 @@ class AppApi:
                 if content and (self._last_update_content != update_key):
                     self._logger.info(f"[更新] {content}")
                     self._window.evaluate_js(safe_js_call("showAlert", "发现新版本", content, "success", update_url))
+                    self._window.evaluate_js(
+                        f"if(window.HeaderBannerModule) HeaderBannerModule.pushUpdate({json.dumps(content, ensure_ascii=False)}, {json.dumps(update_url, ensure_ascii=False)})"
+                    )
                     self._last_update_content = update_key
 
         except Exception as e:

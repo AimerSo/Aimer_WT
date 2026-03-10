@@ -1,0 +1,247 @@
+/* Header Banner 信息带 */
+#header_banner_slot {
+    display: flex;
+    align-items: center;
+    max-width: 160px;
+    height: 100%;
+    overflow: hidden;
+    margin-left: -18px;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+    position: relative;
+}
+
+.header_banner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background-color 0.2s, opacity 0.2s;
+    position: relative;
+    user-select: none;
+    max-width: 100%;
+}
+
+.header_banner:hover {
+    filter: brightness(1.1);
+}
+
+.header_banner:active {
+    transform: scale(0.97);
+}
+
+.header_banner i {
+    font-size: 14px;
+    flex-shrink: 0;
+    transform: translateY(1px);
+}
+
+/* 文字裁切容器：限制滚动范围，防止文字穿过图标 */
+.header_banner_text_clip {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    transform: translateY(3px);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 8%, black 85%, transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0%, black 8%, black 85%, transparent 100%);
+}
+
+.header_banner_text {
+    overflow: hidden;
+    white-space: nowrap;
+    display: inline-block;
+}
+
+/* 超长文字横向滚动 */
+.header_banner_text.is_scrolling {
+    animation: bannerTextScroll var(--scroll-duration, 8s) linear infinite;
+}
+
+.header_banner:hover .header_banner_text.is_scrolling {
+    animation-play-state: paused;
+}
+
+@keyframes bannerTextScroll {
+    0% {
+        transform: translateX(0);
+    }
+
+    10% {
+        transform: translateX(0);
+    }
+
+    90% {
+        transform: translateX(var(--scroll-offset, -60px));
+    }
+
+    100% {
+        transform: translateX(var(--scroll-offset, -60px));
+    }
+}
+
+/* 更新提示样式 */
+.header_banner[data-type="update"] {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10B981;
+}
+
+.header_banner[data-type="update"]:hover {
+    background: rgba(16, 185, 129, 0.2);
+}
+
+/* 系统公告样式 */
+.header_banner[data-type="announcement"] {
+    background: rgba(59, 130, 246, 0.12);
+    color: #3B82F6;
+}
+
+.header_banner[data-type="announcement"]:hover {
+    background: rgba(59, 130, 246, 0.2);
+}
+
+/* 广告词/标语样式 */
+.header_banner[data-type="slogan"] {
+    background: transparent;
+    color: var(--text-sec);
+    cursor: default;
+}
+
+.header_banner[data-type="slogan"]:hover {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.header_banner[data-type="slogan"]:active {
+    transform: none;
+}
+
+/* 更新提示的脉冲圆点 */
+.header_banner_dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: bannerDotPulse 2s ease-in-out infinite;
+}
+
+.header_banner[data-type="update"] .header_banner_dot {
+    background: #10B981;
+}
+
+.header_banner[data-type="announcement"] .header_banner_dot {
+    background: #3B82F6;
+}
+
+@keyframes bannerDotPulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.5;
+        transform: scale(0.7);
+    }
+}
+
+/* 轮播淡入淡出 */
+.header_banner.banner_fade_in {
+    animation: bannerFadeIn 0.4s ease forwards;
+}
+
+.header_banner.banner_fade_out {
+    animation: bannerFadeOut 0.3s ease forwards;
+}
+
+@keyframes bannerFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes bannerFadeOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+}
+
+/* 深色模式适配 */
+[data-theme="dark"] .header_banner[data-type="update"] {
+    background: rgba(52, 211, 153, 0.12);
+    color: #34D399;
+}
+
+[data-theme="dark"] .header_banner[data-type="update"]:hover {
+    background: rgba(52, 211, 153, 0.2);
+}
+
+[data-theme="dark"] .header_banner[data-type="update"] .header_banner_dot {
+    background: #34D399;
+}
+
+[data-theme="dark"] .header_banner[data-type="announcement"] {
+    background: rgba(96, 165, 250, 0.12);
+    color: #60A5FA;
+}
+
+[data-theme="dark"] .header_banner[data-type="announcement"]:hover {
+    background: rgba(96, 165, 250, 0.2);
+}
+
+[data-theme="dark"] .header_banner[data-type="announcement"] .header_banner_dot {
+    background: #60A5FA;
+}
+
+[data-theme="dark"] .header_banner[data-type="slogan"] {
+    color: var(--text-sec);
+}
+
+[data-theme="dark"] .header_banner[data-type="slogan"]:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+/* Hover Tooltip */
+.header_banner_tooltip {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    background: var(--bg-card, #fff);
+    color: var(--text-main, #2C3E50);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 8px 12px;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    border: 1px solid var(--border-color, #E2E8F0);
+    white-space: nowrap;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.header_banner_tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
