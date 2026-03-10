@@ -272,7 +272,9 @@ func initRouter(r *gin.Engine) {
 					}
 
 				case "update":
-					sysConfig.UpdateActive = true
+					if val, ok := req["update_active"].(bool); ok {
+						sysConfig.UpdateActive = val
+					}
 					if val, ok := req["content"].(string); ok {
 						sysConfig.UpdateContent = val
 					}
@@ -412,10 +414,10 @@ func initRouter(r *gin.Engine) {
 		}
 
 		c.JSON(200, gin.H{
-			"status":        "success",
-			"sys_config":    clientConfig,
-			"user_command":  pendingCmd,
-			"user_seq_id":   userSeqID,
+			"status":       "success",
+			"sys_config":   clientConfig,
+			"user_command": pendingCmd,
+			"user_seq_id":  userSeqID,
 		})
 	})
 
