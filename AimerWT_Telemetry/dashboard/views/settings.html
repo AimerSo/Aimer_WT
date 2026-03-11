@@ -1,0 +1,119 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <div class="top-actions" style="margin-left: auto;">
+                <button class="btn primary" onclick="app.saveSettings()">保存设置</button>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">系统设置</div>
+            </div>
+            <div class="panel-body" style="padding: 24px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 32px; max-width: 1000px;">
+
+                    <div style="display: flex; flex-direction: column; gap: 20px;">
+                        <h4 style="border-bottom: 1px solid var(--border); padding-bottom: 10px; color: var(--text-muted); font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">
+                            界面与显示</h4>
+
+                        <div class="form-group">
+                            <label>界面主题</label>
+                            <select class="select" id="settingTheme" style="width: 100%;">
+                                <option value="light">浅色模式</option>
+                                <option value="dark">深色模式</option>
+                                <option value="auto">跟随系统</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>仪表盘布局</label>
+                            <select class="select" id="settingLayout" style="width: 100%;">
+                                <option value="comfortable">舒适 (默认)</option>
+                                <option value="compact">紧凑</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>图表动画</label>
+                            <div style="display: flex; gap: 12px; flex-direction: column;">
+                                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
+                                    <input type="checkbox" id="settingAnimation" checked> 启用平滑过渡动画
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 20px;">
+                        <h4 style="border-bottom: 1px solid var(--border); padding-bottom: 10px; color: var(--text-muted); font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">
+                            数据与行为</h4>
+
+                        <div class="form-group">
+                            <label>自动刷新间隔</label>
+                            <select class="select" id="settingRefreshInterval" style="width: 100%;">
+                                <option value="30">30秒</option>
+                                <option value="60" selected>1分钟</option>
+                                <option value="300">5分钟</option>
+                                <option value="0">关闭自动刷新</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>默认时间范围</label>
+                            <select class="select" id="settingTimeRange" style="width: 100%;">
+                                <option value="7">最近 7 天</option>
+                                <option value="30" selected>最近 30 天</option>
+                                <option value="90">最近 90 天</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>通知设置</label>
+                            <div style="display: flex; gap: 12px; flex-direction: column;">
+                                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
+                                    <input type="checkbox" id="settingDesktopNotify" checked> 启用桌面通知
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
+                                    <input type="checkbox" id="settingSound" checked> 播放提示音
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 20px;">
+                        <h4 style="border-bottom: 1px solid var(--border); padding-bottom: 10px; color: var(--text-muted); font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">
+                            高级选项</h4>
+
+                        <div class="form-group">
+                            <label>默认导出格式</label>
+                            <select class="select" id="settingExportFormat" style="width: 100%;">
+                                <option value="csv">CSV (逗号分隔)</option>
+                                <option value="excel">Excel (.xlsx)</option>
+                                <option value="json">JSON (原始数据)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>数据保留策略</label>
+                            <select class="select" id="settingDataRetention" style="width: 100%;">
+                                <option value="7">保留7天</option>
+                                <option value="30" selected>保留30天</option>
+                                <option value="90">保留90天</option>
+                                <option value="0">永久保留</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>调试模式</label>
+                            <div style="display: flex; gap: 12px; flex-direction: column;">
+                                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
+                                    <input type="checkbox" id="settingDebugMode"> 显示原始 API 响应
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

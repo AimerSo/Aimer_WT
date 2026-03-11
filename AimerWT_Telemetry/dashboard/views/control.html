@@ -1,0 +1,60 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <div class="top-actions" style="margin-left: auto;">
+                <button class="btn" onclick="app.showAlert('状态已同步', 'success')">同步状态</button>
+            </div>
+        </div>
+        <div class="grid">
+            <div class="panel span-4">
+                <div class="panel-header">
+                    <div class="panel-title">维护模式</div>
+                </div>
+                <div class="panel-body" style="padding: 10px 0; display: flex; flex-direction: column; height: 100%;">
+                    <p class="muted" style="margin-bottom: 20px; font-size: 13px; flex: 1;">
+                        开启后仅白名单用户可访问，适用于服务器停机维护或版本迁移。</p>
+                    <button class="btn primary" style="justify-content: center;" onclick="app.handleControl('maintenance')">设置维护状态</button>
+                </div>
+            </div>
+            <div class="panel span-4">
+                <div class="panel-header">
+                    <div class="panel-title">发布紧急通知</div>
+                </div>
+                <div class="panel-body" style="padding: 10px 0; display: flex; flex-direction: column; height: 100%;">
+                    <p class="muted" style="margin-bottom: 20px; font-size: 13px; flex: 1;">
+                        弹窗提示。向客户端推送即时模态弹窗，适用于重大更新或维护通知。</p>
+                    <button class="btn primary" style="justify-content: center;" onclick="app.handleControl('alert')">发布紧急通知</button>
+                </div>
+            </div>
+            <div class="panel span-4">
+                <div class="panel-header">
+                    <div class="panel-title">发布公告栏</div>
+                </div>
+                <div class="panel-body" style="padding: 10px 0; display: flex; flex-direction: column; height: 100%;">
+                    <p class="muted" style="margin-bottom: 20px; font-size: 13px; flex: 1;">
+                        文字覆盖。远程修改客户端顶部的滚动/静态公告栏文字內容。</p>
+                    <button class="btn primary" style="justify-content: center;" onclick="app.handleControl('notice')">发布公告栏文字</button>
+                </div>
+            </div>
+            <div class="panel span-4">
+                <div class="panel-header">
+                    <div class="panel-title">更新提示</div>
+                </div>
+                <div class="panel-body" style="padding: 10px 0; display: flex; flex-direction: column; height: 100%;">
+                    <p class="muted" style="margin-bottom: 20px; font-size: 13px; flex: 1;">
+                        向客户端推送更新提示，可设置推送范围与内容。</p>
+                    <button class="btn primary" style="justify-content: center;" onclick="app.handleControl('update')">发布更新提示</button>
+                </div>
+            </div>
+            <div class="panel span-4">
+                <div class="panel-header">
+                    <div class="panel-title">JSON 测试接口</div>
+                </div>
+                <div class="panel-body" style="padding: 10px 0; display: flex; flex-direction: column; height: 100%;">
+                    <p class="muted" style="margin-bottom: 20px; font-size: 13px; flex: 1;">仅用于前端联调与数据结构校验。</p>
+                    <button class="btn" style="justify-content: center;" onclick="app.handleControl('test')">打开测试接口</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
