@@ -1,4 +1,6 @@
 (function () {
+    var activeInstance = null;
+
     function openAdUrl(url) {
         if (!url) return;
         if (window.app && typeof window.app.openExternal === "function") {
@@ -14,10 +16,21 @@
         return el;
     }
 
+    function destroyCurrent() {
+        if (activeInstance && typeof activeInstance.destroy === "function") {
+            activeInstance.destroy();
+        }
+    }
+
     function initAdCarousel() {
         var host = document.getElementById("home-ad-carousel");
         if (!host) return;
-        if (host.dataset.adCarouselReady === "1") return;
+        if (activeInstance && activeInstance.host === host && host.dataset.adCarouselReady === "1") {
+            return;
+        }
+        if (activeInstance && activeInstance.host !== host) {
+            destroyCurrent();
+        }
         host.dataset.adCarouselReady = "1";
 
         var cfg = window.AIMER_AD_CAROUSEL_CONFIG || {};
@@ -26,7 +39,7 @@
         }) : [];
 
         if (!items.length) {
-            host.textContent = "No ad items";
+            host.textContent = "暂无可用广告";
             return;
         }
 
@@ -198,30 +211,33 @@
             startTimer();
         }
 
-        prevBtn.addEventListener("click", function () {
+        function onPrevClick() {
             prev();
             resetTimer();
-        });
+        }
 
-        nextBtn.addEventListener("click", function () {
+        function onNextClick() {
             next();
             resetTimer();
-        });
+        }
 
-        host.addEventListener("mouseenter", function () {
+        function onMouseEnter() {
             hovered = true;
-        });
-        host.addEventListener("mouseleave", function () {
-            hovered = false;
-        });
-        host.addEventListener("pointerenter", function () {
-            hovered = true;
-        });
-        host.addEventListener("pointerleave", function () {
-            hovered = false;
-        });
+        }
 
-        track.addEventListener("transitionend", function (evt) {
+        function onMouseLeave() {
+            hovered = false;
+        }
+
+        function onPointerEnter() {
+            hovered = true;
+        }
+
+        function onPointerLeave() {
+            hovered = false;
+        }
+
+        function onTransitionEnd(evt) {
             if (evt && evt.propertyName && evt.propertyName !== "transform") return;
             if (current === total) {
                 // tail clone -> first real (no animation)
@@ -229,9 +245,9 @@
             }
             isAnimating = false;
             clearTransitionFallback();
-        });
+        }
 
-        document.addEventListener("visibilitychange", function () {
+        function onVisibilityChange() {
             if (document.hidden) {
                 stopTimer();
                 hovered = false;
@@ -246,7 +262,16 @@
                 render(false);
             }
             startTimer();
-        });
+        }
+
+        prevBtn.addEventListener("click", onPrevClick);
+        nextBtn.addEventListener("click", onNextClick);
+        host.addEventListener("mouseenter", onMouseEnter);
+        host.addEventListener("mouseleave", onMouseLeave);
+        host.addEventListener("pointerenter", onPointerEnter);
+        host.addEventListener("pointerleave", onPointerLeave);
+        track.addEventListener("transitionend", onTransitionEnd);
+        document.addEventListener("visibilitychange", onVisibilityChange);
 
         host.appendChild(track);
         host.appendChild(prevBtn);
@@ -261,7 +286,38 @@
 
         render(false);
         startTimer();
+
+        activeInstance = {
+            host: host,
+            destroy: function () {
+                stopTimer();
+                clearTransitionFallback();
+                prevBtn.removeEventListener("click", onPrevClick);
+                nextBtn.removeEventListener("click", onNextClick);
+                host.removeEventListener("mouseenter", onMouseEnter);
+                host.removeEventListener("mouseleave", onMouseLeave);
+                host.removeEventListener("pointerenter", onPointerEnter);
+                host.removeEventListener("pointerleave", onPointerLeave);
+                track.removeEventListener("transitionend", onTransitionEnd);
+                document.removeEventListener("visibilitychange", onVisibilityChange);
+                host.innerHTML = "";
+                delete host.dataset.adCarouselReady;
+                if (activeInstance && activeInstance.host === host) {
+                    activeInstance = null;
+                }
+            }
+        };
     }
+
+    function refreshAdCarousel() {
+        destroyCurrent();
+        initAdCarousel();
+    }
+
+    window.AdCarouselModule = {
+        init: initAdCarousel,
+        refresh: refreshAdCarousel
+    };
 
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", initAdCarousel);

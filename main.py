@@ -1,4 +1,4 @@
-# 来个牛逼的给拆分了吧，屎山了 byAimer
+# 主程序入口与桌面桥接逻辑
 # -*- coding: utf-8 -*-
 import argparse
 import base64
@@ -348,6 +348,8 @@ class AppApi:
         self._last_update_content = None  # 更新提示
         self._last_maintenance_status = None  # 维护模式
         self._last_announce_content = None  # 兼容以前的 key (可选)
+        self._last_ad_carousel_state = None  # 广告轮播配置去重
+        self._last_notice_items_state = None  # 公告列表配置去重
 
     def on_server_message(self, config: dict):
         """处理服务端下发的系统消息（公告/更新/维护）"""
@@ -385,8 +387,7 @@ class AppApi:
                     )
                     self._last_alert_content = full_alert_key
 
-            # 3. 公告栏常驻内容 (Notice - 发现有效内容则覆盖首页公告)
-            # [暂时禁用] 我整不明白了 byAimer
+            # 3. 公告栏常驻内容 (Notice - 当前保留历史逻辑，但默认不启用)
             # if config.get("notice_active"):
             #     notice_content = config.get("notice_content", "")
             #     if notice_content and (self._last_notice_content != notice_content):
@@ -406,6 +407,56 @@ class AppApi:
                         f"if(window.HeaderBannerModule) HeaderBannerModule.pushUpdate({json.dumps(content, ensure_ascii=False)}, {json.dumps(update_url, ensure_ascii=False)})"
                     )
                     self._last_update_content = update_key
+
+            # 5. 广告轮播远程覆盖 (服务端配置了广告数据时覆盖客户端本地配置)
+            ad_items = config.get("ad_carousel_items")
+            ad_interval_ms = config.get("ad_carousel_interval_ms")
+            if isinstance(ad_items, list):
+                ad_state = json.dumps({
+                    "items": ad_items,
+                    "interval_ms": ad_interval_ms,
+                }, ensure_ascii=False, sort_keys=True)
+                if self._last_ad_carousel_state != ad_state:
+                    js_parts = []
+                    if isinstance(ad_items, list):
+                        js_parts.append(
+                            f"window.AIMER_AD_CAROUSEL_CONFIG.items = {json.dumps(ad_items, ensure_ascii=False)}"
+                        )
+                    if isinstance(ad_interval_ms, int) and ad_interval_ms > 0:
+                        js_parts.append(f"window.AIMER_AD_CAROUSEL_CONFIG.autoPlayIntervalMs = {ad_interval_ms}")
+                    js_parts.append(
+                        "if(window.AdCarouselModule && typeof window.AdCarouselModule.refresh === 'function') "
+                        "{ window.AdCarouselModule.refresh(); }"
+                    )
+                    self._window.evaluate_js(
+                        "if(window.AIMER_AD_CAROUSEL_CONFIG) { " + "; ".join(js_parts) + "; }"
+                    )
+                    self._last_ad_carousel_state = ad_state
+
+            # 6. 公告列表远程覆盖 (服务端有公告数据时覆盖客户端本地 noticeData)
+            notice_items = config.get("notice_items")
+            if isinstance(notice_items, list):
+                notice_state = json.dumps(notice_items, ensure_ascii=False, sort_keys=True)
+                if self._last_notice_items_state != notice_state:
+                    # 将后端字段名 is_pinned 转为前端字段名 isPinned
+                    mapped = []
+                    for item in notice_items:
+                        mapped.append({
+                            "id": item.get("id"),
+                            "type": item.get("type", "normal"),
+                            "tag": item.get("tag", ""),
+                            "title": item.get("title", ""),
+                            "date": item.get("date", ""),
+                            "summary": item.get("summary", ""),
+                            "content": item.get("content", ""),
+                            "isPinned": item.get("is_pinned", False)
+                        })
+                    items_json = json.dumps(mapped, ensure_ascii=False)
+                    self._window.evaluate_js(
+                        f"if(window.app) {{ app.noticeData = {items_json}; "
+                        f"if(window.NoticeBoardModule) NoticeBoardModule.renderNoticeBoard(app); }}"
+                    )
+                    self._last_notice_items_state = notice_state
 
         except Exception as e:
             print(f"消息处理异常: {e}")
@@ -4327,7 +4378,7 @@ def main() -> int:
     # 绑定窗口对象到桥接层
     api.set_window(window)
 
-    # TODO 需要优化，拖放压缩包时大概率卡死
+    # TODO: 当前拖放导入在部分压缩包场景下仍可能阻塞，需要单独治理后再启用。
     def _bind_drag_drop(win):
         # 绑定拖拽投放事件，用于在特定页面接收文件拖入并触发导入流程。
         try:

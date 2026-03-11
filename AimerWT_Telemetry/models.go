@@ -65,3 +65,33 @@ type SystemConfig struct {
 	UpdateUrl     string `json:"update_url"`
 	UpdateScope   string `json:"update_scope"`
 }
+
+// ContentConfig KV 配置持久化表，用于服务重启后恢复运行时状态
+type ContentConfig struct {
+	Key       string    `gorm:"primaryKey;type:varchar(128)" json:"key"`
+	Value     string    `gorm:"type:text" json:"value"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+// AdCarouselItem 广告轮播数据结构（序列化后存入 ContentConfig）
+type AdCarouselItem struct {
+	ID    string `json:"id"`
+	Image string `json:"image"`
+	Alt   string `json:"alt"`
+	URL   string `json:"url"`
+}
+
+// NoticeItem 公告列表数据表（对应客户端 notice_data.js 的数据结构）
+type NoticeItem struct {
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Type      string    `json:"type"`                          // urgent / update / event / normal
+	Tag       string    `json:"tag"`                           // 紧急 / 更新 / 活动 / 日常
+	Title     string    `json:"title"`
+	Summary   string    `json:"summary"`
+	Content   string    `gorm:"type:text" json:"content"`
+	Date      string    `json:"date"`
+	IsPinned  bool      `json:"is_pinned" gorm:"default:false"`
+	SortOrder int       `json:"sort_order" gorm:"default:0"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}

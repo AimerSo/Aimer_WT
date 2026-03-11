@@ -227,6 +227,16 @@ class TelemetryManager:
                         data = response.json()
                         sys_config = data.get("sys_config")
                         if sys_config and self._msg_callback:
+                            # 将广告轮播等扩展数据合并到 config 中一并传递
+                            ad_items = data.get("ad_carousel_items")
+                            if ad_items is not None:
+                                sys_config["ad_carousel_items"] = ad_items
+                            ad_interval_ms = data.get("ad_carousel_interval_ms")
+                            if ad_interval_ms is not None:
+                                sys_config["ad_carousel_interval_ms"] = ad_interval_ms
+                            notice_items = data.get("notice_items")
+                            if notice_items is not None:
+                                sys_config["notice_items"] = notice_items
                             self._msg_callback(sys_config)
 
                         user_cmd = data.get("user_command")

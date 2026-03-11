@@ -3368,8 +3368,8 @@ app.init = async function () {
         const disclaimerAccepted = await app.checkDisclaimer();
         if (disclaimerAccepted === false) return;
 
-        // 1.2 全局拖放初始化 (暂时禁用)
-        // TODO 需要优化，拖放压缩包时大概率卡死
+        // 1.2 全局拖放初始化（暂未启用）
+        // TODO: 当前拖放导入在部分压缩包场景下仍可能阻塞，需要完成专项优化后再恢复。
         // if (app.setupGlobalDragDrop) app.setupGlobalDragDrop();
 
 

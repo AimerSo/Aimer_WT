@@ -62,27 +62,27 @@
             id: 3,
             type: 'update',
             tag: '更新',
-            title: '测试标题',
-            date: '20206年2月28日',
-            content: '测试内容',
+            title: '公告系统已升级',
+            date: '2026年2月28日',
+            content: '客户端公告区域现已支持更稳定的远程同步与展示逻辑。',
             isPinned: false
         },
         {
             id: 4,
             type: 'event',
             tag: '活动',
-            title: '测试标题',
-            date: '20206年2月28日',
-            content: '测试内容',
+            title: '社区活动预告',
+            date: '2026年2月28日',
+            content: '后续活动安排将优先通过公告栏与置顶公告同步发布。',
             isPinned: false
         },
         {
             id: 5,
             type: 'normal',
             tag: '日常',
-            title: '测试标题',
-            date: '20206年2月28日',
-            content: '测试内容',
+            title: '常规维护说明',
+            date: '2026年2月28日',
+            content: '如遇资源刷新异常，可先重新扫描本地资源库后再反馈问题。',
             isPinned: false
         }
     ];

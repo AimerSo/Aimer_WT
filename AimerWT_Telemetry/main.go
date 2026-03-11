@@ -26,7 +26,7 @@ func initDB() {
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
-	db.AutoMigrate(&TelemetryRecord{})
+	db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{})
 }
 
 func loadDashboard() {
@@ -42,6 +42,7 @@ func loadDashboard() {
 
 func main() {
 	initDB()
+	RestoreSysConfig()
 	loadDashboard()
 
 	// 初始化 WebSocket Hub

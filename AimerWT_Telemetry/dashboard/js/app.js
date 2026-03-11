@@ -227,6 +227,12 @@ const app = {
             case 'settings':
                 this.initSettings();
                 break;
+            case 'announcement':
+                this.initAnnouncement();
+                break;
+            case 'advertisement':
+                this.initAdvertisement();
+                break;
             default:
                 break;
         }
@@ -1091,6 +1097,13 @@ const app = {
             title = '更新提示';
             content = `
                 <div class="form-group">
+                    <label>状态</label>
+                    <select class="select" style="width: 100%;" id="updateStatus">
+                        <option value="on">激活 (推送更新提示)</option>
+                        <option value="off">禁用 (停止推送)</option>
+                    </select>
+                </div>
+                <div class="form-group">
                     <label>推送范围 (输入版本号或 'all')</label>
                     <input class="input" style="width: 100%;" id="updateScope" value="all" placeholder="例如: 2.0.1 或 all">
                 </div>
@@ -1323,6 +1336,7 @@ const app = {
             payload.content = document.getElementById('noticeContent').value;
             payload.scope = document.getElementById('noticeScope').value;
         } else if (action === 'update') {
+            payload.update_active = document.getElementById('updateStatus').value === 'on';
             payload.content = document.getElementById('updateContent').value;
             payload.url = document.getElementById('updateUrl').value;
             payload.scope = document.getElementById('updateScope').value;
@@ -1367,6 +1381,386 @@ const app = {
      */
     initControl() {
         // 控制视图特定初始化
+    },
+
+    /**
+     * 初始化公告栏管理视图，加载各通道的激活状态
+     */
+    initAnnouncement() {
+        this.loadAnnouncementStatus();
+        this.loadNoticeList();
+    },
+
+    /**
+     * 加载各推送通道当前状态并更新通道状态面板
+     */
+    async loadAnnouncementStatus() {
+        const setChannel = (name, active) => {
+            const dot = document.getElementById(`channelDot${name}`);
+            const badge = document.getElementById(`channelBadge${name}`);
+            if (dot) {
+                dot.style.background = active ? 'var(--secondary)' : 'var(--muted)';
+            }
+            if (badge) {
+                badge.textContent = active ? '已激活' : '未激活';
+                badge.style.background = active
+                    ? 'rgba(16, 185, 129, 0.12)'
+                    : 'rgba(148, 163, 184, 0.15)';
+                badge.style.color = active ? 'var(--secondary)' : 'var(--text-muted)';
+            }
+        };
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/control`);
+            if (res.ok) {
+                const data = await res.json();
+                const cfg = data.config || {};
+                setChannel('Notice', !!cfg.notice_active);
+                setChannel('Alert', !!cfg.alert_active);
+                setChannel('Update', !!cfg.update_active);
+                this.setVal('announcementNoticeStatus', cfg.notice_active ? 'on' : 'off');
+                this.setVal('announcementAlertStatus', cfg.alert_active ? 'on' : 'off');
+                this.setVal('announcementUpdateStatus', cfg.update_active ? 'on' : 'off');
+            } else {
+                setChannel('Notice', false);
+                setChannel('Alert', false);
+                setChannel('Update', false);
+            }
+        } catch {
+            setChannel('Notice', false);
+            setChannel('Alert', false);
+            setChannel('Update', false);
+        }
+    },
+
+    /**
+     * 从公告栏管理页面提交推送指令，复用 /admin/control API
+     */
+    async submitAnnouncement(type) {
+        const payload = { action: type };
+
+        if (type === 'notice') {
+            payload.notice_active = document.getElementById('announcementNoticeStatus')?.value === 'on';
+            payload.content = document.getElementById('announcementNoticeContent')?.value || '';
+            payload.scope = document.getElementById('announcementNoticeScope')?.value || 'all';
+        } else if (type === 'alert') {
+            payload.alert_active = document.getElementById('announcementAlertStatus')?.value === 'on';
+            payload.title = document.getElementById('announcementAlertTitle')?.value || '';
+            payload.content = document.getElementById('announcementAlertContent')?.value || '';
+            payload.scope = document.getElementById('announcementAlertScope')?.value || 'all';
+        } else if (type === 'update') {
+            payload.update_active = document.getElementById('announcementUpdateStatus')?.value === 'on';
+            payload.content = document.getElementById('announcementUpdateContent')?.value || '';
+            payload.url = document.getElementById('announcementUpdateUrl')?.value || '';
+            payload.scope = document.getElementById('announcementUpdateScope')?.value || 'all';
+        }
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/control`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            await res.json();
+            this.showAlert('指令已下发成功', 'success');
+            this.loadAnnouncementStatus();
+        } catch (error) {
+            this.showAlert('推送失败: ' + error.message, 'danger');
+        }
+    },
+
+    // ==================== 公告列表管理 ====================
+
+    _noticeItems: [],
+    _noticeEditingId: null,
+
+    async loadNoticeList() {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/notices`);
+            if (!res.ok) throw new Error('load failed');
+            const data = await res.json();
+            this._noticeItems = data.items || [];
+            this.renderNoticeList();
+            this.cancelNoticeEdit();
+        } catch {
+            this._noticeItems = [];
+            this.renderNoticeList();
+        }
+    },
+
+    renderNoticeList() {
+        const container = document.getElementById('noticeItemList');
+        if (!container) return;
+        if (!this._noticeItems.length) {
+            container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;"><p>\u6682\u65e0\u516c\u544a\u6570\u636e</p><p style="font-size:12px;">\u70b9\u51fb\u201c\u65b0\u5efa\u516c\u544a\u201d\u5f00\u59cb\u6dfb\u52a0</p></div>';
+            return;
+        }
+        const typeColors = { urgent: 'var(--danger)', update: 'var(--primary)', event: 'rgb(124,58,237)', normal: 'var(--text-muted)' };
+        container.innerHTML = this._noticeItems.map(item => {
+            const color = typeColors[item.type] || 'var(--text-muted)';
+            const pinIcon = item.is_pinned ? '<span style="color:var(--warning);font-size:11px;margin-left:4px;" title="\u7f6e\u9876">\u2b50</span>' : '';
+            return `<div style="border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.02)'" onmouseout="this.style.background=''" onclick="app.editNoticeItem(${item.id})">
+                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color};flex-shrink:0;"></span>
+                <span style="font-size:11px;padding:1px 8px;border-radius:4px;background:rgba(0,0,0,0.04);color:${color};flex-shrink:0;">${this.escapeHtmlSafe(item.tag || item.type)}</span>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtmlSafe(item.title)}${pinIcon}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${this.escapeHtmlSafe(item.date || '')}</div>
+                </div>
+                <button class="btn" style="padding:4px 8px;font-size:11px;color:var(--danger);flex-shrink:0;" onclick="event.stopPropagation();app.deleteNoticeItem(${item.id})">\u5220\u9664</button>
+            </div>`;
+        }).join('');
+    },
+
+    addNoticeItem() {
+        this._noticeEditingId = null;
+        const titleEl = document.getElementById('noticeEditTitle');
+        if (titleEl) titleEl.textContent = '\u65b0\u5efa\u516c\u544a';
+        const emptyEl = document.getElementById('noticeEditEmpty');
+        const formEl = document.getElementById('noticeEditForm');
+        if (emptyEl) emptyEl.style.display = 'none';
+        if (formEl) formEl.style.display = '';
+        this.setVal('noticeEditType', 'normal');
+        this.setVal('noticeEditTag', '');
+        this.setVal('noticeEditItemTitle', '');
+        this.setVal('noticeEditDate', new Date().toLocaleDateString('zh-CN'));
+        this.setVal('noticeEditSummary', '');
+        this.setVal('noticeEditContent', '');
+        const pinnedEl = document.getElementById('noticeEditPinned');
+        if (pinnedEl) pinnedEl.checked = false;
+    },
+
+    editNoticeItem(id) {
+        const item = this._noticeItems.find(x => x.id === id);
+        if (!item) return;
+        this._noticeEditingId = id;
+        const titleEl = document.getElementById('noticeEditTitle');
+        if (titleEl) titleEl.textContent = '\u7f16\u8f91: ' + (item.title || '');
+        const emptyEl = document.getElementById('noticeEditEmpty');
+        const formEl = document.getElementById('noticeEditForm');
+        if (emptyEl) emptyEl.style.display = 'none';
+        if (formEl) formEl.style.display = '';
+        this.setVal('noticeEditType', item.type || 'normal');
+        this.setVal('noticeEditTag', item.tag || '');
+        this.setVal('noticeEditItemTitle', item.title || '');
+        this.setVal('noticeEditDate', item.date || '');
+        this.setVal('noticeEditSummary', item.summary || '');
+        this.setVal('noticeEditContent', item.content || '');
+        const pinnedEl = document.getElementById('noticeEditPinned');
+        if (pinnedEl) pinnedEl.checked = !!item.is_pinned;
+    },
+
+    cancelNoticeEdit() {
+        this._noticeEditingId = null;
+        const titleEl = document.getElementById('noticeEditTitle');
+        if (titleEl) titleEl.textContent = '\u9009\u62e9\u6216\u65b0\u5efa\u516c\u544a';
+        const emptyEl = document.getElementById('noticeEditEmpty');
+        const formEl = document.getElementById('noticeEditForm');
+        if (emptyEl) emptyEl.style.display = '';
+        if (formEl) formEl.style.display = 'none';
+    },
+
+    async saveNoticeItem() {
+        const payload = {
+            type: document.getElementById('noticeEditType')?.value || 'normal',
+            tag: (document.getElementById('noticeEditTag')?.value || '').trim(),
+            title: (document.getElementById('noticeEditItemTitle')?.value || '').trim(),
+            date: (document.getElementById('noticeEditDate')?.value || '').trim(),
+            summary: (document.getElementById('noticeEditSummary')?.value || '').trim(),
+            content: (document.getElementById('noticeEditContent')?.value || '').trim(),
+            is_pinned: !!document.getElementById('noticeEditPinned')?.checked
+        };
+        if (!payload.title) { this.showAlert('\u8bf7\u586b\u5199\u516c\u544a\u6807\u9898', 'warning'); return; }
+        if (!payload.tag) {
+            const tagMap = { update: '\u66f4\u65b0', urgent: '\u7d27\u6025', event: '\u6d3b\u52a8', normal: '\u65e5\u5e38' };
+            payload.tag = tagMap[payload.type] || '\u65e5\u5e38';
+        }
+        try {
+            const isEdit = this._noticeEditingId !== null;
+            const url = isEdit
+                ? `${this.config.apiBase}/admin/notices/${this._noticeEditingId}`
+                : `${this.config.apiBase}/admin/notices`;
+            const method = isEdit ? 'PUT' : 'POST';
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error('\u670d\u52a1\u5668\u8fd4\u56de ' + res.status);
+            await res.json();
+            this.showAlert(isEdit ? '\u516c\u544a\u5df2\u66f4\u65b0' : '\u516c\u544a\u5df2\u521b\u5efa', 'success');
+            this.loadNoticeList();
+        } catch (error) {
+            this.showAlert('\u4fdd\u5b58\u5931\u8d25: ' + error.message, 'danger');
+        }
+    },
+
+    async deleteNoticeItem(id) {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/notices/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('\u670d\u52a1\u5668\u8fd4\u56de ' + res.status);
+            this.showAlert('\u516c\u544a\u5df2\u5220\u9664', 'success');
+            this.loadNoticeList();
+        } catch (error) {
+            this.showAlert('\u5220\u9664\u5931\u8d25: ' + error.message, 'danger');
+        }
+    },
+
+    // ==================== 广告轮播管理 ====================
+
+    _adItems: [],
+    _adEditingIndex: -1,
+
+    initAdvertisement() {
+        this._adItems = [];
+        this._adEditingIndex = -1;
+        this.loadAdCarousel();
+    },
+
+    async loadAdCarousel() {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/ad-carousel`);
+            if (!res.ok) throw new Error('load failed');
+            const data = await res.json();
+            this._adItems = data.items || [];
+            const intervalEl = document.getElementById('adIntervalMs');
+            if (intervalEl && data.interval_ms) intervalEl.value = data.interval_ms;
+            this.renderAdList();
+            this.cancelAdEdit();
+        } catch {
+            this._adItems = [];
+            this.renderAdList();
+        }
+    },
+
+    renderAdList() {
+        const container = document.getElementById('adCarouselList');
+        if (!container) return;
+        if (!this._adItems.length) {
+            container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;"><p>\u6682\u65e0\u5e7f\u544a\u6570\u636e</p><p style="font-size:12px;">\u70b9\u51fb\u53f3\u4e0a\u89d2\u201c\u6dfb\u52a0\u5e7f\u544a\u201d\u5f00\u59cb\u914d\u7f6e</p></div>';
+            return;
+        }
+        container.innerHTML = this._adItems.map((item, i) => {
+            const isFirst = i === 0;
+            const isLast = i === this._adItems.length - 1;
+            return `<div style="border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.02)'" onmouseout="this.style.background=''" onclick="app.editAdItem(${i})">
+                <div style="width:64px;height:40px;border-radius:6px;overflow:hidden;flex-shrink:0;background:var(--border);display:flex;align-items:center;justify-content:center;">
+                    <img src="" alt="" style="width:100%;height:100%;object-fit:cover;display:none;">
+                    <span style="font-size:10px;color:var(--text-muted)">#${i + 1}</span>
+                </div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtmlSafe(item.id || '\u672a\u547d\u540d')}</div>
+                    <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtmlSafe(item.url || '-')}</div>
+                </div>
+                <div style="display:flex;gap:6px;flex-shrink:0;">
+                    <button class="btn" style="padding:4px 8px;font-size:11px;" onclick="event.stopPropagation();app.moveAdItem(${i},-1)" ${isFirst ? 'disabled' : ''}>\u2191</button>
+                    <button class="btn" style="padding:4px 8px;font-size:11px;" onclick="event.stopPropagation();app.moveAdItem(${i},1)" ${isLast ? 'disabled' : ''}>\u2193</button>
+                    <button class="btn" style="padding:4px 8px;font-size:11px;color:var(--danger);" onclick="event.stopPropagation();app.deleteAdItem(${i})">\u5220\u9664</button>
+                </div>
+            </div>`;
+        }).join('');
+    },
+
+    escapeHtmlSafe(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    },
+
+    addAdItem() {
+        this._adEditingIndex = -1;
+        const titleEl = document.getElementById('adEditTitle');
+        if (titleEl) titleEl.textContent = '\u6dfb\u52a0\u5e7f\u544a';
+        const emptyEl = document.getElementById('adEditEmpty');
+        const formEl = document.getElementById('adEditForm');
+        if (emptyEl) emptyEl.style.display = 'none';
+        if (formEl) formEl.style.display = '';
+        this.setVal('adEditId', 'ad_' + Date.now());
+        this.setVal('adEditImage', '');
+        this.setVal('adEditAlt', '');
+        this.setVal('adEditUrl', '');
+    },
+
+    editAdItem(index) {
+        const item = this._adItems[index];
+        if (!item) return;
+        this._adEditingIndex = index;
+        const titleEl = document.getElementById('adEditTitle');
+        if (titleEl) titleEl.textContent = '\u7f16\u8f91: ' + (item.id || '');
+        const emptyEl = document.getElementById('adEditEmpty');
+        const formEl = document.getElementById('adEditForm');
+        if (emptyEl) emptyEl.style.display = 'none';
+        if (formEl) formEl.style.display = '';
+        this.setVal('adEditId', item.id || '');
+        this.setVal('adEditImage', item.image || '');
+        this.setVal('adEditAlt', item.alt || '');
+        this.setVal('adEditUrl', item.url || '');
+    },
+
+    cancelAdEdit() {
+        this._adEditingIndex = -1;
+        const titleEl = document.getElementById('adEditTitle');
+        if (titleEl) titleEl.textContent = '\u9009\u62e9\u6216\u6dfb\u52a0\u5e7f\u544a';
+        const emptyEl = document.getElementById('adEditEmpty');
+        const formEl = document.getElementById('adEditForm');
+        if (emptyEl) emptyEl.style.display = '';
+        if (formEl) formEl.style.display = 'none';
+    },
+
+    setVal(id, val) {
+        const el = document.getElementById(id);
+        if (el) el.value = val;
+    },
+
+    saveAdItem() {
+        const item = {
+            id: (document.getElementById('adEditId')?.value || '').trim(),
+            image: (document.getElementById('adEditImage')?.value || '').trim(),
+            alt: (document.getElementById('adEditAlt')?.value || '').trim(),
+            url: (document.getElementById('adEditUrl')?.value || '').trim()
+        };
+        if (!item.id) { this.showAlert('\u8bf7\u586b\u5199\u5e7f\u544a ID', 'warning'); return; }
+        if (this._adEditingIndex >= 0) {
+            this._adItems[this._adEditingIndex] = item;
+        } else {
+            this._adItems.push(item);
+        }
+        this.renderAdList();
+        this.cancelAdEdit();
+        this.showAlert('\u5df2\u66f4\u65b0\u672c\u5730\u5217\u8868\uff0c\u70b9\u51fb\u201c\u4fdd\u5b58\u5168\u90e8\u914d\u7f6e\u201d\u63d0\u4ea4\u5230\u670d\u52a1\u5668', 'success');
+    },
+
+    deleteAdItem(index) {
+        this._adItems.splice(index, 1);
+        this.renderAdList();
+        if (this._adEditingIndex === index) this.cancelAdEdit();
+        this.showAlert('\u5df2\u5220\u9664\uff0c\u70b9\u51fb\u201c\u4fdd\u5b58\u5168\u90e8\u914d\u7f6e\u201d\u63d0\u4ea4\u5230\u670d\u52a1\u5668', 'success');
+    },
+
+    moveAdItem(index, direction) {
+        const newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= this._adItems.length) return;
+        const temp = this._adItems[index];
+        this._adItems[index] = this._adItems[newIndex];
+        this._adItems[newIndex] = temp;
+        this.renderAdList();
+    },
+
+    async saveAdCarouselAll() {
+        const intervalMs = parseInt(document.getElementById('adIntervalMs')?.value) || 4500;
+        const payload = { items: this._adItems, interval_ms: intervalMs };
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/ad-carousel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error('\u670d\u52a1\u5668\u8fd4\u56de ' + res.status);
+            await res.json();
+            this.showAlert('\u5e7f\u544a\u914d\u7f6e\u5df2\u4fdd\u5b58\u5230\u670d\u52a1\u5668', 'success');
+        } catch (error) {
+            this.showAlert('\u4fdd\u5b58\u5931\u8d25: ' + error.message, 'danger');
+        }
     },
 
     /**
