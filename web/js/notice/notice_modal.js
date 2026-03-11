@@ -1,6 +1,7 @@
 /* 公告详情弹窗模块：按类型调用独立模板 */
 (function () {
     const MODAL_ID = 'modal-notice-detail';
+    const CLOSE_ANIMATION_MS = 240;
 
     function escapeHtml(value) {
         return String(value == null ? '' : value)
@@ -242,16 +243,33 @@
         document.body.appendChild(overlay);
 
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) overlay.classList.remove('show');
+            if (!e.target.closest('.notice-detail-modal')) closeNoticeDetail();
         });
 
         return overlay;
     }
 
+    function closeNoticeDetail() {
+        const overlay = document.getElementById(MODAL_ID);
+        if (!overlay || !overlay.classList.contains('show') || overlay.classList.contains('hiding')) return;
+
+        overlay.classList.remove('entered');
+        overlay.classList.add('hiding');
+
+        const finalize = () => {
+            if (!overlay.classList.contains('hiding')) return;
+            overlay.classList.remove('show');
+            overlay.classList.remove('hiding');
+        };
+
+        overlay.addEventListener('animationend', finalize, { once: true });
+        setTimeout(finalize, CLOSE_ANIMATION_MS);
+    }
+
     function bindCloseButtons(overlay) {
         const closeButtons = overlay.querySelectorAll('[data-notice-close="1"]');
         closeButtons.forEach((btn) => {
-            btn.addEventListener('click', () => overlay.classList.remove('show'));
+            btn.addEventListener('click', closeNoticeDetail);
         });
     }
 
@@ -301,12 +319,20 @@
         shell.innerHTML = renderByTemplate(safeItem, helpers);
         bindCloseButtons(overlay);
 
+        overlay.classList.remove('entered');
         overlay.classList.remove('hiding');
         overlay.classList.add('show');
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (!overlay.classList.contains('show') || overlay.classList.contains('hiding')) return;
+                overlay.classList.add('entered');
+            });
+        });
     }
 
     window.NoticeModalModule = {
         ensureModal: ensureModal,
+        closeNoticeDetail: closeNoticeDetail,
         openNoticeDetail: openNoticeDetail,
         renderMarkdownSafe: renderMarkdownSafe
     };

@@ -17,6 +17,8 @@
     <link rel="stylesheet" href="css/pages/model_library.css">
     <link rel="stylesheet" href="css/pages/hangar.css">
     <link rel="stylesheet" href="css/pages/custom_text.css">
+    <link rel="stylesheet" href="css/import-result-modal.css">
+    <link rel="stylesheet" href="css/header_banner.css">
     <link rel="stylesheet" href="guide/guide.css">
 </head>
 
@@ -55,6 +57,9 @@
                 <span class="app-version-text" style="color: #8B0000;">v3 Beta</span>
             </div>
         </div>
+
+        <!-- Header Banner 信息带 -->
+        <div id="header_banner_slot"></div>
 
         <!-- 2. 中间导航菜单 (不可拖拽) -->
         <nav class="header-nav">
@@ -751,7 +756,7 @@
                                         <img src="assets/tanks/5.BiAn.png" alt="BiAn">
                                     </div>
                                     <div>
-                                        <div class="contributor-name">彼岸</div>
+                                        <div class="contributor-name">彼岸 [服务器维护]</div>
                                         <div class="contributor-role">软件、服务器技术支持</div>
                                     </div>
                                 </a>
@@ -811,7 +816,7 @@
                                     </div>
                                     <div class="info-details">
                                         <div class="info-title">最后更新</div>
-                                        <div class="info-value">2026 年 2 月 17 日</div>
+                                        <div class="info-value">2026 年 3 月 11 日</div>
                                     </div>
                                 </div>
                                 <div class="project-info-item">
@@ -863,8 +868,8 @@
                         <h2>个性化</h2>
                         <span class="subtitle">Appearance & Themes</span>
                         <div style="flex: 1;"></div>
-                        <button class="btn secondary icon-only theme-redeem-help-btn" onclick="app.openRedeemCodeModal()"
-                            title="兑换主题" aria-label="兑换主题">
+                        <button class="btn secondary icon-only theme-redeem-help-btn"
+                            onclick="app.openRedeemCodeModal()" title="兑换主题" aria-label="兑换主题">
                             <i class="ri-question-line"></i>
                         </button>
                     </div>
@@ -1659,9 +1664,6 @@
     <script src="loading_voice_package.js"></script>
     <script src="components/AppDropdownMenu.js"></script>
     <!-- 新功能模块脚本 -->
-    <script src="js/pages/task_library.js"></script>
-    <script src="js/pages/model_library.js"></script>
-    <script src="js/pages/hangar.js"></script>
     <script src="js/pages/custom_text.js"></script>
     <script src="js/notice/notice_data.js?v=20260228_1"></script>
     <script src="js/notice/templates/general_notice_template.js?v=20260228_1"></script>
@@ -1669,7 +1671,11 @@
     <script src="js/notice/notice_modal.js?v=20260228_1"></script>
     <script src="js/notice/notice_board.js?v=20260228_1"></script>
     <script src="guide/guide.js"></script>
+    <script src="js/header_banner/header_banner.js"></script>
     <script src="script.js?v=20260228"></script>
+    <script src="js/pages/task_library.js"></script>
+    <script src="js/pages/model_library.js"></script>
+    <script src="js/pages/hangar.js"></script>
     <script src="redeem/redeem_ui.js"></script>
     <script src="ads/ad_carousel_config.js"></script>
     <script src="ads/ad_carousel.js"></script>

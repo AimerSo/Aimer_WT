@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -32,7 +31,7 @@ func initDB() {
 
 func loadDashboard() {
 	var err error
-	dashboardHTML, err = ioutil.ReadFile("dashboard/index.html")
+	dashboardHTML, err = os.ReadFile("dashboard/index.html")
 	if err != nil {
 		log.Printf("警告: 无法加载 dashboard/index.html: %v", err)
 		dashboardHTML = []byte("<html><body><h1>Dashboard template not found</h1></body></html>")
@@ -70,9 +69,11 @@ func main() {
 func buildWhereClause(c *gin.Context) string {
 	var clauses []string
 	if value := c.Query("value"); value != "" {
+		value = strings.ReplaceAll(value, "'", "''")
 		clauses = append(clauses, fmt.Sprintf("value = '%s'", value))
 	}
 	if arch := c.Query("arch"); arch != "" {
+		arch = strings.ReplaceAll(arch, "'", "''")
 		clauses = append(clauses, fmt.Sprintf("arch = '%s'", arch))
 	}
 	if len(clauses) > 0 {

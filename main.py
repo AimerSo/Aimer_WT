@@ -3,6 +3,7 @@
 import argparse
 import base64
 import csv
+import hashlib
 import itertools
 import json
 import os
@@ -10,6 +11,7 @@ import random
 import re
 import shutil
 import sys
+import tempfile
 import threading
 import time
 import platform
@@ -40,7 +42,7 @@ from services.hangar_manager import HangarManager
 from services.bank_preview_service import BankPreviewService
 from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
-from services.telemetry_manager import init_telemetry, get_hwid, get_telemetry_connection_status
+from services.telemetry_manager import init_telemetry, get_hwid, get_telemetry_connection_status, get_user_seq_id
 try:
     from services.theme_unlock import ThemeUnlockService
 except Exception:
@@ -64,6 +66,9 @@ from wt.wt_text import (
 
 APP_VERSION = "2.1.0"
 AGREEMENT_VERSION = "2026-01-10"
+DEFAULT_PENDING_DIR_NAME = "待解压区"
+DEFAULT_RESOURCE_ROOT_DIR_NAME = "AimerWT资源库"
+DEFAULT_VOICE_LIBRARY_DIR_NAME = "WT语音包库"
 
 # 资源目录定位：打包环境使用 _MEIPASS，开发环境使用源码目录
 if getattr(sys, "frozen", False):
@@ -281,9 +286,7 @@ class AppApi:
         # 连接 logger -> 前端 UI（窗口未创建时会自动忽略）
         set_ui_callback(self._append_log_to_ui)
 
-        # [关键修复] 将 window 改为 _window。
-        # 加下划线表示私有变量，pywebview 就不会尝试去扫描和序列化整个窗口对象，
-        # 从而避免了 "window.native... maximum recursion depth" 错误。
+        # _window 为私有变量，避免 pywebview 扫描序列化窗口对象导致递归错误
         self._window = None
 
         # 管理器实例：配置、语音包库、涂装、炮镜、游戏目录操作
@@ -377,6 +380,9 @@ class AppApi:
                 if content and (self._last_alert_content != full_alert_key):
                     self._logger.info(f"[通知] {title}")
                     self._window.evaluate_js(safe_js_call("showAlert", title, content, "info"))
+                    self._window.evaluate_js(
+                        f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({json.dumps(content, ensure_ascii=False)})"
+                    )
                     self._last_alert_content = full_alert_key
 
             # 3. 公告栏常驻内容 (Notice - 发现有效内容则覆盖首页公告)
@@ -396,6 +402,9 @@ class AppApi:
                 if content and (self._last_update_content != update_key):
                     self._logger.info(f"[更新] {content}")
                     self._window.evaluate_js(safe_js_call("showAlert", "发现新版本", content, "success", update_url))
+                    self._window.evaluate_js(
+                        f"if(window.HeaderBannerModule) HeaderBannerModule.pushUpdate({json.dumps(content, ensure_ascii=False)}, {json.dumps(update_url, ensure_ascii=False)})"
+                    )
                     self._last_update_content = update_key
 
         except Exception as e:
@@ -459,10 +468,7 @@ class AppApi:
             # 避免在日志回调中抛异常导致业务中断
             log.exception("日志推送失败")
 
-        # 2. 处理 Toast 通知
-        # 我们可以根据 record.message 或 record.levelname 判断是否弹窗。
-        # 以前的逻辑是：如果 levelKey in (WARN, ERROR, SUCCESS) 则弹窗。
-        # 这里我们需要从 message 探测 [SUCCESS] 这种自定义标签，因为 standard logging 只有 INFO/WARN/ERROR。
+        # 2. 处理 Toast 通知：从消息内容探测 [SUCCESS]/[WARN]/[ERROR] 等自定义标签
 
         try:
             level_key = record.levelname  # INFO, WARNING, ERROR, DEBUG
@@ -587,6 +593,7 @@ class AppApi:
             "hwid": get_hwid(),
             "telemetry_enabled": self._cfg_mgr.get_telemetry_enabled(),
             "telemetry_connected": get_telemetry_connection_status(),
+            "user_seq_id": get_user_seq_id(),
             "autostart_enabled": self._cfg_mgr.get_autostart_enabled(),
             "tray_mode": self._cfg_mgr.get_tray_mode(),
             "close_confirm": self._cfg_mgr.get_close_confirm()
@@ -1015,18 +1022,53 @@ class AppApi:
             log.error(f"试听生成失败: {e}")
             return {"success": False, "msg": "试听生成失败"}
 
+    @staticmethod
+    def _resolve_mod_relative_path(mod_dir: Path, rel_path: str):
+        rel = str(rel_path or "").replace("\\", "/").strip()
+        if not rel:
+            return None
+        try:
+            base = Path(mod_dir).resolve()
+            target = (base / rel).resolve()
+            target.relative_to(base)
+            return target
+        except Exception:
+            return None
+
+    @staticmethod
+    def _get_mod_audition_cache_signature(mod_dir: Path) -> str:
+        base = Path(mod_dir)
+        rows = []
+        try:
+            if base.exists() and base.is_dir():
+                for p in sorted(base.rglob("*.bank"), key=lambda x: str(x).lower()):
+                    try:
+                        if not p.is_file():
+                            continue
+                        rel = p.relative_to(base).as_posix().lower()
+                        st = p.stat()
+                        rows.append(f"{rel}|{st.st_mtime_ns}|{st.st_size}")
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+        if not rows:
+            try:
+                st = base.stat()
+                rows.append(f"dir|{st.st_mtime_ns}|{st.st_size}")
+            except Exception:
+                rows.append("dir|0|0")
+        return hashlib.sha1("\n".join(rows).encode("utf-8")).hexdigest()
+
     def _get_mod_audition_items(self, mod_id: str, progress_cb=None):
         mod_dir = self._lib_mgr.library_dir / mod_id
         if not mod_dir.exists() or not mod_dir.is_dir():
             return None, {"success": False, "msg": "语音包不存在"}
 
-        try:
-            mod_mtime = mod_dir.stat().st_mtime_ns
-        except Exception:
-            mod_mtime = 0
+        mod_sig = self._get_mod_audition_cache_signature(mod_dir)
 
         cached = self._audition_items_cache.get(mod_id)
-        if cached and cached.get("mtime") == mod_mtime:
+        if cached and cached.get("sig") == mod_sig:
             return cached.get("items", []), None
 
         details = self._lib_mgr.get_mod_details(mod_id)
@@ -1092,7 +1134,7 @@ class AppApi:
         if not all_items:
             return None, {"success": False, "msg": "未解析到可试听语音，文件不正确"}
 
-        self._audition_items_cache[mod_id] = {"mtime": mod_mtime, "items": all_items}
+        self._audition_items_cache[mod_id] = {"sig": mod_sig, "items": all_items}
         return all_items, None
 
     @staticmethod
@@ -1146,15 +1188,12 @@ class AppApi:
         if not mod_dir.exists() or not mod_dir.is_dir():
             return {"success": False, "msg": "语音包不存在"}
 
-        try:
-            mod_mtime = mod_dir.stat().st_mtime_ns
-        except Exception:
-            mod_mtime = 0
+        mod_sig = self._get_mod_audition_cache_signature(mod_dir)
 
         need_emit = False
         with self._audition_scan_lock:
             state = self._audition_items_cache.get(mod_id)
-            if state and state.get("mtime") == mod_mtime:
+            if state and state.get("sig") == mod_sig:
                 if state.get("running"):
                     if state.get("paused"):
                         state["paused"] = False
@@ -1172,7 +1211,7 @@ class AppApi:
 
             if result is None:
                 self._audition_items_cache[mod_id] = {
-                    "mtime": mod_mtime,
+                    "sig": mod_sig,
                     "items": [],
                     "running": True,
                     "complete": False,
@@ -1510,9 +1549,8 @@ class AppApi:
 
             mod_dir = self._lib_mgr.library_dir / mod_id
             rel = str(selected.get("bank_rel") or "").replace("\\", "/")
-            bank_path = (mod_dir / rel).resolve()
-            mod_dir_resolved = mod_dir.resolve()
-            if not str(bank_path).lower().startswith(str(mod_dir_resolved).lower()):
+            bank_path = self._resolve_mod_relative_path(mod_dir, rel)
+            if bank_path is None:
                 return {"success": False, "msg": "参数不正确"}
             if not bank_path.exists() or not bank_path.is_file():
                 return {"success": False, "msg": "bank 文件不存在"}
@@ -1550,9 +1588,8 @@ class AppApi:
                 return {"success": False, "msg": "参数不完整"}
 
             mod_dir = self._lib_mgr.library_dir / mod_id
-            mod_dir_resolved = mod_dir.resolve()
-            bank_path = (mod_dir / rel).resolve()
-            if not str(bank_path).lower().startswith(str(mod_dir_resolved).lower()):
+            bank_path = self._resolve_mod_relative_path(mod_dir, rel)
+            if bank_path is None:
                 return {"success": False, "msg": "参数不正确"}
             if not bank_path.exists() or not bank_path.is_file():
                 return {"success": False, "msg": "bank 文件不存在"}
@@ -2846,6 +2883,318 @@ class AppApi:
             "blk_files": [p.name for p in blk_files],
         }
 
+    def _get_custom_text_backup_dir(self):
+        """
+        获取自定义文本备份目录路径。
+        路径：<应用所在目录>/AimerWT资源库/WT备份/自定义文本备份/
+        """
+        app_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
+        backup_dir = app_dir / DEFAULT_RESOURCE_ROOT_DIR_NAME / "WT备份" / "自定义文本备份"
+        return backup_dir
+
+    def _build_custom_text_backup_zip_path(self, backup_dir: Path) -> tuple[Path, str]:
+        """
+        生成唯一的自定义文本备份 zip 路径，避免同一秒内重复备份时重名覆盖。
+        """
+        base_name = f"custom_text_backup_{time.strftime('%Y%m%d_%H%M%S')}"
+        candidate = backup_dir / f"{base_name}.zip"
+        if not candidate.exists():
+            return candidate, candidate.name
+
+        for idx in range(1, 1000):
+            candidate = backup_dir / f"{base_name}_{idx:02d}.zip"
+            if not candidate.exists():
+                return candidate, candidate.name
+
+        # 极端情况下退回到毫秒时间戳，确保总能拿到可用文件名。
+        candidate = backup_dir / f"{base_name}_{int(time.time() * 1000)}.zip"
+        return candidate, candidate.name
+
+    def _inspect_custom_text_backup_zip(self, zip_path: Path) -> dict:
+        """
+        预检备份 zip，仅接受：
+        - aimerWT/<name>.csv
+        - localization.blk
+        其他条目会被忽略；若没有任何合法 CSV，则视为无效备份。
+        """
+        csv_members: list[tuple[str, str]] = []
+        csv_names: set[str] = set()
+        has_blk = False
+
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                bad_member = zf.testzip()
+                if bad_member is not None:
+                    return {"success": False, "msg": f"备份压缩包已损坏: {bad_member}"}
+
+                for info in zf.infolist():
+                    if info.is_dir():
+                        continue
+
+                    member = str(info.filename or "").replace("\\", "/").strip()
+                    if not member:
+                        continue
+
+                    if member == "localization.blk":
+                        has_blk = True
+                        continue
+
+                    if not member.startswith("aimerWT/") or not member.lower().endswith(".csv"):
+                        continue
+
+                    parts = [part for part in member.split("/") if part]
+                    if len(parts) != 2 or parts[0] != "aimerWT":
+                        continue
+
+                    csv_name = parts[1]
+                    if Path(csv_name).name != csv_name or csv_name in (".", ".."):
+                        return {"success": False, "msg": f"备份压缩包包含非法文件名: {member}"}
+
+                    if csv_name.lower() in csv_names:
+                        return {"success": False, "msg": f"备份压缩包包含重复 CSV: {csv_name}"}
+
+                    csv_names.add(csv_name.lower())
+                    csv_members.append((member, csv_name))
+        except zipfile.BadZipFile:
+            return {"success": False, "msg": "备份文件不是有效的 ZIP 压缩包。"}
+        except Exception as e:
+            return {"success": False, "msg": f"读取备份压缩包失败: {e}"}
+
+        if not csv_members:
+            return {"success": False, "msg": "备份压缩包中没有找到可还原的 CSV 文件。"}
+
+        return {
+            "success": True,
+            "csv_members": csv_members,
+            "has_blk": has_blk,
+        }
+
+    def _rollback_custom_text_restore(
+        self,
+        aimer_dir: Path,
+        lang_dir: Path,
+        rollback_csv_dir: Path,
+        rollback_blk_path: Path,
+        had_localization_blk: bool,
+    ) -> None:
+        """
+        还原失败时，尽力恢复到操作前状态。
+        """
+        for current_csv in aimer_dir.glob("*.csv"):
+            current_csv.unlink(missing_ok=True)
+
+        for backup_csv in rollback_csv_dir.glob("*.csv"):
+            shutil.copy2(backup_csv, aimer_dir / backup_csv.name)
+
+        target_blk = lang_dir / "localization.blk"
+        if had_localization_blk and rollback_blk_path.exists():
+            shutil.copy2(rollback_blk_path, target_blk)
+        elif not had_localization_blk and target_blk.exists():
+            target_blk.unlink(missing_ok=True)
+
+    def backup_custom_text(self, payload=None):
+        """
+        将 lang/aimerWT/ 下的所有 CSV 文件及 localization.blk 打包为带时间戳的 zip 备份。
+        备份保存在 AimerWT资源库/WT备份/自定义文本备份/ 目录下，最多保留 20 份。
+        """
+        game_path = self._cfg_mgr.get_game_path()
+        if not game_path:
+            return {"success": False, "msg": "请先在主页设置游戏路径。"}
+
+        valid, msg = self._logic.validate_game_path(game_path)
+        if not valid:
+            return {"success": False, "msg": msg or "游戏路径无效。"}
+
+        lang_dir = Path(game_path) / "lang"
+        aimer_dir = lang_dir / "aimerWT"
+
+        if not aimer_dir.exists() or not aimer_dir.is_dir():
+            return {"success": False, "msg": "未找到 lang/aimerWT 目录，没有可备份的自定义文本。"}
+
+        csv_files = list(aimer_dir.glob("*.csv"))
+        if not csv_files:
+            return {"success": False, "msg": "lang/aimerWT 目录下没有 CSV 文件，无需备份。"}
+
+        blk_file = lang_dir / "localization.blk"
+
+        backup_dir = self._get_custom_text_backup_dir()
+        try:
+            backup_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            return {"success": False, "msg": f"创建备份目录失败: {e}"}
+
+        zip_path, zip_name = self._build_custom_text_backup_zip_path(backup_dir)
+
+        try:
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for csv_file in csv_files:
+                    zf.write(csv_file, arcname=f"aimerWT/{csv_file.name}")
+                if blk_file.exists():
+                    zf.write(blk_file, arcname="localization.blk")
+        except Exception as e:
+            try:
+                zip_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return {"success": False, "msg": f"创建备份压缩包失败: {e}"}
+
+        # 清理旧备份，仅保留最近 20 份
+        max_backups = 20
+        try:
+            existing = sorted(backup_dir.glob("custom_text_backup_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+            for old in existing[max_backups:]:
+                old.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "msg": f"备份成功：{zip_name}（共 {len(csv_files)} 个 CSV）",
+            "zip_name": zip_name,
+            "csv_count": len(csv_files),
+            "backup_dir": str(backup_dir),
+        }
+
+    def get_custom_text_backups(self, payload=None):
+        """
+        列出所有已存在的自定义文本备份文件，按时间倒序排列。
+        """
+        backup_dir = self._get_custom_text_backup_dir()
+        if not backup_dir.exists():
+            return {"success": True, "backups": []}
+
+        backups = []
+        try:
+            for f in sorted(backup_dir.glob("custom_text_backup_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True):
+                stat = f.stat()
+                backups.append({
+                    "name": f.name,
+                    "size_kb": round(stat.st_size / 1024, 1),
+                    "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime)),
+                })
+        except Exception as e:
+            return {"success": False, "msg": f"读取备份列表失败: {e}"}
+
+        return {"success": True, "backups": backups}
+
+    def restore_custom_text(self, payload=None):
+        """
+        从指定的备份 zip 文件还原自定义文本数据到 lang/aimerWT/ 目录。
+        还原前先清空 aimerWT/ 下的 CSV 文件，然后解压备份内容。
+        """
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return {"success": False, "msg": "参数格式错误。"}
+
+        if not isinstance(payload, dict):
+            return {"success": False, "msg": "参数格式错误。"}
+
+        zip_name = str(payload.get("zip_name", "")).strip()
+        if not zip_name:
+            return {"success": False, "msg": "缺少备份文件名。"}
+
+        # 防止路径穿越
+        if "/" in zip_name or "\\" in zip_name or ".." in zip_name:
+            return {"success": False, "msg": "无效的备份文件名。"}
+        if not zip_name.lower().endswith(".zip"):
+            return {"success": False, "msg": "无效的备份文件类型。"}
+
+        backup_dir = self._get_custom_text_backup_dir()
+        zip_path = backup_dir / zip_name
+        if not zip_path.exists() or not zip_path.is_file():
+            return {"success": False, "msg": f"备份文件不存在: {zip_name}"}
+
+        game_path = self._cfg_mgr.get_game_path()
+        if not game_path:
+            return {"success": False, "msg": "请先在主页设置游戏路径。"}
+
+        valid, msg = self._logic.validate_game_path(game_path)
+        if not valid:
+            return {"success": False, "msg": msg or "游戏路径无效。"}
+
+        lang_dir = Path(game_path) / "lang"
+        aimer_dir = lang_dir / "aimerWT"
+        aimer_dir.mkdir(parents=True, exist_ok=True)
+
+        zip_check = self._inspect_custom_text_backup_zip(zip_path)
+        if not zip_check.get("success"):
+            return zip_check
+
+        csv_members = list(zip_check.get("csv_members") or [])
+        has_blk = bool(zip_check.get("has_blk"))
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="aimerwt_ct_restore_", dir=str(lang_dir.parent)) as temp_root_str:
+                temp_root = Path(temp_root_str)
+                extract_lang_dir = temp_root / "extracted_lang"
+                extract_aimer_dir = extract_lang_dir / "aimerWT"
+                rollback_dir = temp_root / "rollback"
+                rollback_csv_dir = rollback_dir / "aimerWT"
+
+                extract_aimer_dir.mkdir(parents=True, exist_ok=True)
+                rollback_csv_dir.mkdir(parents=True, exist_ok=True)
+
+                rollback_blk_path = rollback_dir / "localization.blk"
+                target_blk = lang_dir / "localization.blk"
+                had_localization_blk = target_blk.exists() and target_blk.is_file()
+
+                # 先提取到临时目录，确认备份内容可完整读取。
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    for member, csv_name in csv_members:
+                        target = extract_aimer_dir / csv_name
+                        with zf.open(member) as src, open(target, "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+
+                    if has_blk:
+                        with zf.open("localization.blk") as src, open(extract_lang_dir / "localization.blk", "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+
+                extracted_csv_files = sorted(extract_aimer_dir.glob("*.csv"))
+                if len(extracted_csv_files) != len(csv_members):
+                    return {"success": False, "msg": "备份压缩包校验失败：CSV 提取数量不一致。"}
+
+                # 进入真正替换前，先做好回滚快照。
+                for current_csv in aimer_dir.glob("*.csv"):
+                    shutil.copy2(current_csv, rollback_csv_dir / current_csv.name)
+                if had_localization_blk:
+                    shutil.copy2(target_blk, rollback_blk_path)
+
+                restored_csv = 0
+                restored_blk = False
+                try:
+                    for old_csv in aimer_dir.glob("*.csv"):
+                        old_csv.unlink(missing_ok=True)
+
+                    for extracted_csv in extracted_csv_files:
+                        os.replace(str(extracted_csv), str(aimer_dir / extracted_csv.name))
+                        restored_csv += 1
+
+                    if has_blk:
+                        os.replace(str(extract_lang_dir / "localization.blk"), str(target_blk))
+                        restored_blk = True
+                except Exception:
+                    self._rollback_custom_text_restore(
+                        aimer_dir=aimer_dir,
+                        lang_dir=lang_dir,
+                        rollback_csv_dir=rollback_csv_dir,
+                        rollback_blk_path=rollback_blk_path,
+                        had_localization_blk=had_localization_blk,
+                    )
+                    raise
+
+            blk_info = "，已还原 localization.blk" if restored_blk else ""
+            return {
+                "success": True,
+                "msg": f"还原成功：已恢复 {restored_csv} 个 CSV 文件{blk_info}。",
+                "restored_csv": restored_csv,
+                "restored_blk": restored_blk,
+            }
+
+        except Exception as e:
+            return {"success": False, "msg": f"还原失败: {e}"}
+
     def refresh_skins_async(self, opts=None):
         """
         先传回基本信息，再异步推送封面数据。
@@ -3609,7 +3958,7 @@ class AppApi:
             if pending_dir == "":
                 # 重设为预设
                 self._cfg_mgr.set_pending_dir("")
-                default_pending = self._lib_mgr.root_dir / "WT待解压区"
+                default_pending = self._lib_mgr.root_dir / ".." / DEFAULT_PENDING_DIR_NAME
                 self._lib_mgr.update_paths(pending_dir=str(default_pending))
                 log.info(f"待解压区已重设为预设路径: {default_pending}")
                 return {"success": True}
@@ -3640,7 +3989,9 @@ class AppApi:
             if library_dir == "":
                 # 重设为预设
                 self._cfg_mgr.set_library_dir("")
-                default_library = self._lib_mgr.root_dir / "WT语音包库"
+                default_library = (
+                    self._lib_mgr.root_dir / ".." / DEFAULT_RESOURCE_ROOT_DIR_NAME / DEFAULT_VOICE_LIBRARY_DIR_NAME
+                )
                 self._lib_mgr.update_paths(library_dir=str(default_library))
                 log.info(f"语音包库已重设为预设路径: {default_library}")
                 return {"success": True}
@@ -3666,6 +4017,101 @@ class AppApi:
     def open_library_folder(self):
         """打开语音包库目录。"""
         self._lib_mgr.open_library_folder()
+
+    # ==================== 任务库 / 模型库 / 机库 卡片管理 API ====================
+
+    def get_tasks_list(self):
+        """扫描任务库目录，返回子文件夹列表供前端卡片展示。"""
+        try:
+            items = self._task_mgr.scan_items()
+            return {"valid": True, "items": items}
+        except Exception as e:
+            log.error(f"获取任务列表失败: {e}")
+            return {"valid": False, "items": []}
+
+    def rename_task(self, old_name, new_name):
+        """重命名任务库中的子文件夹。"""
+        try:
+            self._task_mgr.rename_item(old_name, new_name)
+            return {"success": True}
+        except (ValueError, FileExistsError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"任务重命名异常: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def update_task_cover_data(self, item_name, data_url):
+        """将前端裁切后的 base64 图片写入任务封面。"""
+        try:
+            self._task_mgr.update_cover_data(item_name, data_url)
+            return {"success": True}
+        except (ValueError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"任务封面更新异常: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def get_models_list(self):
+        """扫描模型库目录，返回子文件夹列表供前端卡片展示。"""
+        try:
+            items = self._model_mgr.scan_items()
+            return {"valid": True, "items": items}
+        except Exception as e:
+            log.error(f"获取模型列表失败: {e}")
+            return {"valid": False, "items": []}
+
+    def rename_model(self, old_name, new_name):
+        """重命名模型库中的子文件夹。"""
+        try:
+            self._model_mgr.rename_item(old_name, new_name)
+            return {"success": True}
+        except (ValueError, FileExistsError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"模型重命名异常: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def update_model_cover_data(self, item_name, data_url):
+        """将前端裁切后的 base64 图片写入模型封面。"""
+        try:
+            self._model_mgr.update_cover_data(item_name, data_url)
+            return {"success": True}
+        except (ValueError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"模型封面更新异常: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def get_hangar_list(self):
+        """扫描机库目录，返回子文件夹列表供前端卡片展示。"""
+        try:
+            items = self._hangar_mgr.scan_items()
+            return {"valid": True, "items": items}
+        except Exception as e:
+            log.error(f"获取机库列表失败: {e}")
+            return {"valid": False, "items": []}
+
+    def rename_hangar(self, old_name, new_name):
+        """重命名机库中的子文件夹。"""
+        try:
+            self._hangar_mgr.rename_item(old_name, new_name)
+            return {"success": True}
+        except (ValueError, FileExistsError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"机库重命名异常: {e}")
+            return {"success": False, "msg": str(e)}
+
+    def update_hangar_cover_data(self, item_name, data_url):
+        """将前端裁切后的 base64 图片写入机库封面。"""
+        try:
+            self._hangar_mgr.update_cover_data(item_name, data_url)
+            return {"success": True}
+        except (ValueError, FileNotFoundError) as e:
+            return {"success": False, "msg": str(e)}
+        except Exception as e:
+            log.error(f"机库封面更新异常: {e}")
+            return {"success": False, "msg": str(e)}
 
 
 def _setup_tray(window):

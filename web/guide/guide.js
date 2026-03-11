@@ -7,7 +7,7 @@
     const STEP_RETRY_MAX = 14;
     const CARD_FADE_OUT_MS = 220;
     const CARD_FADE_IN_MS = 280;
-    const CARD_SWITCH_GAP_MS = 180;
+    const CARD_SWITCH_GAP_MS = 340;
     const STEP_SWITCH_TOTAL_MS = CARD_FADE_OUT_MS + CARD_SWITCH_GAP_MS + CARD_FADE_IN_MS + 40;
 
     const STEPS = [
@@ -137,8 +137,24 @@
         {
             target: "#page-sight .info-stats-grid",
             title: "第十三步：信息库快捷入口",
-            description: "这里有常用网站与活动入口，点卡片即可跳转，有活动的话也会放在这里。",
+            description: "这里有常用网站与活动入口，下方的快速链接也能直达各类资源站点，点卡片即可跳转。",
             detail: "活动通知也会集中在这里显示。",
+            getTargetRect() {
+                const a = document.querySelector("#page-sight .info-stats-grid");
+                const b = document.querySelector("#page-sight .links-grid");
+                if (!a) return null;
+                const rA = a.getBoundingClientRect();
+                if (!b) return rA;
+                const rB = b.getBoundingClientRect();
+                return {
+                    left: Math.min(rA.left, rB.left),
+                    top: Math.min(rA.top, rB.top),
+                    right: Math.max(rA.right, rB.right),
+                    bottom: Math.max(rA.bottom, rB.bottom),
+                    width: Math.max(rA.right, rB.right) - Math.min(rA.left, rB.left),
+                    height: Math.max(rA.bottom, rB.bottom) - Math.min(rA.top, rB.top)
+                };
+            },
             beforeShow(app) {
                 if (app && typeof app.switchTab === "function") app.switchTab("sight");
             }
@@ -153,10 +169,37 @@
             }
         },
         {
+            target: "#startup-card",
+            title: "第十五步：启动设置",
+            description: "这里新增了开机自启动和关闭时最小化到托盘功能，都是应大家的要求加入的，按需开启即可。",
+            detail: "启动设置改动后会自动保存。",
+            beforeShow(app) {
+                if (app && typeof app.switchTab === "function") app.switchTab("settings");
+            }
+        },
+        {
+            target: "#theme-card",
+            title: "第十六步：个性化",
+            description: "目前已更新了 3 个主题可供切换，作者最喜欢的是那个粉色主题，试试看吧！",
+            detail: "主题切换后即时生效，无需重启。",
+            beforeShow(app) {
+                if (app && typeof app.switchTab === "function") app.switchTab("settings");
+            }
+        },
+        {
             target: "#btn-guide-help",
-            title: "第十五步：随时重开教程",
-            description: "鼠标移动到左下角时会出现问号，点击问号可以随时重开引导，快速回顾流程。当鼠标移开的时候，为了美观问号会消失，",
+            title: "第十七步：随时重开教程",
+            description: "鼠标移动到左下角时会出现问号，点击问号可以随时重开引导，快速回顾流程。当鼠标移开的时候，为了美观问号会消失。",
             detail: "不会修改你的路径、配置或语音包数据。",
+            beforeShow(app) {
+                if (app && typeof app.switchTab === "function") app.switchTab("home");
+            }
+        },
+        {
+            target: "#btn-auto-search",
+            title: "第十八步：开始之前，试试自动搜索",
+            description: "在开始使用软件之前，先试一下自动搜索游戏路径吧，这样后续操作会更顺畅！",
+            detail: "自动搜索会尝试定位你的 War Thunder 安装目录。",
             beforeShow(app) {
                 if (app && typeof app.switchTab === "function") app.switchTab("home");
             }
@@ -599,10 +642,11 @@
 
     function scheduleRelayout(step, target, token) {
         clearRelayoutQueue();
+        const useCustomRect = typeof step.getTargetRect === "function";
         const relayout = () => {
             if (!state.active || token !== state.renderToken) return;
-            const rect = getTargetRect(target);
-            if (!rect) return;
+            const rect = useCustomRect ? step.getTargetRect() : getTargetRect(target);
+            if (!rect || !isRectReady(rect)) return;
             applyHighlightLayout(step, target, rect, token, { animate: false });
         };
 
@@ -669,6 +713,7 @@
             state.stepRetryTimer = 0;
         }
 
+        const useCustomRect = typeof step.getTargetRect === "function";
         const start = (window.performance && performance.now) ? performance.now() : Date.now();
         let lastRect = null;
         let stableFrames = 0;
@@ -676,9 +721,9 @@
         const tick = () => {
             if (!state.active || token !== state.renderToken) return;
             const now = (window.performance && performance.now) ? performance.now() : Date.now();
-            const rect = getTargetRect(target);
+            const rect = useCustomRect ? step.getTargetRect() : getTargetRect(target);
 
-            if (!rect) {
+            if (!rect || !isRectReady(rect)) {
                 if (now - start > STEP_WAIT_MAX_MS) {
                     renderCurrentStep();
                     return;

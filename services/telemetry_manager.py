@@ -49,6 +49,7 @@ class TelemetryManager:
         self._msg_callback = None
         self._cmd_callback = None
         self._log_callback = None
+        self._user_seq_id = 0
 
     def set_server_message_callback(self, callback):
         """设置接收服务端控制消息的回调函数 (config: dict) -> None"""
@@ -162,6 +163,9 @@ class TelemetryManager:
     def get_machine_id(self) -> str:
         return self._machine_id
 
+    def get_user_seq_id(self) -> int:
+        return self._user_seq_id
+
     def report_startup(self):
         """
         执行异步遥测上报
@@ -228,6 +232,10 @@ class TelemetryManager:
                         user_cmd = data.get("user_command")
                         if user_cmd and self._cmd_callback:
                             self._cmd_callback(user_cmd)
+
+                        seq_id = data.get("user_seq_id")
+                        if seq_id:
+                            self._user_seq_id = int(seq_id)
                     except Exception:
                         pass
                 else:
@@ -296,3 +304,10 @@ def get_telemetry_connection_status() -> bool:
     if _instance:
         return _instance.is_server_connected()
     return False
+
+
+def get_user_seq_id() -> int:
+    """获取服务端分配的用户序号。"""
+    if _instance:
+        return _instance.get_user_seq_id()
+    return 0

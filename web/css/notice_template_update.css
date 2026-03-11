@@ -4,6 +4,14 @@
     backdrop-filter: blur(4px);
 }
 
+.notice-detail-overlay.show {
+    animation-duration: 0.24s;
+}
+
+.notice-detail-overlay.hiding {
+    animation-duration: 0.24s;
+}
+
 .notice-react-update-modal {
     width: min(768px, 92vw);
     max-height: 85vh;

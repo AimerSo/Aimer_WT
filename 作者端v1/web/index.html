@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AimerWT Author MVP</title>
+    <link rel="stylesheet" href="assets/remixicon/remixicon.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="modal_main.css">
+    <link rel="stylesheet" href="guide/guide.css">
+</head>
+
+<body>
+    <div class="app-shell">
+        <header class="app-header pywebview-drag-region">
+            <div class="header-left pywebview-drag-region">
+                <img src="assets/logo.ico" class="app-logo" alt="Logo">
+                <div class="app-brand-wrapper">
+                    <span class="app-brand-text">AimerWT 作者端</span>
+                    <span class="app-brand-subtext">v1 测试版</span>
+                </div>
+            </div>
+            <div class="window-controls pywebview-ignore">
+                <div class="win-btn pywebview-ignore" id="btn-guide-help" title="新手教程">
+                    <i class="ri-question-line"></i>
+                </div>
+                <div class="win-btn pywebview-ignore" id="btn-pin-title" title="置顶窗口">
+                    <i class="ri-pushpin-line"></i>
+                </div>
+                <div class="win-btn pywebview-ignore" id="btn-minimize" title="最小化">
+                    <i class="ri-subtract-line"></i>
+                </div>
+                <div class="win-btn close-btn pywebview-ignore" id="btn-close" title="关闭">
+                    <i class="ri-close-line"></i>
+                </div>
+            </div>
+        </header>
+
+        <div class="app-body">
+            <aside class="app-side" id="sidebar">
+                <div class="sidebar-toggle" id="sidebar-toggle" title="折叠导航栏">
+                    <i class="ri-menu-fold-line"></i>
+                </div>
+                <div class="side-section">
+                    <div class="side-item active" data-page="home">
+                        <i class="ri-user-line"></i>
+                        <span>个人主页</span>
+                    </div>
+                    <div class="side-item" data-page="voicepack">
+                        <i class="ri-music-2-line"></i>
+                        <span>语音包库</span>
+                    </div>
+                    <div class="side-item" data-page="voiceinfo">
+                        <i class="ri-file-info-line"></i>
+                        <span>语音包信息</span>
+                    </div>
+                    <div class="side-item" data-page="settings">
+                        <i class="ri-book-open-line"></i>
+                        <span>说明信息</span>
+                    </div>
+                    <div class="side-dropdown" data-subpages="toolbox">
+                        <div class="side-item side-dropdown-toggle">
+                            <i class="ri-tools-line"></i>
+                            <span>工具箱</span>
+                            <i class="ri-arrow-down-s-line side-dropdown-arrow"></i>
+                        </div>
+                        <div class="side-submenu">
+                            <div class="side-sub-item" data-page="toolbox" data-toolbox-option="img-to-webp">图片转WebP
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <main class="app-main">
+                <div class="page-container">
+                    <div class="page active" id="page-home">
+                        <section class="home-hero card-like">
+                            <div class="home-profile-left">
+                                <img id="home-avatar" class="home-avatar" src="assets/avatar_placeholder.svg"
+                                    alt="Avatar">
+                                <div>
+                                    <div class="home-id-row">
+                                        <h1 id="home-name" class="home-name">AimerWT</h1>
+                                        <button class="brand-edit-btn pywebview-ignore" id="btn-profile-edit"
+                                            type="button" title="编辑主页资料">
+                                            <i class="ri-edit-box-line"></i>
+                                        </button>
+                                    </div>
+                                    <p id="home-desc" class="home-desc">主页信息会自动注入语音包卡片预览，点击编辑按钮可更新名称与头像。</p>
+                                </div>
+                            </div>
+                            <button class="home-save-btn" id="home-save-btn" type="button">
+                                <i class="ri-save-3-line"></i>
+                                <span>保存</span>
+                            </button>
+                        </section>
+
+                        <section class="home-links" id="home-links-grid"></section>
+
+                        <section class="home-info-wrap">
+                            <h2 class="home-section-title">
+                                <i class="ri-information-line"></i>
+                                信息
+                            </h2>
+                            <div class="home-runtime-grid">
+                                <div class="home-runtime-card">
+                                    <div class="home-runtime-label">应用版本</div>
+                                    <div class="home-runtime-value" id="info-version">-</div>
+                                </div>
+                                <div class="home-runtime-card">
+                                    <div class="home-runtime-label">作者链接</div>
+                                    <div class="home-runtime-value" id="info-author-link">-</div>
+                                </div>
+                                <div class="home-runtime-card">
+                                    <div class="home-runtime-label">加入交流群</div>
+                                    <div class="home-runtime-value" id="info-fans-link">-</div>
+                                </div>
+                                <div class="home-runtime-card">
+                                    <div class="home-runtime-label">最后更新时间</div>
+                                    <div class="home-runtime-value" id="info-updated">-</div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <footer class="home-footer">
+                            <div class="home-footer-pill">
+                                <span class="home-online-dot"></span>
+                                <span>AimerWT Authoring Station | v1 Beta-Internal Build</span>
+                            </div>
+                        </footer>
+                    </div>
+
+                    <div class="page" id="page-voicepack">
+                        <div class="voicepack-layout">
+                            <section class="voicepack-main card-like">
+                                <div class="voicepack-toolbar">
+                                    <div class="voicepack-search">
+                                        <i class="ri-search-line"></i>
+                                        <input id="voicepack-search-input" type="text" placeholder="搜索语音包文件夹...">
+                                    </div>
+                                    <div class="voicepack-toolbar-actions">
+                                        <button class="btn-v2 icon-only" type="button" id="btn-voicepack-refresh"
+                                            title="刷新">
+                                            <i class="ri-refresh-line"></i>
+                                        </button>
+                                        <button class="btn-v2" type="button" id="btn-voicepack-open-library">
+                                            <i class="ri-folder-open-line"></i>
+                                            <span>打开目录</span>
+                                        </button>
+                                        <button class="btn-v2" type="button" id="btn-voicepack-stats">
+                                            <i class="ri-bar-chart-box-line"></i>
+                                            <span id="voicepack-pack-count">统计：0 个语音包</span>
+                                        </button>
+                                        <button class="btn-v2 primary" type="button" id="btn-voicepack-create">
+                                            <i class="ri-folder-add-line"></i>
+                                            <span>新建语音包文件夹</span>
+                                        </button>
+                                        <button class="btn-v2" type="button" id="btn-voicepack-import-bank">
+                                            <i class="ri-file-zip-line"></i>
+                                            <span>导入 BANK 包</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <input id="voicepack-bank-file-input" type="file" accept=".bank,.zip" hidden>
+                                <div class="voicepack-list-wrap">
+                                    <div class="voicepack-list" id="voicepack-list"></div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="page" id="page-voiceinfo">
+                        <div class="voiceinfo-workbench preview-collapsed" id="voiceinfo-workbench">
+                            <section class="voiceinfo-editor card-like">
+                                <div class="voiceinfo-editor-header">
+                                    <div class="voiceinfo-editor-title-row">
+                                        <h2><i class="ri-edit-2-line"></i> 语音包信息编辑</h2>
+                                        <div class="voiceinfo-editor-head-actions">
+                                            <button class="btn-v2 primary" type="button" id="btn-use-profile-defaults">
+                                                <i class="ri-user-settings-line"></i>
+                                                <span>应用默认信息</span>
+                                            </button>
+                                            <button class="btn-v2 primary" type="button" id="btn-save-voicepack-info">
+                                                <i class="ri-save-3-line"></i>
+                                                <span>保存到语音包配置</span>
+                                            </button>
+                                            <button class="btn-v2" type="button" id="btn-export-voicepack-bank">
+                                                <i class="ri-file-zip-line"></i>
+                                                <span>导出 BANK 包</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="voiceinfo-current-pack" id="voiceinfo-current-pack">当前编辑语音包：未关联（仅本地预览）
+                                    </div>
+                                </div>
+
+                                <div class="voiceinfo-editor-scroll">
+                                    <div class="voiceinfo-form-grid">
+                                        <label class="voiceinfo-field">
+                                            <span>标题</span>
+                                            <input id="mod-title" data-mod-field="title" type="text"
+                                                class="voiceinfo-input" placeholder="例如: 莉可丽丝测试">
+                                        </label>
+                                        <label class="voiceinfo-field">
+                                            <span>作者（留空=主页昵称）</span>
+                                            <input id="mod-author" data-mod-field="author" type="text"
+                                                class="voiceinfo-input" placeholder="例如: 锦木千束">
+                                        </label>
+                                        <label class="voiceinfo-field">
+                                            <span>版本</span>
+                                            <input id="mod-version" data-mod-field="version" type="text"
+                                                class="voiceinfo-input" placeholder="例如: 2.53">
+                                        </label>
+                                        <label class="voiceinfo-field">
+                                            <span>更新时间</span>
+                                            <input id="mod-date" data-mod-field="date" type="date"
+                                                class="voiceinfo-input">
+                                        </label>
+                                        <label class="voiceinfo-field">
+                                            <span>包体大小（只读）</span>
+                                            <input id="mod-size" data-mod-field="size_str" type="text"
+                                                class="voiceinfo-input" readonly>
+                                        </label>
+
+                                        <div class="voiceinfo-field full">
+                                            <span>标签（点击选择）</span>
+                                            <div class="choice-chip-wrap" id="mod-tags-choices"></div>
+                                        </div>
+
+                                        <div class="voiceinfo-field full">
+                                            <div class="choice-head-row">
+                                                <span>语言（最多 3 个）</span>
+                                                <em id="lang-count">0 / 3</em>
+                                            </div>
+                                            <div class="choice-chip-wrap" id="mod-language-choices"></div>
+                                        </div>
+
+                                        <div class="voiceinfo-field full">
+                                            <span>封面图上传</span>
+                                            <div class="cover-upload-row">
+                                                <input id="mod-cover-file" type="file"
+                                                    class="voiceinfo-input cover-file-input"
+                                                    accept="image/png,image/jpeg,image/webp">
+                                                <button class="btn-v2" type="button" id="btn-mod-cover-clear">
+                                                    <i class="ri-image-line"></i>
+                                                    <span>恢复默认封面</span>
+                                                </button>
+                                            </div>
+                                            <small class="voiceinfo-hint">推荐尺寸：1000 x 1600（5:8 竖图），最低 500 x
+                                                800。主软件卡片封面区域按 5:8 裁切显示。</small>
+                                            <small class="voiceinfo-hint" id="mod-cover-file-name">当前：默认封面</small>
+                                        </div>
+                                        <label class="voiceinfo-field full">
+                                            <span>作者留言（卡片摘要）</span>
+                                            <textarea id="mod-note" data-mod-field="note" rows="2"
+                                                class="voiceinfo-textarea" placeholder="卡片中显示的简短描述"></textarea>
+                                        </label>
+                                        <label class="voiceinfo-field full">
+                                            <span>详细介绍（详情页）</span>
+                                            <textarea id="mod-full-desc" data-mod-field="full_desc" rows="6"
+                                                class="voiceinfo-textarea" placeholder="详情页中的完整介绍"></textarea>
+                                        </label>
+
+                                        <div class="voiceinfo-field full">
+                                            <div class="choice-head-row">
+                                                <span>版本说明（可多条）</span>
+                                                <button class="chip-action-btn" id="btn-add-version-note" type="button">
+                                                    <i class="ri-add-line"></i>
+                                                    <span>添加版本</span>
+                                                </button>
+                                            </div>
+                                            <div class="version-note-editor-list" id="mod-version-note-list"></div>
+                                        </div>
+
+                                        <div class="voiceinfo-field full" id="main-preview-audio-section">
+                                            <div class="choice-head-row">
+                                                <span>试听模式</span>
+                                                <button class="choice-chip" id="btn-main-preview-mode"
+                                                    type="button"></button>
+                                            </div>
+                                            <div class="preview-audio-hint" id="main-preview-mode-hint"></div>
+                                            <div id="main-preview-audio-manual-fields">
+                                                <div class="choice-head-row">
+                                                    <span>试听文件（最多 3 个）</span>
+                                                    <button class="chip-action-btn" id="btn-add-main-preview-audio"
+                                                        type="button">
+                                                        <i class="ri-add-line"></i>
+                                                        <span>添加试听</span>
+                                                    </button>
+                                                </div>
+                                                <div class="preview-audio-list" id="mod-main-preview-audio-list"></div>
+                                            </div>
+                                        </div>
+
+                                        <div class="voiceinfo-field full">
+                                            <div class="choice-head-row">
+                                                <span>关联语音包（最多 2 个）</span>
+                                                <button class="chip-action-btn" id="btn-add-related-pack" type="button">
+                                                    <i class="ri-add-line"></i>
+                                                    <span>添加关联语音包</span>
+                                                </button>
+                                            </div>
+                                            <div class="related-pack-list" id="mod-related-pack-list"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="voiceinfo-links-block">
+                                        <h3><i class="ri-links-line"></i> 页面底部链接</h3>
+                                        <div class="voiceinfo-links-grid">
+                                            <label class="voiceinfo-field">
+                                                <span>Bilibili 链接</span>
+                                                <input id="mod-link-bili" data-mod-field="link_bilibili" type="text"
+                                                    class="voiceinfo-input" placeholder="留空走主页默认">
+                                            </label>
+                                            <label class="voiceinfo-field">
+                                                <span>WT Live 链接</span>
+                                                <input id="mod-link-wtlive" data-mod-field="link_wtlive" type="text"
+                                                    class="voiceinfo-input" placeholder="留空走主页默认">
+                                            </label>
+                                            <label class="voiceinfo-field">
+                                                <span>试听视频链接</span>
+                                                <input id="mod-link-video" data-mod-field="link_video" type="text"
+                                                    class="voiceinfo-input" placeholder="可选">
+                                            </label>
+                                            <label class="voiceinfo-field">
+                                                <span>粉丝群链接</span>
+                                                <input id="mod-link-qq" data-mod-field="link_qq_group" type="text"
+                                                    class="voiceinfo-input" placeholder="留空走主页默认">
+                                            </label>
+                                            <label class="voiceinfo-field">
+                                                <span>WT Liker 链接</span>
+                                                <input id="mod-link-liker" data-mod-field="link_liker" type="text"
+                                                    class="voiceinfo-input" placeholder="留空走主页默认">
+                                            </label>
+                                            <label class="voiceinfo-field">
+                                                <span>反馈链接</span>
+                                                <input id="mod-link-feedback" data-mod-field="link_feedback" type="text"
+                                                    class="voiceinfo-input" placeholder="留空走主页默认">
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="voiceinfo-preview-pane card-like">
+                                <div class="toolbar-v2 compact">
+                                    <div class="toolbar-v2-content">
+                                        <div class="toolbar-v2-left"></div>
+                                        <div class="toolbar-v2-right">
+                                            <button class="btn-v2 icon-only" type="button"
+                                                id="btn-voiceinfo-preview-toggle" title="展开预览">
+                                                <i class="ri-arrow-left-s-line" id="icon-voiceinfo-preview-toggle"></i>
+                                            </button>
+                                            <button class="btn-v2 icon-only" type="button" id="btn-voiceinfo-refresh"
+                                                title="刷新">
+                                                <i class="ri-refresh-line"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="lib-scroll-area single-column" id="voiceinfo-list"></div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="page" id="page-settings">
+                        <section class="setting-card card-like settings-guide-card">
+                            <h2><i class="ri-book-open-line"></i> 作者端说明界面（预留）</h2>
+                            <p>此页面为预留页面，没总结好写啥。</p>
+                            <div class="settings-guide-list">
+                                <article class="settings-guide-item">
+                                    <h4>1. 语音包管理</h4>
+                                    <p>在“语音包库”中可创建、重命名、删除语音包目录，并快速打开语音包库路径。</p>
+                                </article>
+                                <article class="settings-guide-item">
+                                    <h4>2. 信息编辑</h4>
+                                    <p>在“语音包信息”中填写名称、作者、版本、标签、链接、作者留言与版本说明等内容。</p>
+                                </article>
+                                <article class="settings-guide-item">
+                                    <h4>3. 试听与关联</h4>
+                                    <p>主语音包与关联语音包都支持试听音频与封面图，发布前请确认链接可访问、素材可播放。</p>
+                                </article>
+                                <article class="settings-guide-item">
+                                    <h4>4. 导入与导出</h4>
+                                    <p>支持导入 <code>.bank/.zip</code>，也可将当前语音包导出为标准化命名的 <code>.bank</code> 文件。</p>
+                                </article>
+                                <article class="settings-guide-item">
+                                    <h4>5. 数据存储</h4>
+                                    <p>语音包元数据写入 <code>info.json</code>，预览媒体文件写入语音包目录中的 <code>_preview_assets</code>。</p>
+                                </article>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="page" id="page-toolbox">
+                        <div class="toolbox-layout">
+                            <!-- 左侧：设置面板 -->
+                            <section class="toolbox-settings-pane card-like">
+                                <div class="toolbox-settings-header">
+                                    <i class="ri-image-edit-line"></i>
+                                    <h2>图片转 WebP</h2>
+                                </div>
+
+                                <div class="toolbox-section">
+                                    <div class="toolbox-section-label">
+                                        <i class="ri-file-image-line"></i>
+                                        <span>选择图片文件</span>
+                                    </div>
+                                    <div class="toolbox-dropzone" id="toolbox-dropzone">
+                                        <i class="ri-drag-drop-line"></i>
+                                        <p>拖拽图片到这里，或点击选择文件</p>
+                                        <small>支持 PNG · JPG · BMP · GIF · TIFF · WebP</small>
+                                        <button class="btn-v2 primary" type="button" id="btn-toolbox-select-files">
+                                            <i class="ri-folder-open-line"></i>
+                                            <span>浏览文件</span>
+                                        </button>
+                                    </div>
+                                    <input id="toolbox-file-input" type="file"
+                                        accept="image/png,image/jpeg,image/bmp,image/gif,image/tiff,image/webp" multiple
+                                        hidden>
+                                </div>
+
+                                <div class="toolbox-section">
+                                    <div class="toolbox-section-label">
+                                        <i class="ri-contrast-drop-2-line"></i>
+                                        <span>输出质量</span>
+                                        <span class="toolbox-quality-badge" id="toolbox-quality-badge">85</span>
+                                    </div>
+                                    <div class="toolbox-quality-row">
+                                        <span class="toolbox-quality-tip">压缩</span>
+                                        <input type="range" id="toolbox-quality-slider" min="1" max="100" step="1"
+                                            value="85" class="toolbox-slider">
+                                        <span class="toolbox-quality-tip">高清</span>
+                                    </div>
+                                    <label class="toolbox-checkbox-row">
+                                        <input type="checkbox" id="toolbox-lossless" class="toolbox-checkbox">
+                                        <span>无损压缩（忽略质量滑块，文件较大）</span>
+                                    </label>
+                                </div>
+
+                                <div class="toolbox-section">
+                                    <div class="toolbox-section-label">
+                                        <i class="ri-save-2-line"></i>
+                                        <span>保存位置</span>
+                                    </div>
+                                    <div class="toolbox-save-modes">
+                                        <label class="toolbox-radio-card">
+                                            <input type="radio" name="toolbox-save-mode" value="beside" checked
+                                                class="toolbox-radio">
+                                            <div class="toolbox-radio-inner">
+                                                <i class="ri-file-copy-2-line"></i>
+                                                <div>
+                                                    <b>同目录输出</b>
+                                                    <small>WebP 保存在原图同文件夹，原图保留</small>
+                                                </div>
+                                            </div>
+                                        </label>
+                                        <label class="toolbox-radio-card">
+                                            <input type="radio" name="toolbox-save-mode" value="replace"
+                                                class="toolbox-radio">
+                                            <div class="toolbox-radio-inner">
+                                                <i class="ri-swap-2-line"></i>
+                                                <div>
+                                                    <b>替换原文件</b>
+                                                    <small>转换成功后删除原始图片，不可撤销</small>
+                                                </div>
+                                            </div>
+                                        </label>
+                                        <label class="toolbox-radio-card">
+                                            <input type="radio" name="toolbox-save-mode" value="folder"
+                                                class="toolbox-radio">
+                                            <div class="toolbox-radio-inner">
+                                                <i class="ri-folder-transfer-line"></i>
+                                                <div>
+                                                    <b>指定输出目录</b>
+                                                    <small>所有 WebP 统一保存到所选文件夹</small>
+                                                </div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                    <div class="toolbox-folder-row" id="toolbox-folder-row" style="display:none">
+                                        <input type="text" id="toolbox-output-folder"
+                                            class="voiceinfo-input toolbox-folder-input" placeholder="点击右侧按钮选择输出目录..."
+                                            readonly>
+                                        <button class="btn-v2" type="button" id="btn-toolbox-pick-folder">
+                                            <i class="ri-folder-open-line"></i>
+                                            <span>选择</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="toolbox-action-row">
+                                    <button class="btn-v2" type="button" id="btn-toolbox-clear-list">
+                                        <i class="ri-delete-bin-2-line"></i>
+                                        <span>清空列表</span>
+                                    </button>
+                                    <button class="btn-v2 primary toolbox-convert-btn" type="button"
+                                        id="btn-toolbox-convert" disabled>
+                                        <i class="ri-flashlight-line"></i>
+                                        <span>开始转换</span>
+                                    </button>
+                                </div>
+                            </section>
+
+                            <!-- 右侧：文件队列 + 结果 -->
+                            <section class="toolbox-queue-pane card-like">
+                                <div class="toolbox-queue-header">
+                                    <div class="toolbox-queue-title">
+                                        <i class="ri-list-check-3"></i>
+                                        <span>文件队列</span>
+                                        <span class="toolbox-file-count" id="toolbox-file-count">0 个文件</span>
+                                    </div>
+                                    <div class="toolbox-queue-status" id="toolbox-queue-status"></div>
+                                </div>
+
+                                <div class="toolbox-empty-state" id="toolbox-empty-state">
+                                    <i class="ri-image-2-line"></i>
+                                    <p>还没有添加图片</p>
+                                    <small>从左侧拖入或点击"浏览文件"按钮选择图片</small>
+                                </div>
+
+                                <div class="toolbox-file-list" id="toolbox-file-list"></div>
+
+                                <div class="toolbox-result-bar" id="toolbox-result-bar" style="display:none">
+                                    <div class="toolbox-result-stat success">
+                                        <i class="ri-checkbox-circle-line"></i>
+                                        <span id="toolbox-stat-success">0 成功</span>
+                                    </div>
+                                    <div class="toolbox-result-stat fail" id="toolbox-stat-fail-wrap"
+                                        style="display:none">
+                                        <i class="ri-error-warning-line"></i>
+                                        <span id="toolbox-stat-fail">0 失败</span>
+                                    </div>
+                                    <button class="btn-v2" type="button" id="btn-toolbox-open-last-folder"
+                                        style="display:none">
+                                        <i class="ri-folder-open-line"></i>
+                                        <span>打开输出目录</span>
+                                    </button>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="profile-modal">
+        <div class="modal-content profile-modal">
+            <div class="profile-modal-header">
+                <h3><i class="ri-user-settings-line"></i> 编辑主页资料</h3>
+                <button class="mod-preview-close-btn" type="button" id="btn-profile-close" title="关闭">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <div class="profile-modal-body">
+                <label class="voiceinfo-field">
+                    <span>昵称</span>
+                    <input id="profile-modal-name" type="text" class="voiceinfo-input" placeholder="AimerWT">
+                </label>
+                <label class="voiceinfo-field">
+                    <span>上传本地头像</span>
+                    <input id="profile-modal-avatar-file" type="file" class="voiceinfo-input" accept="image/*">
+                </label>
+                <div class="profile-preview-box">
+                    <img id="profile-modal-preview-avatar" class="clickable" src="assets/avatar_placeholder.svg"
+                        alt="avatar" title="点击编辑头像裁剪">
+                    <span id="profile-modal-preview-name">AimerWT</span>
+                </div>
+            </div>
+            <div class="profile-modal-footer">
+                <button class="btn secondary" type="button" id="btn-profile-cancel">取消</button>
+                <button class="btn primary" type="button" id="btn-profile-save">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="profile-crop-modal">
+        <div class="modal-content profile-crop-modal">
+            <div class="profile-modal-header">
+                <h3><i class="ri-crop-line"></i> 调整头像</h3>
+                <button class="mod-preview-close-btn" type="button" id="btn-profile-crop-close" title="关闭">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <div class="profile-modal-body">
+                <div class="profile-crop-panel">
+                    <div class="profile-crop-canvas-wrap">
+                        <canvas id="profile-crop-canvas" width="240" height="240"></canvas>
+                    </div>
+                    <label class="voiceinfo-field">
+                        <span>缩放</span>
+                        <input id="profile-crop-zoom" type="range" min="100" max="300" step="1" value="100">
+                    </label>
+                    <label class="voiceinfo-field">
+                        <span>水平位置</span>
+                        <input id="profile-crop-x" type="range" min="-100" max="100" step="1" value="0">
+                    </label>
+                    <label class="voiceinfo-field">
+                        <span>垂直位置</span>
+                        <input id="profile-crop-y" type="range" min="-100" max="100" step="1" value="0">
+                    </label>
+                </div>
+            </div>
+            <div class="profile-modal-footer">
+                <button class="btn secondary" type="button" id="btn-profile-crop-cancel">取消</button>
+                <button class="btn primary" type="button" id="btn-profile-crop-apply">应用头像</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="author-dialog-modal">
+        <div class="modal-content author-dialog-modal">
+            <div class="author-dialog-head">
+                <h3 id="author-dialog-title">提示</h3>
+                <button class="mod-preview-close-btn" type="button" id="author-dialog-close" title="关闭">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <div class="author-dialog-body">
+                <p id="author-dialog-message"></p>
+                <div class="author-dialog-options" id="author-dialog-options-wrap">
+                    <div class="author-dialog-options-list" id="author-dialog-options"></div>
+                </div>
+                <label class="voiceinfo-field" id="author-dialog-input-wrap">
+                    <span id="author-dialog-input-label">输入</span>
+                    <input id="author-dialog-input" type="text" class="voiceinfo-input">
+                </label>
+            </div>
+            <div class="author-dialog-footer">
+                <button class="btn secondary" type="button" id="author-dialog-cancel">取消</button>
+                <button class="btn primary" type="button" id="author-dialog-confirm">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="pages/voicepack_page.js"></script>
+    <script src="pages/settings_page.js"></script>
+    <script src="guide/guide.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
