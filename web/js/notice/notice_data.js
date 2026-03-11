@@ -95,6 +95,8 @@
                 return { tagClass: 'notice-tag-update', iconClass: 'ri-flashlight-line' };
             case 'event':
                 return { tagClass: 'notice-tag-event', iconClass: 'ri-sparkling-2-line' };
+            case 'bonus':
+                return { tagClass: 'notice-tag-bonus', iconClass: 'ri-gift-line' };
             default:
                 return { tagClass: 'notice-tag-normal', iconClass: 'ri-notification-3-line' };
         }

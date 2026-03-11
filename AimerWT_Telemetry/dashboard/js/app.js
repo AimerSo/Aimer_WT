@@ -1496,7 +1496,7 @@ const app = {
             container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;"><p>\u6682\u65e0\u516c\u544a\u6570\u636e</p><p style="font-size:12px;">\u70b9\u51fb\u201c\u65b0\u5efa\u516c\u544a\u201d\u5f00\u59cb\u6dfb\u52a0</p></div>';
             return;
         }
-        const typeColors = { urgent: 'var(--danger)', update: 'var(--primary)', event: 'rgb(124,58,237)', normal: 'var(--text-muted)' };
+        const typeColors = { urgent: 'var(--danger)', update: 'var(--primary)', event: 'rgb(124,58,237)', bonus: 'var(--secondary)', normal: 'var(--text-muted)' };
         container.innerHTML = this._noticeItems.map(item => {
             const color = typeColors[item.type] || 'var(--text-muted)';
             const pinIcon = item.is_pinned ? '<span style="color:var(--warning);font-size:11px;margin-left:4px;" title="\u7f6e\u9876">\u2b50</span>' : '';
@@ -1572,7 +1572,7 @@ const app = {
         };
         if (!payload.title) { this.showAlert('\u8bf7\u586b\u5199\u516c\u544a\u6807\u9898', 'warning'); return; }
         if (!payload.tag) {
-            const tagMap = { update: '\u66f4\u65b0', urgent: '\u7d27\u6025', event: '\u6d3b\u52a8', normal: '\u65e5\u5e38' };
+            const tagMap = { update: '\u66f4\u65b0', urgent: '\u7d27\u6025', event: '\u6d3b\u52a8', bonus: '\u798f\u5229', normal: '\u65e5\u5e38' };
             payload.tag = tagMap[payload.type] || '\u65e5\u5e38';
         }
         try {

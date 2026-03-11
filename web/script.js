@@ -84,6 +84,8 @@ const DEFAULT_THEME = {
     "--notice-update-text": "#3B82F6",
     "--notice-event-bg": "rgba(249, 115, 22, 0.12)",
     "--notice-event-text": "#F97316",
+    "--notice-bonus-bg": "rgba(16, 185, 129, 0.12)",
+    "--notice-bonus-text": "#059669",
     "--notice-normal-bg": "rgba(148, 163, 184, 0.2)",
     "--notice-normal-text": "#64748B",
     "--shadow-card": "0 4px 12px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06)",
@@ -1649,6 +1651,8 @@ const app = {
                 return { tagClass: 'notice-tag-update', iconClass: 'ri-flashlight-line' };
             case 'event':
                 return { tagClass: 'notice-tag-event', iconClass: 'ri-sparkling-2-line' };
+            case 'bonus':
+                return { tagClass: 'notice-tag-bonus', iconClass: 'ri-gift-line' };
             default:
                 return { tagClass: 'notice-tag-normal', iconClass: 'ri-notification-3-line' };
         }

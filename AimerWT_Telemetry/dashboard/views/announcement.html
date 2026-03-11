@@ -1,247 +1,217 @@
 <div class="view-container active">
     <div class="app">
         <div class="topbar">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="width: 36px; height: 36px; background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(16, 185, 129, 0.08)); border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-weight: 700; font-size: 16px; color: var(--text);">公告栏管理</div>
+                    <div style="color: var(--text-muted); font-size: 12px;">管理顶部信息带、紧急弹窗通知和公告列表推送</div>
+                </div>
+            </div>
             <div class="top-actions" style="margin-left: auto;">
                 <button class="btn" onclick="app.loadAnnouncementStatus()">刷新状态</button>
             </div>
         </div>
 
-        <!-- 功能说明区域 -->
-        <div style="margin-bottom: 20px; padding: 16px 20px; background: linear-gradient(135deg, rgba(37, 99, 235, 0.06), rgba(16, 185, 129, 0.04)); border-radius: 12px; border: 1px solid rgba(37, 99, 235, 0.1);">
-            <div style="display: flex; align-items: flex-start; gap: 12px;">
-                <div style="width: 36px; height: 36px; background: rgba(37, 99, 235, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="16" x2="12" y2="12"></line>
-                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                </div>
-                <div style="flex: 1; min-width: 0;">
-                    <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text);">公告栏管理中心</div>
-                    <div style="color: var(--text-muted); font-size: 12px; line-height: 1.6;">
-                        管理客户端的三种远程推送通道：
-                        <strong>顶部信息带</strong>（Header Banner 滚动公告）、
-                        <strong>公告栏文字覆盖</strong>（首页公告区域内容替换）、
-                        <strong>紧急弹窗通知</strong>（模态对话框强制提醒）。
-                        所有操作通过 WebSocket 实时下发至在线客户端。
+        <!-- 推送通道操作区 - 三列布局 -->
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
+
+            <!-- 公告栏文字覆盖 -->
+            <div class="panel" style="gap: 0;">
+                <div class="panel-header" style="padding: 16px 20px; border-bottom: 1px solid var(--border);">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 32px; height: 32px; background: rgba(37, 99, 235, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="panel-title" style="font-size: 14px;">公告栏文字覆盖</div>
+                            <div class="panel-sub">替换客户端首页公告区域内容</div>
+                        </div>
                     </div>
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotNotice"></span>
+                </div>
+                <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">状态</label>
+                        <select class="select" style="width: 100%;" id="announcementNoticeStatus">
+                            <option value="on">激活 (文字覆盖)</option>
+                            <option value="off">禁用 (恢复默认)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">公告内容</label>
+                        <textarea class="input" style="width: 100%; height: 80px; font-family: inherit; padding: 10px; resize: vertical;" id="announcementNoticeContent" placeholder="输入公告内容（支持 HTML 标签）..."></textarea>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">覆盖范围</label>
+                        <input class="input" style="width: 100%;" id="announcementNoticeScope" value="all" placeholder="输入版本号或 all">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: rgba(245, 158, 11, 0.08); border-radius: 6px;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                        <span style="color: var(--warning); font-size: 11px;">客户端暂未启用此通道</span>
+                    </div>
+                    <button class="btn primary" style="width: 100%; justify-content: center;" onclick="app.submitAnnouncement('notice')">发布公告栏覆盖</button>
                 </div>
             </div>
-        </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-            <!-- 左列：推送操作 -->
-            <div style="display: flex; flex-direction: column; gap: 20px;">
-
-                <!-- 公告栏文字覆盖 -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 32px; height: 32px; background: rgba(37, 99, 235, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                    <polyline points="14 2 14 8 20 8"></polyline>
-                                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                                    <line x1="16" y1="17" x2="8" y2="17"></line>
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="panel-title">公告栏文字覆盖</div>
-                                <div class="panel-sub">远程替换客户端首页公告区域的文字内容</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="panel-body" style="padding: 20px;">
-                        <div class="form-group">
-                            <label>状态</label>
-                            <select class="select" style="width: 100%;" id="announcementNoticeStatus">
-                                <option value="on">激活 (文字覆盖)</option>
-                                <option value="off">禁用 (恢复默认)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>公告内容</label>
-                            <textarea class="input" style="width: 100%; height: 90px; font-family: inherit; padding: 10px; resize: vertical;" id="announcementNoticeContent" placeholder="输入公告内容（支持 HTML 标签，如 <strong>加粗</strong>）..."></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label>覆盖范围</label>
-                            <input class="input" style="width: 100%;" id="announcementNoticeScope" value="all" placeholder="输入版本号或 all">
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(245, 158, 11, 0.08); border-radius: 8px; margin-bottom: 12px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <!-- 紧急弹窗通知 -->
+            <div class="panel" style="gap: 0;">
+                <div class="panel-header" style="padding: 16px 20px; border-bottom: 1px solid var(--border);">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 32px; height: 32px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
                                 <line x1="12" y1="9" x2="12" y2="13"></line>
                                 <line x1="12" y1="17" x2="12.01" y2="17"></line>
                             </svg>
-                            <span style="color: var(--warning); font-size: 12px;">客户端暂未启用此通道的接收逻辑（main.py 中已注释）</span>
                         </div>
-                        <button class="btn primary" style="width: 100%; justify-content: center;" onclick="app.submitAnnouncement('notice')">发布公告栏覆盖</button>
+                        <div>
+                            <div class="panel-title" style="font-size: 14px;">紧急弹窗通知</div>
+                            <div class="panel-sub">推送模态弹窗 + Header Banner</div>
+                        </div>
                     </div>
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotAlert"></span>
                 </div>
-
-                <!-- 紧急弹窗通知 -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 32px; height: 32px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                    <line x1="12" y1="9" x2="12" y2="13"></line>
-                                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="panel-title">紧急弹窗通知</div>
-                                <div class="panel-sub">向客户端推送模态弹窗 + Header Banner 公告</div>
-                            </div>
-                        </div>
+                <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">状态</label>
+                        <select class="select" style="width: 100%;" id="announcementAlertStatus">
+                            <option value="on">激活 (推送弹窗)</option>
+                            <option value="off">禁用 (停止推送)</option>
+                        </select>
                     </div>
-                    <div class="panel-body" style="padding: 20px;">
-                        <div class="form-group">
-                            <label>状态</label>
-                            <select class="select" style="width: 100%;" id="announcementAlertStatus">
-                                <option value="on">激活 (推送弹窗)</option>
-                                <option value="off">禁用 (停止推送)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>通知标题</label>
-                            <input class="input" style="width: 100%;" id="announcementAlertTitle" placeholder="例如: 停机维护通知">
-                        </div>
-                        <div class="form-group">
-                            <label>详细内容</label>
-                            <textarea class="input" style="width: 100%; height: 90px; font-family: inherit; padding: 10px; resize: vertical;" id="announcementAlertContent" placeholder="此内容将以弹窗形式展示，同时推送至 Header Banner..."></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label>推送范围</label>
-                            <input class="input" style="width: 100%;" id="announcementAlertScope" value="all" placeholder="输入版本号或 all">
-                        </div>
-                        <button class="btn primary" style="width: 100%; justify-content: center;" onclick="app.submitAnnouncement('alert')">发布紧急通知</button>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">通知标题</label>
+                        <input class="input" style="width: 100%;" id="announcementAlertTitle" placeholder="例如: 停机维护通知">
                     </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">详细内容</label>
+                        <textarea class="input" style="width: 100%; height: 80px; font-family: inherit; padding: 10px; resize: vertical;" id="announcementAlertContent" placeholder="此内容将以弹窗形式展示..."></textarea>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">推送范围</label>
+                        <input class="input" style="width: 100%;" id="announcementAlertScope" value="all" placeholder="输入版本号或 all">
+                    </div>
+                    <button class="btn primary" style="width: 100%; justify-content: center;" onclick="app.submitAnnouncement('alert')">发布紧急通知</button>
                 </div>
             </div>
 
-            <!-- 右列：更新提示 + 通道状态 -->
-            <div style="display: flex; flex-direction: column; gap: 20px;">
-
-                <!-- 更新提示 -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 32px; height: 32px; background: rgba(16, 185, 129, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                    <polyline points="7 10 12 15 17 10"></polyline>
-                                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="panel-title">更新提示推送</div>
-                                <div class="panel-sub">向客户端推送版本更新提示至 Header Banner</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="panel-body" style="padding: 20px;">
-                        <div class="form-group">
-                            <label>状态</label>
-                            <select class="select" style="width: 100%;" id="announcementUpdateStatus">
-                                <option value="on">激活 (推送更新提示)</option>
-                                <option value="off">禁用 (停止推送)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>推送范围</label>
-                            <input class="input" style="width: 100%;" id="announcementUpdateScope" value="all" placeholder="输入版本号或 all">
-                        </div>
-                        <div class="form-group">
-                            <label>更新说明</label>
-                            <textarea class="input" style="width: 100%; height: 90px; font-family: inherit; padding: 10px; resize: vertical;" id="announcementUpdateContent" placeholder="输入版本更新说明..."></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label>下载地址</label>
-                            <input class="input" style="width: 100%;" id="announcementUpdateUrl" placeholder="短链或网盘链接">
-                        </div>
-                        <button class="btn primary" style="width: 100%; justify-content: center;" onclick="app.submitAnnouncement('update')">发布更新提示</button>
-                    </div>
-                </div>
-
-                <!-- 通道状态概览 -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 32px; height: 32px; background: rgba(148, 163, 184, 0.15); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="panel-title">推送通道状态</div>
-                                <div class="panel-sub">当前各通道的激活与连通情况</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="panel-body" style="padding: 0;">
-                        <div id="announcementChannelStatus">
-                            <div style="border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;">
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotNotice"></span>
-                                    <div>
-                                        <div style="font-size: 13px; font-weight: 500;">公告栏覆盖</div>
-                                        <div style="font-size: 11px; color: var(--text-muted);">NoticeBoardModule.updateNoticeBar</div>
-                                    </div>
-                                </div>
-                                <span style="font-size: 12px; padding: 2px 10px; border-radius: 6px; background: rgba(148, 163, 184, 0.15); color: var(--text-muted);" id="channelBadgeNotice">未知</span>
-                            </div>
-                            <div style="border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;">
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotAlert"></span>
-                                    <div>
-                                        <div style="font-size: 13px; font-weight: 500;">紧急通知弹窗</div>
-                                        <div style="font-size: 11px; color: var(--text-muted);">app.showAlert + HeaderBannerModule.pushAnnouncement</div>
-                                    </div>
-                                </div>
-                                <span style="font-size: 12px; padding: 2px 10px; border-radius: 6px; background: rgba(148, 163, 184, 0.15); color: var(--text-muted);" id="channelBadgeAlert">未知</span>
-                            </div>
-                            <div style="padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;">
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotUpdate"></span>
-                                    <div>
-                                        <div style="font-size: 13px; font-weight: 500;">更新提示</div>
-                                        <div style="font-size: 11px; color: var(--text-muted);">HeaderBannerModule.pushUpdate</div>
-                                    </div>
-                                </div>
-                                <span style="font-size: 12px; padding: 2px 10px; border-radius: 6px; background: rgba(148, 163, 184, 0.15); color: var(--text-muted);" id="channelBadgeUpdate">未知</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 客户端通道说明 -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <div class="panel-title">客户端接收链路</div>
-                    </div>
-                    <div class="panel-body" style="padding: 20px; font-size: 12px; color: var(--text-muted); line-height: 1.8;">
-                        <div style="margin-bottom: 10px;">
-                            <strong style="color: var(--text);">1. 紧急通知</strong><br>
-                            仪表盘 → POST /admin/control (alert) → WebSocket 广播 → main.py on_server_message → showAlert 弹窗 + HeaderBanner 公告
-                        </div>
-                        <div style="margin-bottom: 10px;">
-                            <strong style="color: var(--text);">2. 更新提示</strong><br>
-                            仪表盘 → POST /admin/control (update) → WebSocket 广播 → main.py on_server_message → showAlert 弹窗 + HeaderBanner 更新
+            <!-- 更新提示推送 -->
+            <div class="panel" style="gap: 0;">
+                <div class="panel-header" style="padding: 16px 20px; border-bottom: 1px solid var(--border);">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 32px; height: 32px; background: rgba(16, 185, 129, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
                         </div>
                         <div>
-                            <strong style="color: var(--text);">3. 公告栏覆盖</strong>
-                            <span style="display: inline-block; font-size: 10px; padding: 1px 6px; background: rgba(245, 158, 11, 0.15); color: var(--warning); border-radius: 4px; margin-left: 4px;">客户端暂未启用</span><br>
-                            仪表盘 → POST /admin/control (notice) → 遥测心跳返回 sys_config → main.py on_server_message → updateNoticeBar（已注释）
+                            <div class="panel-title" style="font-size: 14px;">更新提示推送</div>
+                            <div class="panel-sub">推送版本更新提示至 Header Banner</div>
                         </div>
+                    </div>
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotUpdate"></span>
+                </div>
+                <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">状态</label>
+                        <select class="select" style="width: 100%;" id="announcementUpdateStatus">
+                            <option value="on">激活 (推送更新提示)</option>
+                            <option value="off">禁用 (停止推送)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">推送范围</label>
+                        <input class="input" style="width: 100%;" id="announcementUpdateScope" value="all" placeholder="输入版本号或 all">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">更新说明</label>
+                        <textarea class="input" style="width: 100%; height: 80px; font-family: inherit; padding: 10px; resize: vertical;" id="announcementUpdateContent" placeholder="输入版本更新说明..."></textarea>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="margin-bottom: 6px;">下载地址</label>
+                        <input class="input" style="width: 100%;" id="announcementUpdateUrl" placeholder="短链或网盘链接">
+                    </div>
+                    <button class="btn primary" style="width: 100%; justify-content: center;" onclick="app.submitAnnouncement('update')">发布更新提示</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 通道状态概览 - 紧凑横条 -->
+        <div style="margin-bottom: 20px; padding: 12px 20px; background: var(--card); border-radius: 14px; border: 1px solid var(--border); box-shadow: var(--shadow);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                    </svg>
+                    <span style="font-size: 13px; font-weight: 600; color: var(--text);">通道状态</span>
+                </div>
+                <div id="announcementChannelStatus" style="display: flex; align-items: center; gap: 24px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotNotice"></span>
+                        <span style="font-size: 12px; color: var(--text-muted);">公告栏覆盖</span>
+                        <span style="font-size: 11px; padding: 1px 8px; border-radius: 4px; background: rgba(148, 163, 184, 0.12); color: var(--text-muted);" id="channelBadgeNotice">未知</span>
+                    </div>
+                    <div style="width: 1px; height: 16px; background: var(--border);"></div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotAlert"></span>
+                        <span style="font-size: 12px; color: var(--text-muted);">紧急通知弹窗</span>
+                        <span style="font-size: 11px; padding: 1px 8px; border-radius: 4px; background: rgba(148, 163, 184, 0.12); color: var(--text-muted);" id="channelBadgeAlert">未知</span>
+                    </div>
+                    <div style="width: 1px; height: 16px; background: var(--border);"></div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotUpdate"></span>
+                        <span style="font-size: 12px; color: var(--text-muted);">更新提示</span>
+                        <span style="font-size: 11px; padding: 1px 8px; border-radius: 4px; background: rgba(148, 163, 184, 0.12); color: var(--text-muted);" id="channelBadgeUpdate">未知</span>
+                    </div>
+                </div>
+                <!-- 折叠链路说明 -->
+                <button class="btn" style="padding: 4px 10px; font-size: 11px;" onclick="
+                    const el = document.getElementById('channelLinkDetail');
+                    const isHidden = el.style.display === 'none';
+                    el.style.display = isHidden ? 'block' : 'none';
+                    this.textContent = isHidden ? '收起链路' : '链路说明';
+                ">链路说明</button>
+            </div>
+            <div id="channelLinkDetail" style="display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); line-height: 1.8;">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+                    <div>
+                        <strong style="color: var(--text);">1. 紧急通知</strong><br>
+                        仪表盘 → POST /admin/control (alert) → WebSocket 广播 → main.py on_server_message → showAlert 弹窗 + HeaderBanner 公告
+                    </div>
+                    <div>
+                        <strong style="color: var(--text);">2. 更新提示</strong><br>
+                        仪表盘 → POST /admin/control (update) → WebSocket 广播 → main.py on_server_message → showAlert 弹窗 + HeaderBanner 更新
+                    </div>
+                    <div>
+                        <strong style="color: var(--text);">3. 公告栏覆盖</strong>
+                        <span style="font-size: 10px; padding: 1px 5px; background: rgba(245, 158, 11, 0.12); color: var(--warning); border-radius: 3px; margin-left: 4px;">客户端暂未启用</span><br>
+                        仪表盘 → POST /admin/control (notice) → 遥测心跳返回 sys_config → main.py on_server_message → updateNoticeBar（已注释）
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- 公告列表管理区域 -->
-        <div style="margin-top: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
             <!-- 左：公告列表 -->
             <div class="panel">
                 <div class="panel-header">
@@ -302,6 +272,7 @@
                                     <option value="update">更新</option>
                                     <option value="urgent">紧急</option>
                                     <option value="event">活动</option>
+                                    <option value="bonus">福利</option>
                                     <option value="normal">日常</option>
                                 </select>
                             </div>
