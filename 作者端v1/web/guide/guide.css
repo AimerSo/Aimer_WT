@@ -1,0 +1,339 @@
+.author-guide-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2100;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.24s ease, visibility 0s linear 0.24s;
+}
+
+.author-guide-intro-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2140;
+    background: rgba(15, 23, 42, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.author-guide-intro-card {
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
+    opacity: 1;
+    width: 440px;
+    max-width: min(440px, calc(100vw - 32px));
+    padding: 16px 18px 14px;
+}
+
+.author-guide-intro-desc {
+    white-space: pre-line;
+}
+
+.author-guide-intro-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+}
+
+.author-guide-overlay.active {
+    pointer-events: none;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.24s ease, visibility 0s linear 0s;
+}
+
+.author-guide-backdrop {
+    position: absolute;
+    inset: 0;
+    background: transparent;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 0.24s ease;
+}
+
+.author-guide-overlay.active .author-guide-backdrop {
+    opacity: 1;
+}
+
+.author-guide-focus {
+    position: fixed;
+    border-radius: 12px;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3);
+    transition: opacity 0.2s ease, left 0.16s ease, top 0.16s ease, width 0.16s ease, height 0.16s ease;
+}
+
+.author-guide-focus.active {
+    opacity: 1;
+}
+
+.author-guide-card {
+    position: fixed;
+    z-index: 2;
+    width: 358px;
+    max-width: calc(100vw - 20px);
+    background: #ffffff;
+    color: #1f2937;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 14px 16px 13px;
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
+    pointer-events: auto;
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+    transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.author-guide-overlay.active .author-guide-card {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+/* Ensure intro modal is visible and centered, not overridden by generic guide card styles. */
+.author-guide-intro-overlay .author-guide-intro-card {
+    position: static;
+    left: auto;
+    top: auto;
+    transform: none;
+    opacity: 1;
+    z-index: 1;
+}
+
+.author-guide-pointer {
+    position: absolute;
+    width: 11px;
+    height: 11px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    transform: rotate(45deg);
+}
+
+.author-guide-card.arrow-left .author-guide-pointer {
+    left: -6px;
+    border-top: 0;
+    border-right: 0;
+}
+
+.author-guide-card.arrow-right .author-guide-pointer {
+    right: -7px;
+    border-bottom: 0;
+    border-left: 0;
+}
+
+.author-guide-card.arrow-none .author-guide-pointer {
+    display: none;
+}
+
+.author-guide-card.arrow-up .author-guide-pointer {
+    top: -5px;
+    left: 50%;
+    margin-left: -5px;
+    border-right: 0;
+    border-bottom: 0;
+}
+
+.author-guide-card.arrow-down .author-guide-pointer {
+    bottom: -6px;
+    left: 50%;
+    margin-left: -5px;
+    border-left: 0;
+    border-top: 0;
+}
+
+.author-guide-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.author-guide-intro-card .author-guide-head {
+    cursor: move;
+    user-select: none;
+}
+
+.author-guide-title {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.35;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.author-guide-step-pill {
+    white-space: nowrap;
+    align-self: center;
+    margin-top: 1px;
+    border-radius: 999px;
+    background: #f3f4f6;
+    color: #334155;
+    padding: 6px 11px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.author-guide-desc {
+    margin: 10px 0 14px;
+    font-size: 13px;
+    line-height: 1.62;
+    color: #475569;
+}
+
+.author-guide-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.author-guide-detail-btn {
+    border: 0;
+    background: transparent;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 0;
+    cursor: pointer;
+}
+
+.author-guide-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.author-guide-btn {
+    border: 0;
+    border-radius: 10px;
+    padding: 8px 11px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.2s ease;
+}
+
+.author-guide-btn:active {
+    transform: translateY(1px);
+}
+
+.author-guide-btn.skip,
+.author-guide-btn.prev {
+    background: #f8fafc;
+    color: #475569;
+}
+
+.author-guide-btn.prev:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+}
+
+.author-guide-btn.next {
+    background: #E67E00;
+    color: #ffffff;
+    padding-inline: 14px;
+}
+
+.author-guide-btn.next:hover {
+    background: #c96f00;
+}
+
+.author-guide-target-active {
+    position: relative !important;
+    z-index: 2120 !important;
+    border-radius: 12px !important;
+    outline: 3px solid #E67E00 !important;
+    box-shadow: 0 0 0 7px rgba(230, 126, 0, 0.32) !important;
+}
+
+.author-guide-card.step-fade-out {
+    animation: author-guide-step-fade-out 0.22s ease both;
+}
+
+.author-guide-card.step-fade-in {
+    animation: author-guide-step-fade-in 0.28s ease both;
+}
+
+.author-guide-intro-card.step-fade-out,
+.author-guide-intro-card.step-fade-in {
+    animation: none;
+}
+
+/* First-run hint: pulse the question button until user starts guide manually. */
+#btn-guide-help.guide-help-pulse {
+    position: relative;
+    z-index: 2130;
+    animation: guide-help-breathe 1.6s ease-in-out infinite;
+    box-shadow: 0 0 0 0 rgba(230, 126, 0, 0.5);
+}
+
+@keyframes guide-help-breathe {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(230, 126, 0, 0.5);
+    }
+    50% {
+        transform: scale(1.06);
+        box-shadow: 0 0 0 8px rgba(230, 126, 0, 0);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(230, 126, 0, 0);
+    }
+}
+
+@keyframes author-guide-step-fade-out {
+    from {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(6px) scale(0.985);
+    }
+}
+
+@keyframes author-guide-step-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (max-width: 900px) {
+    .author-guide-title {
+        font-size: 15px;
+    }
+
+    .author-guide-desc {
+        font-size: 13px;
+    }
+
+    .author-guide-foot {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .author-guide-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .author-guide-intro-card {
+        width: 100%;
+    }
+}

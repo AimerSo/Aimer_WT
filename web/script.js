@@ -70,7 +70,7 @@ const DEFAULT_THEME = {
     "--notice-hero-subtext": "#64748B",
     "--notice-hero-tag-bg": "rgba(239, 68, 68, 0.95)",
     "--notice-hero-tag-text": "#ffffff",
-    "--notice-hero-shadow": "0 4px 12px rgba(15, 23, 42, 0.05)",
+    "--notice-hero-shadow": "0 4px 12px rgba(15, 23, 42, 0.06)",
     "--notice-hero-deco": "rgba(100, 116, 139, 0.12)",
     "--notice-section-text": "#9CA3AF",
     "--notice-section-line": "#E5E7EB",
@@ -132,6 +132,7 @@ const app = {
     _sightsLoaded: false,
     _guideReady: false,
     telemetryConnected: false,
+    userSeqId: 0,
     _telemetryStatusTimer: 0,
 
     // 应用主题的函数
@@ -753,7 +754,14 @@ const app = {
     },
 
     async applyCroppedCover() {
-        if (!this.currentEditSkin && !this.currentEditSight) return;
+        const target = this._cropCoverTarget;
+        // 扩展支持: skin / sight / task / model / hangar
+        const has_edit_target = this.currentEditSkin || this.currentEditSight
+            || (typeof TaskLibrary !== 'undefined' && TaskLibrary._current_edit_name)
+            || (typeof ModelLibrary !== 'undefined' && ModelLibrary._current_edit_name)
+            || (typeof Hangar !== 'undefined' && Hangar._current_edit_name);
+        if (!has_edit_target) return;
+
         const canvas = document.getElementById('crop-canvas');
         const state = this._cropCoverState;
         if (!canvas || !state) return;
@@ -777,7 +785,8 @@ const app = {
 
         const dataUrl = out.toDataURL('image/png');
         try {
-            if (this._cropCoverTarget === "sight") {
+            // --- 炮镜 ---
+            if (target === "sight") {
                 if (!window.pywebview?.api?.update_sight_cover_data) {
                     this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
                     return;
@@ -795,6 +804,64 @@ const app = {
                 return;
             }
 
+            // --- 任务库 ---
+            if (target === "task") {
+                if (!window.pywebview?.api?.update_task_cover_data || typeof TaskLibrary === 'undefined') {
+                    this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
+                    return;
+                }
+                const res = await pywebview.api.update_task_cover_data(TaskLibrary._current_edit_name, dataUrl);
+                if (res && res.success) {
+                    const coverImg = document.getElementById('edit-task-cover');
+                    if (coverImg) coverImg.src = dataUrl;
+                    this.showAlert("成功", "封面已更新！", "success");
+                    TaskLibrary.refresh_list();
+                    this.closeModal('modal-crop-cover');
+                } else {
+                    this.showAlert("错误", (res && res.msg) ? res.msg : "封面更新失败", "error");
+                }
+                return;
+            }
+
+            // --- 模型库 ---
+            if (target === "model") {
+                if (!window.pywebview?.api?.update_model_cover_data || typeof ModelLibrary === 'undefined') {
+                    this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
+                    return;
+                }
+                const res = await pywebview.api.update_model_cover_data(ModelLibrary._current_edit_name, dataUrl);
+                if (res && res.success) {
+                    const coverImg = document.getElementById('edit-model-cover');
+                    if (coverImg) coverImg.src = dataUrl;
+                    this.showAlert("成功", "封面已更新！", "success");
+                    ModelLibrary.refresh_list();
+                    this.closeModal('modal-crop-cover');
+                } else {
+                    this.showAlert("错误", (res && res.msg) ? res.msg : "封面更新失败", "error");
+                }
+                return;
+            }
+
+            // --- 机库 ---
+            if (target === "hangar") {
+                if (!window.pywebview?.api?.update_hangar_cover_data || typeof Hangar === 'undefined') {
+                    this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
+                    return;
+                }
+                const res = await pywebview.api.update_hangar_cover_data(Hangar._current_edit_name, dataUrl);
+                if (res && res.success) {
+                    const coverImg = document.getElementById('edit-hangar-cover');
+                    if (coverImg) coverImg.src = dataUrl;
+                    this.showAlert("成功", "封面已更新！", "success");
+                    Hangar.refresh_list();
+                    this.closeModal('modal-crop-cover');
+                } else {
+                    this.showAlert("错误", (res && res.msg) ? res.msg : "封面更新失败", "error");
+                }
+                return;
+            }
+
+            // --- 涂装（默认） ---
             if (!window.pywebview?.api?.update_skin_cover_data) {
                 this.showAlert("错误", "功能未就绪，请检查后端连接", "error");
                 return;
@@ -1508,8 +1575,12 @@ const app = {
         try {
             const connected = await pywebview.api.get_telemetry_connection_status();
             this.telemetryConnected = !!connected;
+            if (window.pywebview?.api?.init_app_state && connected && !this.userSeqId) {
+                const st = await pywebview.api.init_app_state();
+                if (st && st.user_seq_id) this.userSeqId = st.user_seq_id;
+            }
             if (window.NoticeBoardModule && typeof window.NoticeBoardModule.updateServerStatusFooter === 'function') {
-                window.NoticeBoardModule.updateServerStatusFooter(this.telemetryConnected);
+                window.NoticeBoardModule.updateServerStatusFooter(this.telemetryConnected, this.userSeqId);
             }
         } catch (_e) {
         }
@@ -2458,65 +2529,15 @@ const app = {
     },
 
     refreshHangar(opts) {
-        const listEl = document.getElementById('hangar-list');
-        const countEl = document.getElementById('hangar-count');
-        if (!listEl || !countEl) return;
-
-        const refreshBtn = document.getElementById('btn-refresh-hangar');
-        if (this._hangarRefreshing) return;
-        this._hangarRefreshing = true;
-        if (refreshBtn) {
-            refreshBtn.disabled = true;
-            refreshBtn.classList.add('is-loading');
+        if (typeof Hangar !== 'undefined') {
+            Hangar.refresh_list(opts);
         }
-        countEl.textContent = '刷新中...';
-
-        setTimeout(() => {
-            this._hangarRefreshing = false;
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.classList.remove('is-loading');
-            }
-            countEl.textContent = '本地: 0';
-            listEl.innerHTML = `
-                <div class="empty-state" style="grid-column: 1 / -1;">
-                    <i class="ri-plane-line"></i>
-                    <h3>还没有机库配置</h3>
-                    <p>点击左侧"打开机库"按钮，导入机库配置文件</p>
-                </div>
-            `;
-        }, 300);
     },
 
     refreshModels(opts) {
-        const listEl = document.getElementById('models-list');
-        const countEl = document.getElementById('models-count');
-        if (!listEl || !countEl) return;
-
-        const refreshBtn = document.getElementById('btn-refresh-models');
-        if (this._modelsRefreshing) return;
-        this._modelsRefreshing = true;
-        if (refreshBtn) {
-            refreshBtn.disabled = true;
-            refreshBtn.classList.add('is-loading');
+        if (typeof ModelLibrary !== 'undefined') {
+            ModelLibrary.refresh_list(opts);
         }
-        countEl.textContent = '刷新中...';
-
-        setTimeout(() => {
-            this._modelsRefreshing = false;
-            if (refreshBtn) {
-                refreshBtn.disabled = false;
-                refreshBtn.classList.remove('is-loading');
-            }
-            countEl.textContent = '本地: 0';
-            listEl.innerHTML = `
-                <div class="empty-state" style="grid-column: 1 / -1;">
-                    <i class="ri-box-3-line"></i>
-                    <h3>还没有模型</h3>
-                    <p>点击左侧"打开模型库"按钮，导入模型文件</p>
-                </div>
-            `;
-        }, 300);
     },
 
     openBiliSpace() {
@@ -2556,10 +2577,10 @@ const app = {
         const img = document.getElementById('image-preview-img');
         const titleEl = document.getElementById('image-preview-title');
         if (!modal || !img) return;
-        
+
         img.src = src;
         if (titleEl) titleEl.textContent = title || '图片预览';
-        
+
         modal.classList.remove('hiding');
         modal.classList.add('show');
     },
@@ -3361,6 +3382,7 @@ app.init = async function () {
             installed_mods: [],
         };
         this.telemetryConnected = !!state.telemetry_connected;
+        this.userSeqId = state.user_seq_id || 0;
         this.currentLaunchMode = state.launch_mode || 'launcher';
         this.updatePathUI(state.game_path, state.path_valid);
 
@@ -3476,7 +3498,7 @@ app.init = async function () {
 };
 
 // 添加上下文菜单功能
-app.showContextMenu = function(event, menuItems) {
+app.showContextMenu = function (event, menuItems) {
     event.preventDefault();
     event.stopPropagation();
 
@@ -3651,6 +3673,12 @@ app.switchResourceView = function (target) {
         if (!this._skinsLoaded) this.refreshSkins();
     } else if (target === 'sights') {
         if (!this._sightsLoaded) this.loadSightsView();
+    } else if (target === 'tasks') {
+        if (typeof TaskLibrary !== 'undefined' && !TaskLibrary._loaded) TaskLibrary.refresh_list();
+    } else if (target === 'models') {
+        if (typeof ModelLibrary !== 'undefined' && !ModelLibrary._loaded) ModelLibrary.refresh_list();
+    } else if (target === 'hangar') {
+        if (typeof Hangar !== 'undefined' && !Hangar._loaded) Hangar.refresh_list();
     }
 };
 
@@ -4723,14 +4751,13 @@ app.setupGlobalDragDrop = function () {
             auditionBtn.onclick = async () => {
                 try {
                     const manualPreviewItems = normalizePreviewAudioItems(mod?.preview_audio_files || []);
-                    const useRandomPreview = mod?.preview_use_random_bank !== false;
-                    if (!useRandomPreview) {
-                        if (!manualPreviewItems.length) {
-                            if (app && typeof app.showAlert === 'function') {
-                                app.showAlert('提示', '作者未提供可用的试听文件', 'warn');
-                            }
-                            return;
+                    const useRandomPreview = mod?.preview_use_random_bank !== false || !manualPreviewItems.length;
+                    if (mod?.preview_use_random_bank === false && !manualPreviewItems.length) {
+                        if (app && typeof app.showInfoToast === 'function') {
+                            app.showInfoToast('提示', '未配置作者试听文件，已回退到随机试听');
                         }
+                    }
+                    if (!useRandomPreview) {
                         openAuthorPreviewAudioPicker(mod, manualPreviewItems);
                         return;
                     }
@@ -4846,10 +4873,10 @@ app.setupGlobalDragDrop = function () {
                 }
             }
             if (window.pywebview?.api?.stop_mod_audition_scan) {
-                pywebview.api.stop_mod_audition_scan(mod.id).catch(() => {});
+                pywebview.api.stop_mod_audition_scan(mod.id).catch(() => { });
             }
             if (window.pywebview?.api?.clear_audition_cache) {
-                pywebview.api.clear_audition_cache(mod.id).catch(() => {});
+                pywebview.api.clear_audition_cache(mod.id).catch(() => { });
             }
             if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
             if (window.__auditionPickerState && window.__auditionPickerState.modId === String(mod.id || '')) {

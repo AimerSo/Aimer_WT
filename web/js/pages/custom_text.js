@@ -32,9 +32,10 @@ const CustomText = {
                 <div class="resource-view-header-right custom-text-actions">
                     <select id="custom-text-csv-file" class="custom-text-select"></select>
                     <select id="custom-text-language" class="custom-text-select"></select>
-                    <button class="btn-v2" id="btn-custom-text-import"><i class="ri-upload-2-line"></i><span>导入</span></button>
-                    <button class="btn-v2" id="btn-custom-text-export"><i class="ri-download-2-line"></i><span>导出</span></button>
-                    <button class="btn-v2" id="btn-custom-text-reload"><i class="ri-refresh-line"></i><span>刷新</span></button>
+                    <button class="btn-v2" id="btn-custom-text-backup" title="备份 / 还原"><i class="ri-archive-line"></i></button>
+                    <button class="btn-v2" id="btn-custom-text-import" title="导入"><i class="ri-upload-2-line"></i></button>
+                    <button class="btn-v2" id="btn-custom-text-export" title="导出"><i class="ri-download-2-line"></i></button>
+                    <button class="btn-v2" id="btn-custom-text-reload" title="刷新"><i class="ri-refresh-line"></i></button>
                     <button class="btn-v2 primary" id="btn-custom-text-save"><i class="ri-save-3-line"></i><span>保存当前语言</span></button>
                 </div>
             </div>
@@ -63,6 +64,7 @@ const CustomText = {
         const saveBtn = document.getElementById('btn-custom-text-save');
         const importBtn = document.getElementById('btn-custom-text-import');
         const exportBtn = document.getElementById('btn-custom-text-export');
+        const backupBtn = document.getElementById('btn-custom-text-backup');
         const searchEl = document.getElementById('custom-text-search');
         const groupSearchEl = document.getElementById('custom-text-group-search');
         const langEl = document.getElementById('custom-text-language');
@@ -72,6 +74,7 @@ const CustomText = {
         if (saveBtn) saveBtn.onclick = () => this.saveData();
         if (importBtn) importBtn.onclick = () => this.importData();
         if (exportBtn) exportBtn.onclick = () => this.exportData();
+        if (backupBtn) backupBtn.onclick = () => this.showBackupRestoreDialog();
         if (searchEl) searchEl.oninput = () => this.renderRows();
         if (groupSearchEl) groupSearchEl.oninput = () => this.renderGroupList();
         if (csvEl) {
@@ -351,6 +354,186 @@ const CustomText = {
             }
         } catch (e) {
             app.showAlert('错误', `导出失败: ${e.message || e}`, 'error');
+        }
+    },
+
+    async showBackupRestoreDialog() {
+        // 拉取备份列表
+        let backups = [];
+        try {
+            if (window.pywebview?.api?.get_custom_text_backups) {
+                const res = await pywebview.api.get_custom_text_backups();
+                if (res && res.success) backups = res.backups || [];
+            }
+        } catch (e) {
+            console.error('获取备份列表失败:', e);
+        }
+
+        const existing = document.getElementById('modal-custom-text-backup');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'modal-custom-text-backup';
+        overlay.className = 'modal-overlay show';
+        overlay.onclick = (e) => {
+            if (e.target === overlay) this.closeBackupRestoreDialog(overlay);
+        };
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-content custom-text-backup-modal';
+        modal.onclick = (e) => e.stopPropagation();
+
+        // 备份列表 HTML
+        let backupListHtml = '';
+        if (backups.length > 0) {
+            backupListHtml = `
+                <div class="custom-text-backup-list">
+                    ${backups.map(b => `
+                        <div class="custom-text-backup-item" data-name="${this.escapeHtml(b.name)}">
+                            <div class="custom-text-backup-item-info">
+                                <div class="custom-text-backup-item-name">
+                                    <span class="custom-text-backup-file-icon"><i class="ri-file-zip-line"></i></span>
+                                    <span>${this.escapeHtml(b.name)}</span>
+                                </div>
+                                <div class="custom-text-backup-item-meta">${this.escapeHtml(b.time)} · ${this.escapeHtml(b.size_kb)} KB</div>
+                            </div>
+                            <button class="btn primary custom-text-backup-restore-btn" data-name="${this.escapeHtml(b.name)}">
+                                <i class="ri-history-line"></i>
+                                <span>还原</span>
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        } else {
+            backupListHtml = `
+                <div class="custom-text-backup-empty">
+                    <div class="custom-text-backup-empty-icon"><i class="ri-inbox-archive-line"></i></div>
+                    <div class="custom-text-backup-empty-title">暂无备份记录</div>
+                    <div class="custom-text-backup-empty-text">先创建一份备份，之后就可以在这里快速还原。</div>
+                </div>
+            `;
+        }
+
+        modal.innerHTML = `
+            <button class="modal-close-x custom-text-backup-close" id="backup-dialog-close" aria-label="关闭">
+                <i class="ri-close-line"></i>
+            </button>
+            <div class="custom-text-backup-head">
+                <div class="custom-text-backup-title-row">
+                    <div class="custom-text-backup-title-block">
+                        <h2 class="custom-text-backup-title">备份与还原</h2>
+                        <p class="custom-text-backup-subtitle">统一管理当前自定义文本，手动备份并从历史快照恢复。</p>
+                    </div>
+                    <div class="custom-text-backup-head-stat" aria-label="历史备份数量">
+                        <span class="custom-text-backup-head-stat-label">历史备份</span>
+                        <strong class="custom-text-backup-head-stat-value">${backups.length}</strong>
+                    </div>
+                </div>
+            </div>
+            <div class="custom-text-backup-body">
+                <div class="custom-text-backup-callout">
+                    <div class="custom-text-backup-callout-mark">覆盖提示</div>
+                    <div class="custom-text-backup-callout-text">
+                        还原会覆盖当前 lang/aimerWT 中的自定义文本文件，建议先执行一次备份。
+                    </div>
+                </div>
+                <div class="custom-text-backup-primary-panel">
+                    <div class="custom-text-backup-primary-copy">
+                        <div class="custom-text-backup-primary-label">手动创建快照</div>
+                        <div class="custom-text-backup-primary-text">建议在导入、批量修改或还原之前先备份一次，方便快速回退。</div>
+                    </div>
+                    <button class="btn primary custom-text-backup-create-btn" id="btn-backup-create">
+                        <i class="ri-save-3-line"></i>
+                        <span>立即备份当前数据</span>
+                    </button>
+                </div>
+                <div class="custom-text-backup-section">
+                    <div class="custom-text-backup-section-head">
+                        <div>
+                            <div class="custom-text-backup-section-label">历史备份</div>
+                            <div class="custom-text-backup-section-desc">按时间倒序显示最近保留的备份压缩包。</div>
+                        </div>
+                        <span class="custom-text-backup-count">${backups.length}</span>
+                    </div>
+                    ${backupListHtml}
+                </div>
+            </div>
+            <div class="custom-text-backup-footer">
+                <button class="btn secondary" id="btn-backup-dialog-done">关闭</button>
+            </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        // 绑定关闭
+        modal.querySelector('#backup-dialog-close').onclick = () => this.closeBackupRestoreDialog(overlay);
+        modal.querySelector('#btn-backup-dialog-done').onclick = () => this.closeBackupRestoreDialog(overlay);
+
+        // 绑定"立即备份"
+        modal.querySelector('#btn-backup-create').onclick = async () => {
+            await this.backupData();
+            this.closeBackupRestoreDialog(overlay);
+            this.showBackupRestoreDialog();
+        };
+
+        // 绑定所有"还原"按钮
+        modal.querySelectorAll('.custom-text-backup-restore-btn').forEach(btn => {
+            btn.onclick = async () => {
+                const zipName = btn.dataset.name;
+                const ok = await app.showConfirmDialog(
+                    '确认还原备份',
+                    `将要还原备份：<strong style="color: var(--primary);">${this.escapeHtml(zipName)}</strong><br><br>还原后当前的自定义文本将被覆盖，是否继续？`
+                );
+                if (!ok) return;
+                await this.restoreData(zipName);
+                this.closeBackupRestoreDialog(overlay);
+            };
+        });
+    },
+
+    closeBackupRestoreDialog(overlay) {
+        if (!overlay || overlay.dataset.closing === '1') return;
+        overlay.dataset.closing = '1';
+        overlay.classList.add('hiding');
+        setTimeout(() => {
+            overlay.remove();
+        }, 220);
+    },
+
+    async backupData() {
+        if (!window.pywebview?.api?.backup_custom_text) {
+            app.showAlert('错误', '后端备份接口不可用', 'error');
+            return;
+        }
+        try {
+            const res = await pywebview.api.backup_custom_text();
+            if (res && res.success) {
+                app.showAlert('成功', res.msg || '备份成功', 'success');
+            } else {
+                app.showAlert('错误', (res && res.msg) ? res.msg : '备份失败', 'error');
+            }
+        } catch (e) {
+            app.showAlert('错误', `备份失败: ${e.message || e}`, 'error');
+        }
+    },
+
+    async restoreData(zipName) {
+        if (!window.pywebview?.api?.restore_custom_text) {
+            app.showAlert('错误', '后端还原接口不可用', 'error');
+            return;
+        }
+        try {
+            const res = await pywebview.api.restore_custom_text({ zip_name: zipName });
+            if (res && res.success) {
+                app.showAlert('成功', res.msg || '还原成功', 'success');
+                this.loadData();
+            } else {
+                app.showAlert('错误', (res && res.msg) ? res.msg : '还原失败', 'error');
+            }
+        } catch (e) {
+            app.showAlert('错误', `还原失败: ${e.message || e}`, 'error');
         }
     },
 

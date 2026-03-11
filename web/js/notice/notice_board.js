@@ -122,7 +122,10 @@
 
         const pinnedPreview = buildPinnedPreview(pinned);
         const connected = !!(app && app.telemetryConnected);
-        const footerText = connected ? '已连接服务器' : '未连接到服务器';
+        const seqId = (app && app.userSeqId) ? app.userSeqId : 0;
+        const footerText = connected
+            ? (seqId ? `已连接服务器 · 用户 #${seqId}` : '已连接服务器')
+            : '未连接到服务器';
         const dotClass = connected ? 'connected' : 'disconnected';
         container.innerHTML = `
             <div class="notice-hero" data-type="${escapeHtml(pinned.type)}" data-notice-id="${escapeHtml(pinned.id)}">
@@ -157,7 +160,7 @@
         }
     }
 
-    function updateServerStatusFooter(connected) {
+    function updateServerStatusFooter(connected, seqId) {
         const footer = document.getElementById('notice-server-status');
         if (!footer) return;
         const dot = footer.querySelector('.notice-footer-dot');
@@ -170,7 +173,9 @@
             dot.classList.toggle('disconnected', !isConnected);
         }
         if (text) {
-            text.textContent = isConnected ? '已连接服务器' : '未连接到服务器';
+            text.textContent = isConnected
+                ? (seqId ? `已连接服务器 · 用户 #${seqId}` : '已连接服务器')
+                : '未连接到服务器';
         }
     }
 

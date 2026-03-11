@@ -272,7 +272,9 @@ func initRouter(r *gin.Engine) {
 					}
 
 				case "update":
-					sysConfig.UpdateActive = true
+					if val, ok := req["update_active"].(bool); ok {
+						sysConfig.UpdateActive = val
+					}
 					if val, ok := req["content"].(string); ok {
 						sysConfig.UpdateContent = val
 					}
@@ -404,7 +406,9 @@ func initRouter(r *gin.Engine) {
 		}
 
 		var pendingCmd string
+		var userSeqID uint
 		db.Model(&TelemetryRecord{}).Where("machine_id = ?", record.MachineID).Select("pending_command").Scan(&pendingCmd)
+		db.Model(&TelemetryRecord{}).Where("machine_id = ?", record.MachineID).Select("id").Scan(&userSeqID)
 		if pendingCmd != "" {
 			db.Model(&TelemetryRecord{}).Where("machine_id = ?", record.MachineID).Update("pending_command", "")
 		}
@@ -413,6 +417,7 @@ func initRouter(r *gin.Engine) {
 			"status":       "success",
 			"sys_config":   clientConfig,
 			"user_command": pendingCmd,
+			"user_seq_id":  userSeqID,
 		})
 	})
 

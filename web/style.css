@@ -98,7 +98,7 @@
     --notice-hero-subtext: #64748B;
     --notice-hero-tag-bg: rgba(239, 68, 68, 0.95);
     --notice-hero-tag-text: #ffffff;
-    --notice-hero-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+    --notice-hero-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
     --notice-hero-border: rgba(255, 255, 255, 0.38);
     --notice-hero-deco: rgba(100, 116, 139, 0.12);
     --notice-section-text: #9CA3AF;
@@ -4429,10 +4429,10 @@ i[class^="ri-"] {
 }
 
 /* ===========================
-   ��Դ�� Master-Detail ����
+   资源页 Master-Detail 布局
    =========================== */
 
-/* ������ */
+/* 主容器 */
 .resource-master-detail {
     display: flex;
     gap: 20px;
@@ -4440,7 +4440,7 @@ i[class^="ri-"] {
     overflow: hidden;
 }
 
-/* ��ഹֱ���� */
+/* 左侧垂直导航 */
 .resource-nav {
     width: 170px;
     flex-shrink: 0;
@@ -4538,7 +4538,7 @@ i[class^="ri-"] {
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
-/* �Ҳ��������� */
+/* 右侧内容区域 */
 .resource-content {
     flex: 1;
     position: relative;
@@ -4548,7 +4548,7 @@ i[class^="ri-"] {
     border: 1px solid var(--border-color);
 }
 
-/* ��ջ��ͼ */
+/* 堆栈式视图 */
 .resource-view {
     position: absolute;
     top: 0;
@@ -4571,7 +4571,7 @@ i[class^="ri-"] {
     transform: translateX(0);
 }
 
-/* ��ͼͷ�� */
+/* 视图头部 */
 .resource-view-header {
     display: flex;
     align-items: center;
@@ -4601,7 +4601,7 @@ i[class^="ri-"] {
     gap: 12px;
 }
 
-/* ��ק������ǿ */
+/* 拖拽区域视觉增强 */
 .drop-zone {
     border: 2px dashed var(--border-color);
     border-radius: 12px;
@@ -4702,7 +4702,7 @@ i[class^="ri-"] {
     margin-top: 20px;
 }
 
-/* �ھ�·������ */
+/* 炮镜路径设置区 */
 .sights-path-setup {
     flex: 1;
     display: flex;
@@ -4782,7 +4782,7 @@ i[class^="ri-"] {
     gap: 12px;
 }
 
-/* �ھ��������� */
+/* 炮镜内容区域 */
 .sights-content {
     flex: 1;
     display: flex;
@@ -4822,14 +4822,14 @@ i[class^="ri-"] {
     overflow-y: auto;
 }
 
-/* ��ť���� */
+/* 按钮尺寸 */
 .btn-v2.small {
     height: 32px;
     padding: 0 12px;
     font-size: 13px;
 }
 
-/* ��ɫģʽ���� */
+/* 深色模式适配 */
 [data-theme='dark'] .resource-nav {
     background: #27272A;
     border-color: #3F3F46;

@@ -3,6 +3,20 @@
     width: 100%;
     display: flex;
     justify-content: center;
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+    transition: opacity 0.24s ease, transform 0.24s ease;
+    will-change: opacity, transform;
+}
+
+.notice-detail-overlay.show.entered .notice-detail-shell {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.notice-detail-overlay.hiding .notice-detail-shell {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
 }
 
 .notice-detail-modal {

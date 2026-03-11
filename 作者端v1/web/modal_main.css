@@ -1,0 +1,70 @@
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.modal-overlay.show {
+    display: flex;
+    animation: fadeIn 0.2s;
+}
+
+.modal-overlay.hiding {
+    animation: fadeOut 0.2s forwards;
+}
+
+.modal-content {
+    background: var(--bg-card);
+    width: auto;
+    min-width: 420px;
+    max-width: 90vw;
+    min-height: 220px;
+    padding: 30px;
+    border-radius: 16px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    text-align: center;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.modal-content[style*="max-width"] {
+    width: auto;
+}
+
+.modal-content.mod-preview-modal-v2,
+.modal-content.profile-modal,
+.modal-content.profile-crop-modal,
+.modal-content.author-dialog-modal {
+    min-height: 0;
+    padding: 0;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
