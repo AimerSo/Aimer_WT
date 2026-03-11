@@ -36,10 +36,10 @@ app_secrets.py
 .env
 *.db
 telemetry
-AimerWT_Telemetry/
 web/ai/server/
-build.bat
+*.bat
 test
+*.sh
 
 # User Data / Large Files
 WT待解压区/*

@@ -1,0 +1,55 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <div class="top-actions" style="margin-left: auto;">
+                <button class="btn" onclick="app.showAlert('用户列表已刷新', 'success')">刷新数据</button>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">用户列表</div>
+            </div>
+            <div class="panel-body" style="padding: 0;">
+                <table class="data-table" id="userListTable">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="id" onclick="app.sortUserList('id')">
+                                <span>UID</span>
+                                <span class="sort-icon"></span>
+                            </th>
+                            <th>HWID</th>
+                            <th>账户状态</th>
+                            <th class="sortable" data-sort="version" onclick="app.sortUserList('version')">
+                                <span>版本</span>
+                                <span class="sort-icon"></span>
+                            </th>
+                            <th class="sortable" data-sort="os" onclick="app.sortUserList('os')">
+                                <span>系统</span>
+                                <span class="sort-icon"></span>
+                            </th>
+                            <th class="sortable" data-sort="locale" onclick="app.sortUserList('locale')">
+                                <span>语言</span>
+                                <span class="sort-icon"></span>
+                            </th>
+                            <th class="sortable" data-sort="minutes" onclick="app.sortUserList('minutes')">
+                                <span>最后活跃</span>
+                                <span class="sort-icon"></span>
+                            </th>
+                            <th class="sortable" data-sort="status" onclick="app.sortUserList('status')">
+                                <span>在线状态</span>
+                                <span class="sort-icon"></span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="fullUserListBody">
+                        <tr>
+                            <td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                加载中...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

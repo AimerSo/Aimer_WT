@@ -1,0 +1,148 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <div class="panel-title">AI助手配置</div>
+            <div class="top-actions" style="margin-left: auto;">
+                <button class="btn" onclick="app.resetAIConfig()">重置默认</button>
+                <button class="btn primary" onclick="app.saveAIConfig()">保存配置</button>
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">API 配置</div>
+                </div>
+                <div class="panel-body">
+                    <div class="form-group">
+                        <label>API 提供商</label>
+                        <select class="select" style="width: 100%;" id="aiProvider" onchange="app.onProviderChange()">
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic (Claude)</option>
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="moonshot">Moonshot (Kimi)</option>
+                            <option value="zhipu">智谱 AI (GLM)</option>
+                            <option value="qwen">通义千问</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>API 地址</label>
+                        <input class="input" style="width: 100%;" id="aiApiUrl" placeholder="https://api.openai.com/v1">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input class="input" style="flex: 1;" type="password" id="aiApiKey" placeholder="sk-xxxxxxxxxxxxxxxx">
+                            <button class="btn" onclick="app.toggleApiKeyVisibility()">显示</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>模型选择</label>
+                        <select class="select" style="width: 100%;" id="aiModel">
+                            <option value="gpt-4o">GPT-4o</option>
+                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">模型参数</div>
+                </div>
+                <div class="panel-body">
+                    <div class="form-group">
+                        <label>最大输出 Tokens</label>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <input type="range" style="flex: 1;" id="maxTokensSlider" min="256" max="8192" value="4096" oninput="app.updateMaxTokensDisplay()">
+                            <input class="input" style="width: 80px; text-align: center;" id="maxTokens" value="4096">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>温度 (Temperature)</label>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <input type="range" style="flex: 1;" id="temperatureSlider" min="0" max="200" value="70" oninput="app.updateTemperatureDisplay()">
+                            <input class="input" style="width: 80px; text-align: center;" id="temperature" value="0.7">
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">较低值更稳定，较高值更有创意</div>
+                    </div>
+                    <div class="form-group">
+                        <label>上下文窗口</label>
+                        <select class="select" style="width: 100%;" id="contextWindow">
+                            <option value="4096">4K tokens</option>
+                            <option value="8192" selected>8K tokens</option>
+                            <option value="16384">16K tokens</option>
+                            <option value="32768">32K tokens</option>
+                            <option value="128000">128K tokens</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>请求超时 (秒)</label>
+                        <input class="input" style="width: 100%;" id="requestTimeout" value="30" type="number">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="panel" style="margin-top: 24px;">
+            <div class="panel-header">
+                <div class="panel-title">功能开关</div>
+            </div>
+            <div class="panel-body">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--bg-secondary); border-radius: 8px;">
+                        <div>
+                            <div style="font-weight: 500; font-size: 14px;">启用 AI 助手</div>
+                            <div style="font-size: 12px; color: var(--text-muted);">客户端可使用 AI 功能</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="enableAI" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--bg-secondary); border-radius: 8px;">
+                        <div>
+                            <div style="font-weight: 500; font-size: 14px;">流式输出</div>
+                            <div style="font-size: 12px; color: var(--text-muted);">逐字显示回复内容</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="streamOutput" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="panel" style="margin-top: 24px;">
+            <div class="panel-header">
+                <div class="panel-title">系统提示词</div>
+            </div>
+            <div class="panel-body">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <textarea class="input" style="width: 100%; height: 120px; font-family: inherit; padding: 12px; resize: vertical;" id="systemPrompt" placeholder="设置 AI 助手的默认行为和人设...">你是一个专业的游戏助手，帮助用户解答关于游戏的问题。请用简洁友好的方式回答用户的问题。</textarea>
+                </div>
+            </div>
+        </div>
+        <div class="panel" style="margin-top: 24px;">
+            <div class="panel-header">
+                <div class="panel-title">使用限制</div>
+            </div>
+            <div class="panel-body">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>每日请求上限</label>
+                        <input class="input" style="width: 100%;" id="dailyLimit" value="100" type="number">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>单次最大 Tokens</label>
+                        <input class="input" style="width: 100%;" id="perRequestLimit" value="2048" type="number">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>冷却时间 (秒)</label>
+                        <input class="input" style="width: 100%;" id="cooldownTime" value="3" type="number">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

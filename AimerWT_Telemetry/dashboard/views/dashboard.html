@@ -1,0 +1,159 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="toolbar">
+            <div class="toolbar-card">
+                <span class="toolbar-title">数据筛选</span>
+                <select class="select" id="filterOS" onchange="app.applyFilters()">
+                    <option value="">全部操作系统</option>
+                </select>
+                <select class="select" id="filterArch" onchange="app.applyFilters()">
+                    <option value="">全部架构</option>
+                </select>
+                <select class="select" id="filterVersion" onchange="app.applyFilters()">
+                    <option value="">全部版本</option>
+                </select>
+                <select class="select" id="filterLocale" onchange="app.applyFilters()">
+                    <option value="">全部区域</option>
+                </select>
+                <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
+                    <div class="muted" id="lastUpdate">最近更新 -</div>
+                    <button class="btn" id="refreshBtn" onclick="app.refreshData()">刷新数据</button>
+                    <button class="btn primary" onclick="app.handleControl('export')">导出数据</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="alerts" id="alertContainer"></div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card" id="kpiTotal">
+                <div class="kpi-header">
+                    <span>总用户量</span>
+                    <span class="muted">累计</span>
+                </div>
+                <div class="kpi-value" id="totalUsers">-</div>
+                <div class="kpi-meta">
+                    <span class="trend up" id="totalUsersTrend">↑ 0%</span>
+                    <span class="muted">累计增长率</span>
+                </div>
+            </div>
+            <div class="kpi-card" id="kpiOnline">
+                <div class="kpi-header">
+                    <span>在线用户</span>
+                    <span class="muted">实时</span>
+                </div>
+                <div class="kpi-value" id="onlineUsers">-</div>
+                <div class="kpi-meta">
+                    <span class="trend up" id="onlineRate">在线率 0%</span>
+                    <span class="muted">当前在线</span>
+                </div>
+            </div>
+            <div class="kpi-card" id="kpiToday">
+                <div class="kpi-header">
+                    <span>今日新增</span>
+                    <span class="muted">日增</span>
+                </div>
+                <div class="kpi-value" id="todayNew">-</div>
+                <div class="kpi-meta">
+                    <span class="trend up" id="todayNewTrend">↑ 0%</span>
+                    <span class="muted">环比</span>
+                </div>
+            </div>
+            <div class="kpi-card" id="kpiDau">
+                <div class="kpi-header">
+                    <span>日活跃用户</span>
+                    <span class="muted">DAU</span>
+                </div>
+                <div class="kpi-value" id="dauUsers">-</div>
+                <div class="kpi-meta">
+                    <span class="trend up" id="dauTrend">↑ 0%</span>
+                    <span class="muted">环比</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="panel span-8">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-title">用户增长趋势</div>
+                        <div class="panel-sub" id="growthPeakInfo">峰值 -</div>
+                    </div>
+                    <div class="panel-actions">
+                        <select class="select" id="trendRange" onchange="app.applyFilters()">
+                            <option value="7">近7天</option>
+                            <option value="14">近14天</option>
+                            <option value="30" selected>近30天</option>
+                            <option value="90">近90天</option>
+                        </select>
+                        <div class="compare-bar">
+                            <span class="compare-tag">对比</span>
+                            <input class="input" type="date" id="compareStart">
+                            <span class="muted">至</span>
+                            <input class="input" type="date" id="compareEnd">
+                            <button class="btn" onclick="app.applyFilters()">应用</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart" id="growthChart"></div>
+            </div>
+            <div class="panel span-4">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-title">新增与日活对比</div>
+                        <div class="panel-sub">趋势对比</div>
+                    </div>
+                </div>
+                <div class="chart" id="newVsDauChart"></div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="panel span-3">
+                <div class="panel-header">
+                    <div class="panel-title">操作系统分布</div>
+                </div>
+                <div class="chart sm" id="osChart"></div>
+            </div>
+            <div class="panel span-3">
+                <div class="panel-header">
+                    <div class="panel-title">架构分布</div>
+                </div>
+                <div class="chart sm" id="archChart"></div>
+            </div>
+            <div class="panel span-3">
+                <div class="panel-header">
+                    <div class="panel-title">软件版本分布</div>
+                </div>
+                <div class="chart sm" id="versionChart"></div>
+            </div>
+            <div class="panel span-3">
+                <div class="panel-header">
+                    <div class="panel-title">区域分布</div>
+                </div>
+                <div class="chart sm" id="localeChart"></div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="panel span-6">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-title">最新活跃用户</div>
+                        <div class="panel-sub">最近更新的在线用户</div>
+                    </div>
+                </div>
+                <div class="recent-list" id="recentUsersList"></div>
+            </div>
+            <div class="panel span-6">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-title">用户详细信息</div>
+                        <div class="panel-sub" id="userDetailSub">点击左侧用户查看详情</div>
+                    </div>
+                </div>
+                <div class="detail-grid" id="userDetailGrid"></div>
+            </div>
+        </div>
+    </div>
+</div>
