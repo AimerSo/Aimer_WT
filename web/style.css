@@ -2918,7 +2918,11 @@ i[class^="ri-"] {
 .empty-state {
     text-align: center;
     color: var(--text-sec);
-    margin-top: 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
 }
 
 .empty-state i {

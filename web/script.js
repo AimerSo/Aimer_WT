@@ -2274,7 +2274,7 @@ const app = {
         if (modsToRender.length === 0) {
             listContainer.innerHTML = `
                 <div class="empty-state" style="grid-column: 1 / span 2; animation: cardEntrance 0.5s ease both;">
-                    <div class="emoji">🔍</div>
+                    <i class="ri-search-line"></i>
                     <h3>没有找到相关语音包</h3>
                     <p>试试其他关键词，或导入新文件</p>
                 </div>`;
