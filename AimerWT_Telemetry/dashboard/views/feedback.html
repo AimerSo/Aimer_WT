@@ -1,0 +1,159 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="width: 36px; height: 36px; background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(16, 185, 129, 0.08)); border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-weight: 700; font-size: 16px; color: var(--text);">反馈管理</div>
+                    <div style="color: var(--text-muted); font-size: 12px;">查看和处理客户端用户提交的反馈</div>
+                </div>
+            </div>
+            <div class="top-actions" style="margin-left: auto; display: flex; gap: 8px;">
+                <select class="select" id="feedbackFilterStatus" onchange="app.loadFeedbackList()" style="min-width: 100px;">
+                    <option value="">全部状态</option>
+                    <option value="pending">待处理</option>
+                    <option value="read">已读</option>
+                    <option value="resolved">已解决</option>
+                    <option value="ignored">已忽略</option>
+                </select>
+                <select class="select" id="feedbackFilterCategory" onchange="app.loadFeedbackList()" style="min-width: 100px;">
+                    <option value="">全部类型</option>
+                    <option value="bug">BUG反馈</option>
+                    <option value="suggestion">功能建议</option>
+                    <option value="other">其他</option>
+                </select>
+                <button class="btn" onclick="app.loadFeedbackList()">刷新</button>
+            </div>
+        </div>
+
+        <!-- 统计概览 -->
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px;">
+            <div class="stat-card">
+                <div class="stat-label">累计反馈</div>
+                <div class="stat-value" id="feedbackTotal">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">待处理</div>
+                <div class="stat-value" style="color: var(--warning);" id="feedbackPending">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">今日新增</div>
+                <div class="stat-value" id="feedbackToday">-</div>
+            </div>
+        </div>
+
+        <!-- 反馈列表 -->
+        <div class="panel">
+            <div class="panel-body" style="padding: 0;">
+                <div id="feedbackListContainer" style="min-height: 200px;">
+                    <div style="text-align: center; color: var(--text-muted); padding: 40px;">加载中...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const CATEGORY_MAP = { bug: '🐛 BUG', suggestion: '💡 建议', other: '💬 其他' };
+    const STATUS_MAP = { pending: '待处理', read: '已读', resolved: '已解决', ignored: '已忽略' };
+    const STATUS_COLOR = { pending: 'var(--warning)', read: 'var(--primary)', resolved: 'var(--secondary)', ignored: 'var(--muted)' };
+
+    app.loadFeedbackList = async function() {
+        const status = document.getElementById('feedbackFilterStatus')?.value || '';
+        const category = document.getElementById('feedbackFilterCategory')?.value || '';
+        const params = new URLSearchParams();
+        if (status) params.append('status', status);
+        if (category) params.append('category', category);
+        params.append('page_size', '100');
+
+        try {
+            const res = await fetch(`/admin/feedback?${params}`);
+            if (!res.ok) throw new Error('Request failed');
+            const data = await res.json();
+
+            app.setText('feedbackTotal', String(data.total || 0));
+            app.setText('feedbackPending', String(data.pending_count || 0));
+            app.setText('feedbackToday', String(data.today_count || 0));
+
+            const container = document.getElementById('feedbackListContainer');
+            const items = data.items || [];
+            if (!items.length) {
+                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 40px;">暂无反馈数据</div>';
+                return;
+            }
+
+            let html = '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
+            html += '<thead><tr style="background: var(--bg); border-bottom: 1px solid var(--border);">';
+            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">ID</th>';
+            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">类型</th>';
+            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">反馈内容</th>';
+            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">联系方式</th>';
+            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">用户</th>';
+            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">环境</th>';
+            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">状态</th>';
+            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">时间</th>';
+            html += '<th style="padding: 10px 16px; text-align: center; font-weight: 600; color: var(--text-muted); font-size: 11px;">操作</th>';
+            html += '</tr></thead><tbody>';
+
+            items.forEach(fb => {
+                const cat = CATEGORY_MAP[fb.category] || fb.category;
+                const st = STATUS_MAP[fb.status] || fb.status;
+                const stColor = STATUS_COLOR[fb.status] || 'var(--text-muted)';
+                const alias = fb.alias || app.formatHwid(fb.machine_id);
+                const env = `${fb.os || '-'} ${fb.os_version ? fb.os_version.slice(0, 10) : ''} · ${fb.screen_res || '-'}`;
+
+                html += `<tr style="border-bottom: 1px solid var(--border); transition: background 0.15s;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">`;
+                html += `<td style="padding: 12px 16px; color: var(--text-muted);">#${fb.id}</td>`;
+                html += `<td style="padding: 12px 16px;">${cat}</td>`;
+                html += `<td style="padding: 12px 16px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text);">${fb.content}</td>`;
+                html += `<td style="padding: 12px 16px; color: var(--text-muted);">${fb.contact || '-'}</td>`;
+                html += `<td style="padding: 12px 16px; color: var(--text-muted);" title="${fb.machine_id}">${alias}</td>`;
+                html += `<td style="padding: 12px 16px; color: var(--text-muted); font-size: 11px;">${env}</td>`;
+                html += `<td style="padding: 12px 16px;"><span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: ${stColor}20; color: ${stColor};">${st}</span></td>`;
+                html += `<td style="padding: 12px 16px; color: var(--text-muted); font-size: 11px; white-space: nowrap;">${fb.created_at || '-'}</td>`;
+                html += `<td style="padding: 12px 16px; text-align: center;">`;
+                html += `<select class="select" style="font-size: 11px; padding: 3px 6px; min-width: 70px;" onchange="app.updateFeedbackStatus(${fb.id}, this.value)" value="${fb.status}">`;
+                ['pending', 'read', 'resolved', 'ignored'].forEach(s => {
+                    html += `<option value="${s}" ${fb.status === s ? 'selected' : ''}>${STATUS_MAP[s]}</option>`;
+                });
+                html += `</select>`;
+                html += `</td></tr>`;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } catch (e) {
+            console.error('加载反馈失败:', e);
+            document.getElementById('feedbackListContainer').innerHTML =
+                '<div style="text-align: center; color: var(--danger); padding: 40px;">加载失败，请检查服务器连接</div>';
+        }
+    };
+
+    app.updateFeedbackStatus = async function(id, status) {
+        try {
+            const res = await fetch(`/admin/feedback/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            if (res.ok) {
+                app.loadFeedbackList();
+            }
+        } catch (e) {
+            console.error('更新状态失败:', e);
+        }
+    };
+
+    app.initFeedback = function() {
+        app.loadFeedbackList();
+    };
+
+    // 自动加载
+    app.initFeedback();
+})();
+</script>

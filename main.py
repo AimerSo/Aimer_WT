@@ -42,7 +42,7 @@ from services.hangar_manager import HangarManager
 from services.bank_preview_service import BankPreviewService
 from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
-from services.telemetry_manager import init_telemetry, get_hwid, get_telemetry_connection_status, get_user_seq_id
+from services.telemetry_manager import init_telemetry, get_hwid, get_telemetry_connection_status, get_user_seq_id, submit_feedback
 try:
     from services.theme_unlock import ThemeUnlockService
 except Exception:
@@ -763,6 +763,36 @@ class AppApi:
         else:
             tm.stop()
             self._logger.info("[SYS] 遥测服务已停用")
+
+    def submit_feedback(self, contact, content, category="other"):
+        """
+        功能定位:
+        - 接收前端反馈数据，异步提交到遥测服务器。
+        输入输出:
+        - 参数: contact(联系方式), content(反馈内容), category(分类: bug/suggestion/other)
+        - 返回: dict，包含 submitted 状态。
+        """
+        if not content or not str(content).strip():
+            return {"submitted": False, "message": "反馈内容不能为空"}
+
+        if not self._cfg_mgr.get_telemetry_enabled():
+            return {"submitted": False, "message": "遥测服务未启用，无法提交反馈"}
+
+        def _on_result(success, message):
+            if not self._window:
+                return
+            msg_js = json.dumps(message, ensure_ascii=False)
+            if success:
+                self._window.evaluate_js(
+                    f"if(window.app) app.showInfoToast('反馈', {msg_js})"
+                )
+            else:
+                self._window.evaluate_js(
+                    f"if(window.app) app.showWarnToast('反馈', {msg_js})"
+                )
+
+        submit_feedback(contact, content, category, callback=_on_result)
+        return {"submitted": True, "message": "正在提交…"}
 
     def get_autostart_status(self):
         """

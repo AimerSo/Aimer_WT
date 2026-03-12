@@ -1108,6 +1108,39 @@ const app = {
         if (contact) contact.value = '';
         if (content) content.value = '';
         this.updateFeedbackCount();
+
+        // 重置分类选择器为默认值 (bug)
+        const options = modal.querySelectorAll('.feedback-type-option');
+        options.forEach(opt => {
+            const radio = opt.querySelector('input[type="radio"]');
+            if (opt.dataset.value === 'bug') {
+                opt.classList.add('selected');
+                if (radio) radio.checked = true;
+            } else {
+                opt.classList.remove('selected');
+                if (radio) radio.checked = false;
+            }
+        });
+
+        // 绑定分类点击事件（仅绑定一次）
+        if (!this._feedbackTypesBound) {
+            this._feedbackTypesBound = true;
+            document.querySelectorAll('.feedback-type-option').forEach(opt => {
+                opt.addEventListener('click', () => {
+                    document.querySelectorAll('.feedback-type-option').forEach(o => o.classList.remove('selected'));
+                    opt.classList.add('selected');
+                    const radio = opt.querySelector('input[type="radio"]');
+                    if (radio) radio.checked = true;
+                });
+            });
+        }
+
+        // 恢复提交按钮状态
+        const btn = document.getElementById('btn-submit-feedback');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="ri-send-plane-line"></i> 提交';
+        }
     },
 
     updateFeedbackCount() {
@@ -1120,6 +1153,50 @@ const app = {
         }
         if (content && contentCount) {
             contentCount.textContent = `${content.value.length}/200`;
+        }
+    },
+
+    async submitFeedback() {
+        const contact = (document.getElementById('feedback-contact')?.value || '').trim();
+        const content = (document.getElementById('feedback-content')?.value || '').trim();
+        const checkedRadio = document.querySelector('input[name="feedback-category"]:checked');
+        const category = checkedRadio ? checkedRadio.value : 'other';
+
+        if (!content) {
+            this.showAlert('提示', '请输入反馈内容', 'warn');
+            return;
+        }
+
+        if (!window.pywebview?.api?.submit_feedback) {
+            this.showAlert('提示', '功能未就绪，请检查后端连接', 'error');
+            return;
+        }
+
+        // 禁用按钮防止重复提交
+        const btn = document.getElementById('btn-submit-feedback');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="ri-loader-4-line"></i> 提交中…';
+        }
+
+        try {
+            const res = await pywebview.api.submit_feedback(contact, content, category);
+            if (res && res.submitted) {
+                this.closeModal('modal-feedback');
+            } else {
+                this.showAlert('提示', (res && res.message) || '提交失败', 'warn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="ri-send-plane-line"></i> 提交';
+                }
+            }
+        } catch (e) {
+            console.error('反馈提交异常:', e);
+            this.showAlert('错误', '提交异常，请稍后重试', 'error');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="ri-send-plane-line"></i> 提交';
+            }
         }
     },
 

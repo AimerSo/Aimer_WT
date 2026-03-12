@@ -95,3 +95,21 @@ type NoticeItem struct {
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
+
+// FeedbackRecord 用户反馈数据表
+type FeedbackRecord struct {
+	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID  string    `gorm:"index;type:varchar(64)" json:"machine_id"`
+	Version    string    `json:"version"`
+	Contact    string    `json:"contact"`
+	Content    string    `gorm:"type:text" json:"content"`
+	Category   string    `json:"category"`                        // bug / suggestion / other
+	OS         string    `json:"os"`
+	OSVersion  string    `json:"os_version"`
+	ScreenRes  string    `json:"screen_res"`
+	Locale     string    `json:"locale"`
+	Status     string    `json:"status" gorm:"default:'pending'"` // pending / read / resolved / ignored
+	AdminNote  string    `gorm:"type:text" json:"admin_note"`
+	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}

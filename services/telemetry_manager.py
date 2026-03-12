@@ -285,6 +285,80 @@ class TelemetryManager:
             self._stop_heartbeat.set()
         self._server_connected = False
 
+    def submit_feedback(self, contact: str, content: str, category: str = "other",
+                        callback=None):
+        """
+        异步提交用户反馈到遥测服务器。
+
+        参数:
+            contact  - 联系方式（QQ/邮箱）
+            content  - 反馈正文
+            category - 分类: bug / suggestion / other
+            callback - 完成回调 (success: bool, message: str) -> None
+        """
+        if not self.report_url:
+            if callback:
+                callback(False, "遥测服务未配置")
+            return
+
+        feedback_url = self.report_url.replace("/telemetry", "/feedback")
+
+        def _do_submit():
+            try:
+                screen_res = "unknown"
+                user_locale = "unknown"
+                try:
+                    import ctypes
+                    user32 = ctypes.windll.user32
+                    w, h = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+                    screen_res = f"{w}x{h}"
+
+                    windll = ctypes.windll.kernel32
+                    loc_name = ctypes.create_unicode_buffer(85)
+                    windll.GetUserDefaultLocaleName(loc_name, 85)
+                    user_locale = loc_name.value
+                except Exception:
+                    pass
+
+                payload = {
+                    "machine_id": self._machine_id,
+                    "version": self.app_version,
+                    "contact": str(contact or "").strip()[:100],
+                    "content": str(content or "").strip()[:500],
+                    "category": category if category in ("bug", "suggestion", "other") else "other",
+                    "os": platform.system(),
+                    "os_version": platform.version(),
+                    "screen_res": screen_res,
+                    "locale": user_locale,
+                }
+
+                response = requests.post(
+                    feedback_url,
+                    json=payload,
+                    timeout=15,
+                    headers={'User-Agent': f'AimerWT-Client/{self.app_version} ({platform.system()})'}
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    fb_id = data.get("feedback_id", "")
+                    if callback:
+                        callback(True, f"反馈已提交 (#{fb_id})")
+                elif response.status_code == 429:
+                    data = response.json()
+                    if callback:
+                        callback(False, data.get("error", "提交过于频繁，请稍后再试"))
+                else:
+                    if callback:
+                        callback(False, f"服务器返回异常状态: {response.status_code}")
+
+            except Exception as e:
+                if callback:
+                    callback(False, f"提交失败: {type(e).__name__}")
+
+        t = threading.Thread(target=_do_submit, daemon=True, name="FeedbackSubmit")
+        t.start()
+
 
 _instance = None
 
@@ -321,3 +395,12 @@ def get_user_seq_id() -> int:
     if _instance:
         return _instance.get_user_seq_id()
     return 0
+
+
+def submit_feedback(contact: str, content: str, category: str = "other",
+                    callback=None):
+    """模块级反馈提交快捷入口，遥测未初始化时静默失败。"""
+    if _instance:
+        _instance.submit_feedback(contact, content, category, callback)
+    elif callback:
+        callback(False, "遥测服务未初始化")

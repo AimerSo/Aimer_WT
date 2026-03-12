@@ -1171,22 +1171,42 @@
         <div class="modal-content">
             <h2 style="margin-top: 0; color: var(--text-main);">反馈</h2>
             <div class="form-group" style="margin-top: 15px;">
+                <label>反馈类型</label>
+                <div style="display: flex; gap: 8px; margin-top: 6px;">
+                    <label class="feedback-type-option selected" data-value="bug">
+                        <input type="radio" name="feedback-category" value="bug" checked style="display:none;">
+                        <i class="ri-bug-line"></i> BUG反馈
+                    </label>
+                    <label class="feedback-type-option" data-value="suggestion">
+                        <input type="radio" name="feedback-category" value="suggestion" style="display:none;">
+                        <i class="ri-lightbulb-line"></i> 功能建议
+                    </label>
+                    <label class="feedback-type-option" data-value="other">
+                        <input type="radio" name="feedback-category" value="other" style="display:none;">
+                        <i class="ri-chat-3-line"></i> 其他
+                    </label>
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 15px;">
                 <label>联系方式</label>
-                <input type="text" id="feedback-contact" maxlength="40" placeholder="QQ 或邮箱">
+                <input type="text" id="feedback-contact" maxlength="40" placeholder="QQ 或邮箱（选填）">
                 <div class="input-hint" id="feedback-contact-count">0/40</div>
             </div>
             <div class="form-group" style="margin-top: 15px;">
-                <label>反馈建议</label>
+                <label>反馈内容</label>
                 <textarea id="feedback-content" class="feedback-textarea" maxlength="200"
                     placeholder="请输入你的建议或遇到的问题"></textarea>
                 <div class="input-hint" id="feedback-content-count">0/200</div>
             </div>
             <div class="modal-actions" style="justify-content: flex-end; gap: 12px; margin-top: 18px;">
                 <button class="btn secondary" onclick="app.closeModal('modal-feedback')">取消</button>
-                <button class="btn primary" onclick="app.closeModal('modal-feedback')">提交</button>
+                <button class="btn primary" id="btn-submit-feedback" onclick="app.submitFeedback()">
+                    <i class="ri-send-plane-line"></i> 提交
+                </button>
             </div>
         </div>
     </div>
+
 
     <div class="modal-overlay" id="modal-archive-password">
         <div class="modal-content" style="max-width: 420px;">

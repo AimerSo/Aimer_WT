@@ -940,6 +940,48 @@
     overflow-y: auto;
 }
 
+/* 反馈分类选择器 */
+.feedback-type-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-sec);
+    background: var(--bg-card);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.feedback-type-option:hover {
+    border-color: var(--primary);
+    color: var(--text-main);
+}
+
+.feedback-type-option.selected {
+    border-color: var(--primary);
+    background: rgba(255, 153, 0, 0.1);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.feedback-type-option i {
+    font-size: 15px;
+}
+
+[data-theme='dark'] .feedback-type-option.selected {
+    background: rgba(255, 153, 0, 0.15);
+}
+
+#btn-submit-feedback:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .input-hint {
     margin-top: 8px;
     font-size: 12px;

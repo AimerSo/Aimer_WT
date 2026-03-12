@@ -233,6 +233,9 @@ const app = {
             case 'advertisement':
                 this.initAdvertisement();
                 break;
+            case 'feedback':
+                if (typeof this.initFeedback === 'function') this.initFeedback();
+                break;
             default:
                 break;
         }

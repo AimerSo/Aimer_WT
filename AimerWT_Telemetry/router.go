@@ -460,8 +460,159 @@ func initRouter(r *gin.Engine) {
 				}
 				c.JSON(200, gin.H{"status": "success"})
 			})
+
+			// 反馈管理 API (admin)
+			admin.GET("/feedback", func(c *gin.Context) {
+				query := db.Model(&FeedbackRecord{})
+
+				if status := c.Query("status"); status != "" {
+					query = query.Where("status = ?", status)
+				}
+				if category := c.Query("category"); category != "" {
+					query = query.Where("category = ?", category)
+				}
+				if version := c.Query("version"); version != "" {
+					query = query.Where("version = ?", version)
+				}
+				if keyword := c.Query("keyword"); keyword != "" {
+					like := "%" + keyword + "%"
+					query = query.Where("content LIKE ? OR contact LIKE ?", like, like)
+				}
+
+				var total int64
+				query.Count(&total)
+
+				page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+				pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "50"))
+				if page < 1 {
+					page = 1
+				}
+				if pageSize < 1 || pageSize > 200 {
+					pageSize = 50
+				}
+				offset := (page - 1) * pageSize
+
+				var items []FeedbackRecord
+				query.Order("id desc").Offset(offset).Limit(pageSize).Find(&items)
+
+				// 关联用户别名
+				result := make([]map[string]any, len(items))
+				for i, fb := range items {
+					var alias string
+					db.Model(&TelemetryRecord{}).Where("machine_id = ?", fb.MachineID).Select("alias").Scan(&alias)
+					result[i] = map[string]any{
+						"id":         fb.ID,
+						"machine_id": fb.MachineID,
+						"alias":      alias,
+						"version":    fb.Version,
+						"contact":    fb.Contact,
+						"content":    fb.Content,
+						"category":   fb.Category,
+						"os":         fb.OS,
+						"os_version": fb.OSVersion,
+						"screen_res": fb.ScreenRes,
+						"locale":     fb.Locale,
+						"status":     fb.Status,
+						"admin_note": fb.AdminNote,
+						"created_at": fb.CreatedAt.Format("2006-01-02 15:04:05"),
+						"updated_at": fb.UpdatedAt.Format("2006-01-02 15:04:05"),
+					}
+				}
+
+				// 统计概览
+				var pendingCount, todayCount int64
+				db.Model(&FeedbackRecord{}).Where("status = 'pending'").Count(&pendingCount)
+				today := time.Now().Format("2006-01-02")
+				db.Model(&FeedbackRecord{}).Where("date(created_at) = ?", today).Count(&todayCount)
+
+				c.JSON(200, gin.H{
+					"items":         result,
+					"total":         total,
+					"page":          page,
+					"page_size":     pageSize,
+					"pending_count": pendingCount,
+					"today_count":   todayCount,
+				})
+			})
+
+			admin.PUT("/feedback/:id", func(c *gin.Context) {
+				id := c.Param("id")
+				var existing FeedbackRecord
+				if err := db.First(&existing, id).Error; err != nil {
+					c.JSON(404, gin.H{"error": "Not found"})
+					return
+				}
+				var req struct {
+					Status    string `json:"status"`
+					AdminNote string `json:"admin_note"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					return
+				}
+				updates := map[string]interface{}{}
+				if req.Status != "" {
+					updates["status"] = req.Status
+				}
+				if req.AdminNote != "" {
+					updates["admin_note"] = req.AdminNote
+				}
+				if len(updates) > 0 {
+					db.Model(&existing).Updates(updates)
+				}
+				db.First(&existing, id)
+				c.JSON(200, gin.H{"status": "success", "item": existing})
+			})
+
+			admin.DELETE("/feedback/:id", func(c *gin.Context) {
+				id := c.Param("id")
+				if err := db.Delete(&FeedbackRecord{}, id).Error; err != nil {
+					c.JSON(500, gin.H{"error": "Delete failed"})
+					return
+				}
+				c.JSON(200, gin.H{"status": "success"})
+			})
 		}
 	}
+
+	// 客户端反馈提交（使用与 /telemetry 相同的 UA 校验）
+	r.POST("/feedback", func(c *gin.Context) {
+		var fb FeedbackRecord
+		if err := c.ShouldBindJSON(&fb); err != nil {
+			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			return
+		}
+
+		// 内容校验
+		if len(fb.Content) == 0 {
+			c.JSON(400, gin.H{"error": "Content is required"})
+			return
+		}
+		if len(fb.Content) > 500 {
+			fb.Content = fb.Content[:500]
+		}
+		if len(fb.Contact) > 100 {
+			fb.Contact = fb.Contact[:100]
+		}
+
+		// 频率限制：同一 machine_id 5 分钟内最多 1 条
+		if fb.MachineID != "" {
+			var recentCount int64
+			threshold := time.Now().Add(-5 * time.Minute)
+			db.Model(&FeedbackRecord{}).Where("machine_id = ? AND created_at > ?", fb.MachineID, threshold).Count(&recentCount)
+			if recentCount > 0 {
+				c.JSON(429, gin.H{"error": "请稍后再提交反馈（5分钟内限1条）"})
+				return
+			}
+		}
+
+		fb.Status = "pending"
+		if err := db.Create(&fb).Error; err != nil {
+			c.JSON(500, gin.H{"error": "保存失败"})
+			return
+		}
+		c.JSON(200, gin.H{"status": "success", "feedback_id": fb.ID})
+	})
 
 	r.POST("/telemetry", func(c *gin.Context) {
 		if sysConfig.Maintenance && sysConfig.StopNewData {
