@@ -94,6 +94,8 @@ const LogCollector = {
     
     // 拦截网络请求以捕获错误
     _interceptNetworkRequests() {
+        const collector = this;
+
         // 拦截fetch请求
         const originalFetch = window.fetch;
         window.fetch = async (...args) => {
@@ -106,13 +108,13 @@ const LogCollector = {
                 
                 // 记录失败的请求
                 if (!response.ok) {
-                    this._addLog(`[HTTP错误] ${response.status} ${response.statusText} - ${url} (${duration}ms)`, 'error');
+                    collector._addLog(`[HTTP错误] ${response.status} ${response.statusText} - ${url} (${duration}ms)`, 'error');
                 }
                 
                 return response;
             } catch (error) {
                 const duration = Date.now() - startTime;
-                this._addLog(`[网络请求失败] ${url} - ${error.message} (${duration}ms)`, 'error');
+                collector._addLog(`[网络请求失败] ${url} - ${error.message} (${duration}ms)`, 'error');
                 throw error;
             }
         };
@@ -130,13 +132,14 @@ const LogCollector = {
         
         XMLHttpRequest.prototype.send = function(...args) {
             this._logCollectorStartTime = Date.now();
+            const xhr = this;
             
             this.addEventListener('loadend', () => {
-                const duration = Date.now() - this._logCollectorStartTime;
-                const url = this._logCollectorUrl;
+                const duration = Date.now() - xhr._logCollectorStartTime;
+                const url = xhr._logCollectorUrl;
                 
-                if (this.status >= 400) {
-                    this._addLog(`[XHR错误] ${this.status} ${this.statusText} - ${url} (${duration}ms)`, 'error');
+                if (xhr.status >= 400) {
+                    collector._addLog(`[XHR错误] ${xhr.status} ${xhr.statusText} - ${url} (${duration}ms)`, 'error');
                 }
             });
             

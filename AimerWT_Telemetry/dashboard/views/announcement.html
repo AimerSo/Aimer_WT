@@ -20,57 +20,10 @@
             </div>
         </div>
 
-        <!-- 推送通道操作区 - 三列布局 -->
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
+        <!-- 推送通道操作区 - 两列布局 -->
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 20px;">
 
-            <!-- 公告栏文字覆盖 -->
-            <div class="panel" style="gap: 0;">
-                <div class="panel-header" style="padding: 16px 20px; border-bottom: 1px solid var(--border);">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div style="width: 32px; height: 32px; background: rgba(37, 99, 235, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                                <line x1="16" y1="13" x2="8" y2="13"></line>
-                                <line x1="16" y1="17" x2="8" y2="17"></line>
-                            </svg>
-                        </div>
-                        <div>
-                            <div class="panel-title" style="font-size: 14px;">公告栏文字覆盖</div>
-                            <div class="panel-sub">替换客户端首页公告区域内容</div>
-                        </div>
-                    </div>
-                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotNotice"></span>
-                </div>
-                <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
-                    <div class="form-group" style="margin: 0;">
-                        <label style="margin-bottom: 6px;">状态</label>
-                        <select class="select" style="width: 100%;" id="announcementNoticeStatus">
-                            <option value="on">激活 (文字覆盖)</option>
-                            <option value="off">禁用 (恢复默认)</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="margin: 0;">
-                        <label style="margin-bottom: 6px;">公告内容</label>
-                        <textarea class="input" style="width: 100%; height: 80px; font-family: inherit; padding: 10px; resize: vertical;" id="announcementNoticeContent" placeholder="输入公告内容（支持 HTML 标签）..."></textarea>
-                    </div>
-                    <div class="form-group" style="margin: 0;">
-                        <label style="margin-bottom: 6px;">覆盖范围</label>
-                        <input class="input" style="width: 100%;" id="announcementNoticeScope" value="all" placeholder="输入版本号或 all">
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: rgba(245, 158, 11, 0.08); border-radius: 6px;">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                            <line x1="12" y1="9" x2="12" y2="13"></line>
-                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                        </svg>
-                        <span style="color: var(--warning); font-size: 11px;">客户端暂未启用此通道</span>
-                    </div>
-                    <button class="btn primary" style="width: 100%; justify-content: center;" onclick="app.submitAnnouncement('notice')">发布公告栏覆盖</button>
-                </div>
-            </div>
 
-            <!-- 紧急弹窗通知 -->
             <div class="panel" style="gap: 0;">
                 <div class="panel-header" style="padding: 16px 20px; border-bottom: 1px solid var(--border);">
                     <div style="display: flex; align-items: center; gap: 10px;">
@@ -106,7 +59,9 @@
                     </div>
                     <div class="form-group" style="margin: 0;">
                         <label style="margin-bottom: 6px;">推送范围</label>
-                        <input class="input" style="width: 100%;" id="announcementAlertScope" value="all" placeholder="输入版本号或 all">
+                        <select class="select" style="width: 100%;" id="announcementAlertScope">
+                            <option value="all">all（全部用户）</option>
+                        </select>
                     </div>
                     <button class="btn primary" style="width: 100%; justify-content: center;" onclick="app.submitAnnouncement('alert')">发布紧急通知</button>
                 </div>
@@ -140,7 +95,9 @@
                     </div>
                     <div class="form-group" style="margin: 0;">
                         <label style="margin-bottom: 6px;">推送范围</label>
-                        <input class="input" style="width: 100%;" id="announcementUpdateScope" value="all" placeholder="输入版本号或 all">
+                        <select class="select" style="width: 100%;" id="announcementUpdateScope">
+                            <option value="all">all（全部用户）</option>
+                        </select>
                     </div>
                     <div class="form-group" style="margin: 0;">
                         <label style="margin-bottom: 6px;">更新说明</label>
@@ -165,12 +122,6 @@
                     <span style="font-size: 13px; font-weight: 600; color: var(--text);">通道状态</span>
                 </div>
                 <div id="announcementChannelStatus" style="display: flex; align-items: center; gap: 24px; flex-wrap: wrap;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotNotice"></span>
-                        <span style="font-size: 12px; color: var(--text-muted);">公告栏覆盖</span>
-                        <span style="font-size: 11px; padding: 1px 8px; border-radius: 4px; background: rgba(148, 163, 184, 0.12); color: var(--text-muted);" id="channelBadgeNotice">未知</span>
-                    </div>
-                    <div style="width: 1px; height: 16px; background: var(--border);"></div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotAlert"></span>
                         <span style="font-size: 12px; color: var(--text-muted);">紧急通知弹窗</span>

@@ -26,7 +26,8 @@ func initDB() {
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
-	db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{}, &FeedbackRecord{})
+	db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{}, &FeedbackRecord{},
+		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{})
 }
 
 func loadDashboard() {
@@ -44,6 +45,15 @@ func main() {
 	initDB()
 	RestoreSysConfig()
 	loadDashboard()
+
+	// 初始化 AI 代理
+	aiApiKey = os.Getenv("AI_API_KEY")
+	LoadAIConfig()
+	if aiApiKey != "" {
+		log.Printf("[AI] AI 代理已启用 (提供商: %s, 模型: %s)", aiConfig.Provider, aiConfig.Model)
+	} else {
+		log.Printf("[AI] 未设置 AI_API_KEY，AI 代理功能不可用")
+	}
 
 	// 初始化 WebSocket Hub
 	wsHub = NewWebSocketHub()

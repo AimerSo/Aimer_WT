@@ -64,7 +64,7 @@ from wt.wt_text import (
     sanitize_csv_file_name,
 )
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "3.0.0"
 AGREEMENT_VERSION = "2026-01-10"
 DEFAULT_PENDING_DIR_NAME = "待解压区"
 DEFAULT_RESOURCE_ROOT_DIR_NAME = "AimerWT资源库"
@@ -387,12 +387,82 @@ class AppApi:
                     )
                     self._last_alert_content = full_alert_key
 
-            # 3. 公告栏常驻内容 (Notice - 当前保留历史逻辑，但默认不启用)
-            # if config.get("notice_active"):
-            #     notice_content = config.get("notice_content", "")
-            #     if notice_content and (self._last_notice_content != notice_content):
-            #         self._window.evaluate_js(safe_js_call("updateNoticeBar", notice_content))
-            #         self._last_notice_content = notice_content
+            # 3. Header Banner 信息带推送 (notice 通道，支持多条 banner_items)
+            if config.get("notice_active"):
+                banner_items = config.get("banner_items", [])
+                banner_interval = config.get("banner_interval", 6)
+
+                # 兼容旧的单条模式
+                if not banner_items:
+                    notice_text = config.get("notice_content", "") or config.get("content", "")
+                    if notice_text:
+                        action_type = config.get("notice_action_type", "none")
+                        item = {"type": "announcement", "text": notice_text, "icon": "ri-megaphone-line"}
+                        if action_type == "url":
+                            item["action"] = {"type": "url", "url": config.get("notice_action_url", "")}
+                        elif action_type == "alert":
+                            item["action"] = {
+                                "type": "alert",
+                                "title": config.get("notice_action_title", "系统公告"),
+                                "content": config.get("notice_action_content", notice_text),
+                                "level": "info"
+                            }
+                        banner_items = [item]
+
+                # 构建 notice_key 判断是否变化
+                notice_key = json.dumps(banner_items, ensure_ascii=False, sort_keys=True)
+                if banner_items and (self._last_notice_content != notice_key):
+                    # 先清除旧的 announcement 和 slogan
+                    self._window.evaluate_js(
+                        "if(window.HeaderBannerModule) HeaderBannerModule.clearAnnouncement()"
+                    )
+
+                    # 注入轮播间隔
+                    if banner_interval and banner_interval != 6:
+                        self._window.evaluate_js(
+                            f"(function(){{ var m=window.HeaderBannerModule; if(m && m._setInterval) m._setInterval({int(banner_interval) * 1000}); }})()"
+                        )
+
+                    # 逐条注入 banner items
+                    for item in banner_items:
+                        text = item.get("text", "")
+                        if not text:
+                            continue
+
+                        # 构建 action 对象
+                        action_obj = None
+                        action_type = item.get("action_type", "none")
+                        if action_type == "url" and item.get("action_url"):
+                            action_obj = {"type": "url", "url": item["action_url"]}
+                        elif action_type == "alert":
+                            action_obj = {
+                                "type": "alert",
+                                "title": item.get("action_title", "系统公告"),
+                                "content": item.get("action_content", text),
+                                "level": "info"
+                            }
+                        # 注入已有 action 属性（兼容旧格式）
+                        if not action_obj and item.get("action"):
+                            action_obj = item["action"]
+
+                        text_json = json.dumps(text, ensure_ascii=False)
+                        if action_obj:
+                            action_json = json.dumps(action_obj, ensure_ascii=False)
+                            self._window.evaluate_js(
+                                f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({text_json}, {action_json})"
+                            )
+                        else:
+                            self._window.evaluate_js(
+                                f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({text_json})"
+                            )
+                    self._last_notice_content = notice_key
+            else:
+                # notice 通道关闭时清除 Banner
+                if self._last_notice_content is not None:
+                    self._window.evaluate_js(
+                        "if(window.HeaderBannerModule) HeaderBannerModule.clearAnnouncement()"
+                    )
+                    self._last_notice_content = None
 
             # 4. 更新提示 (内容变化时才提示)
             if config.get("update_active"):

@@ -113,3 +113,29 @@ type FeedbackRecord struct {
 	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
+
+// AIUsageRecord AI 对话用量记录
+type AIUsageRecord struct {
+	ID              uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID       string    `gorm:"index;type:varchar(64)" json:"machine_id"`
+	Model           string    `json:"model"`
+	PromptTokens    int       `json:"prompt_tokens"`
+	CompletionTokens int      `json:"completion_tokens"`
+	TotalTokens     int       `json:"total_tokens"`
+	CreatedAt       time.Time `gorm:"autoCreateTime" json:"created_at"`
+}
+
+// AIUserBan AI 功能封禁记录
+type AIUserBan struct {
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID string    `gorm:"uniqueIndex;type:varchar(64)" json:"machine_id"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+}
+
+// AIUserLimit 单用户速率覆盖（未设置则使用全局默认值）
+type AIUserLimit struct {
+	ID          uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID   string `gorm:"uniqueIndex;type:varchar(64)" json:"machine_id"`
+	HourlyLimit int    `json:"hourly_limit"`
+}

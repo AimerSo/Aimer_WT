@@ -81,3 +81,6 @@ _tmp/
 
 # Local redeem codes (do not upload)
 web/redeem/redeem_codes.local.js
+
+# 本地预览工具
+遥测预览.py

@@ -3,11 +3,31 @@
         <div class="topbar">
             <div class="panel-title">AI助手配置</div>
             <div class="top-actions" style="margin-left: auto;">
-                <button class="btn" onclick="app.resetAIConfig()">重置默认</button>
+                <button class="btn" onclick="app.loadAIConfig()">刷新</button>
                 <button class="btn primary" onclick="app.saveAIConfig()">保存配置</button>
             </div>
         </div>
+
+        <div id="aiConfigStatus" style="margin-bottom: 16px;"></div>
+
+        <!-- 对话统计概览 -->
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+            <div style="background: var(--bg-card, #fff); border-radius: 12px; padding: 16px 20px; border: 1px solid var(--border);">
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">今日对话</div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--primary);" id="aiTodayRequests">-</div>
+            </div>
+            <div style="background: var(--bg-card, #fff); border-radius: 12px; padding: 16px 20px; border: 1px solid var(--border);">
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">总计对话</div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--text);" id="aiTotalRequests">-</div>
+            </div>
+            <div style="background: var(--bg-card, #fff); border-radius: 12px; padding: 16px 20px; border: 1px solid var(--border);">
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">今日消耗 Tokens</div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--secondary, #10b981);" id="aiTodayTokens">-</div>
+            </div>
+        </div>
+
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            <!-- API 配置 -->
             <div class="panel">
                 <div class="panel-header">
                     <div class="panel-title">API 配置</div>
@@ -15,38 +35,39 @@
                 <div class="panel-body">
                     <div class="form-group">
                         <label>API 提供商</label>
-                        <select class="select" style="width: 100%;" id="aiProvider" onchange="app.onProviderChange()">
-                            <option value="openai">OpenAI</option>
-                            <option value="anthropic">Anthropic (Claude)</option>
-                            <option value="deepseek">DeepSeek</option>
-                            <option value="moonshot">Moonshot (Kimi)</option>
+                        <select class="select" style="width: 100%;" id="aiProvider">
                             <option value="zhipu">智谱 AI (GLM)</option>
-                            <option value="qwen">通义千问</option>
-                            <option value="custom">自定义</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label>API 地址</label>
-                        <input class="input" style="width: 100%;" id="aiApiUrl" placeholder="https://api.openai.com/v1">
+                        <input class="input" style="width: 100%;" id="aiApiUrl" placeholder="https://open.bigmodel.cn/api/paas/v4/chat/completions">
                     </div>
                     <div class="form-group">
                         <label>API Key</label>
-                        <div style="display: flex; gap: 8px;">
-                            <input class="input" style="flex: 1;" type="password" id="aiApiKey" placeholder="sk-xxxxxxxxxxxxxxxx">
-                            <button class="btn" onclick="app.toggleApiKeyVisibility()">显示</button>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div id="aiApiKeyStatus" style="flex: 1; padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 13px; color: var(--text-muted);">
+                                点击检测按钮查看连接状态
+                            </div>
+                            <button class="btn" onclick="app.testAIConnection()" id="aiTestBtn" style="white-space: nowrap;">检测连接</button>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                            通过环境变量 <code>AI_API_KEY</code> 配置
                         </div>
                     </div>
                     <div class="form-group">
                         <label>模型选择</label>
                         <select class="select" style="width: 100%;" id="aiModel">
-                            <option value="gpt-4o">GPT-4o</option>
-                            <option value="gpt-4o-mini">GPT-4o Mini</option>
-                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                            <option value="glm-4.6v">GLM-4.6V</option>
+                            <option value="glm-4.7">GLM-4.7</option>
+                            <option value="glm-4-flash">GLM-4-Flash</option>
+                            <option value="glm-4-plus">GLM-4-Plus</option>
                         </select>
                     </div>
                 </div>
             </div>
+
+            <!-- 模型参数 -->
             <div class="panel">
                 <div class="panel-header">
                     <div class="panel-title">模型参数</div>
@@ -55,35 +76,32 @@
                     <div class="form-group">
                         <label>最大输出 Tokens</label>
                         <div style="display: flex; align-items: center; gap: 12px;">
-                            <input type="range" style="flex: 1;" id="maxTokensSlider" min="256" max="8192" value="4096" oninput="app.updateMaxTokensDisplay()">
-                            <input class="input" style="width: 80px; text-align: center;" id="maxTokens" value="4096">
+                            <input type="range" style="flex: 1;" id="maxTokensSlider" min="256" max="8192" value="2048"
+                                oninput="document.getElementById('aiMaxTokens').value = this.value">
+                            <input class="input" style="width: 80px; text-align: center;" id="aiMaxTokens" value="2048"
+                                oninput="document.getElementById('maxTokensSlider').value = this.value">
                         </div>
                     </div>
                     <div class="form-group">
                         <label>温度 (Temperature)</label>
                         <div style="display: flex; align-items: center; gap: 12px;">
-                            <input type="range" style="flex: 1;" id="temperatureSlider" min="0" max="200" value="70" oninput="app.updateTemperatureDisplay()">
-                            <input class="input" style="width: 80px; text-align: center;" id="temperature" value="0.7">
+                            <input type="range" style="flex: 1;" id="temperatureSlider" min="0" max="200" value="70"
+                                oninput="document.getElementById('aiTemperature').value = (this.value / 100).toFixed(2)">
+                            <input class="input" style="width: 80px; text-align: center;" id="aiTemperature" value="0.70"
+                                oninput="document.getElementById('temperatureSlider').value = Math.round(this.value * 100)">
                         </div>
                         <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">较低值更稳定，较高值更有创意</div>
                     </div>
                     <div class="form-group">
-                        <label>上下文窗口</label>
-                        <select class="select" style="width: 100%;" id="contextWindow">
-                            <option value="4096">4K tokens</option>
-                            <option value="8192" selected>8K tokens</option>
-                            <option value="16384">16K tokens</option>
-                            <option value="32768">32K tokens</option>
-                            <option value="128000">128K tokens</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>请求超时 (秒)</label>
-                        <input class="input" style="width: 100%;" id="requestTimeout" value="30" type="number">
+                        <label>最大对话历史条数</label>
+                        <input class="input" style="width: 100%;" id="aiMaxHistory" value="30" type="number">
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">15轮对话 = 30条消息（一问一答各算1条）</div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- 功能开关 -->
         <div class="panel" style="margin-top: 24px;">
             <div class="panel-header">
                 <div class="panel-title">功能开关</div>
@@ -93,36 +111,31 @@
                     <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--bg-secondary); border-radius: 8px;">
                         <div>
                             <div style="font-weight: 500; font-size: 14px;">启用 AI 助手</div>
-                            <div style="font-size: 12px; color: var(--text-muted);">客户端可使用 AI 功能</div>
+                            <div style="font-size: 12px; color: var(--text-muted);">客户端可使用代理模式 AI 功能</div>
                         </div>
                         <label class="switch">
-                            <input type="checkbox" id="enableAI" checked>
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--bg-secondary); border-radius: 8px;">
-                        <div>
-                            <div style="font-weight: 500; font-size: 14px;">流式输出</div>
-                            <div style="font-size: 12px; color: var(--text-muted);">逐字显示回复内容</div>
-                        </div>
-                        <label class="switch">
-                            <input type="checkbox" id="streamOutput" checked>
+                            <input type="checkbox" id="aiEnabled" checked>
                             <span class="slider"></span>
                         </label>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- 系统提示词 -->
         <div class="panel" style="margin-top: 24px;">
             <div class="panel-header">
                 <div class="panel-title">系统提示词</div>
+                <div style="font-size: 12px; color: var(--text-muted);">修改后保存即时生效，所有用户统一使用此提示词</div>
             </div>
             <div class="panel-body">
                 <div class="form-group" style="margin-bottom: 0;">
-                    <textarea class="input" style="width: 100%; height: 120px; font-family: inherit; padding: 12px; resize: vertical;" id="systemPrompt" placeholder="设置 AI 助手的默认行为和人设...">你是一个专业的游戏助手，帮助用户解答关于游戏的问题。请用简洁友好的方式回答用户的问题。</textarea>
+                    <textarea class="input" style="width: 100%; height: 160px; font-family: inherit; padding: 12px; resize: vertical; line-height: 1.6;" id="aiSystemPrompt"></textarea>
                 </div>
             </div>
         </div>
+
+        <!-- 使用限制 -->
         <div class="panel" style="margin-top: 24px;">
             <div class="panel-header">
                 <div class="panel-title">使用限制</div>
@@ -130,19 +143,47 @@
             <div class="panel-body">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label>每日请求上限</label>
-                        <input class="input" style="width: 100%;" id="dailyLimit" value="100" type="number">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label>单次最大 Tokens</label>
-                        <input class="input" style="width: 100%;" id="perRequestLimit" value="2048" type="number">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label>冷却时间 (秒)</label>
-                        <input class="input" style="width: 100%;" id="cooldownTime" value="3" type="number">
+                        <label>每小时请求上限（全局默认）</label>
+                        <input class="input" style="width: 100%;" id="aiHourlyLimit" value="20" type="number">
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">每个用户每小时最多对话次数，可对单个用户单独设置</div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- 用户封禁管理 -->
+        <div class="panel" style="margin-top: 24px;">
+            <div class="panel-header">
+                <div class="panel-title">用户封禁管理</div>
+                <div style="display: flex; gap: 8px;">
+                    <input class="input" style="width: 220px; padding: 6px 12px; font-size: 13px;" placeholder="输入 Machine ID" id="banMachineId">
+                    <input class="input" style="width: 160px; padding: 6px 12px; font-size: 13px;" placeholder="封禁原因（可选）" id="banReason">
+                    <button class="btn" onclick="app.addAIBan()" style="white-space: nowrap;">封禁</button>
+                </div>
+            </div>
+            <div class="panel-body" style="padding: 0;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Machine ID</th>
+                            <th>别名</th>
+                            <th>原因</th>
+                            <th>封禁时间</th>
+                            <th style="width: 80px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="aiBanTable"></tbody>
+                </table>
+                <div id="aiBanEmpty" style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">暂无封禁记录</div>
+            </div>
+        </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof app !== 'undefined' && app.loadAIConfig) {
+        app.loadAIConfig();
+    }
+});
+</script>

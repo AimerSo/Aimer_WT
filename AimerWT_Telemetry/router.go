@@ -573,7 +573,20 @@ func initRouter(r *gin.Engine) {
 				c.JSON(200, gin.H{"status": "success"})
 			})
 		}
+
+		// AI 代理管理路由
+		initAIRoutes(admin)
 	}
+
+	// 客户端 AI 聊天端点（UA 校验，不需要 Basic Auth）
+	r.POST("/api/ai/chat", func(c *gin.Context) {
+		ua := c.GetHeader("User-Agent")
+		if len(ua) < 14 || ua[:14] != "AimerWT-Client" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Access Denied"})
+			return
+		}
+		handleAIChat(c)
+	})
 
 	// 客户端反馈提交（使用与 /telemetry 相同的 UA 校验）
 	r.POST("/feedback", func(c *gin.Context) {

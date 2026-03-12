@@ -75,22 +75,7 @@ class SiliconFlowProvider extends BaseAIProvider {
 
         // 支持思考模式的模型
         if (this.config.enableThinking !== undefined) {
-            const thinkingModels = [
-                'Pro/zai-org/GLM-4.7',
-                'deepseek-ai/DeepSeek-V3.2',
-                'Pro/deepseek-ai/DeepSeek-V3.2',
-                'zai-org/GLM-4.6',
-                'Qwen/Qwen3-8B',
-                'Qwen/Qwen3-14B',
-                'Qwen/Qwen3-32B',
-                'Qwen/Qwen3-30B-A3B',
-                'tencent/Hunyuan-A13B-Instruct',
-                'zai-org/GLM-4.5V',
-                'deepseek-ai/DeepSeek-V3.1-Terminus',
-                'Pro/deepseek-ai/DeepSeek-V3.1-Terminus'
-            ];
-
-            if (thinkingModels.some(m => this.config.model?.includes(m))) {
+            if (SiliconFlowProvider.THINKING_MODELS.some(m => this.config.model?.includes(m))) {
                 body.enable_thinking = this.config.enableThinking;
                 if (this.config.thinkingBudget) {
                     body.thinking_budget = this.config.thinkingBudget;
@@ -148,13 +133,15 @@ class SiliconFlowProvider extends BaseAIProvider {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let buffer = '';
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n');
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
@@ -168,7 +155,6 @@ class SiliconFlowProvider extends BaseAIProvider {
                             const parsed = JSON.parse(data);
                             const delta = parsed.choices?.[0]?.delta;
                             
-                            // 处理思考内容（reasoning_content）
                             const reasoningContent = delta?.reasoning_content;
                             const content = delta?.content;
                             
@@ -216,4 +202,21 @@ class SiliconFlowProvider extends BaseAIProvider {
     }
 }
 
+// 支持思考模式的模型列表（siliconflow.js 和 ai_chat.js 共享引用）
+SiliconFlowProvider.THINKING_MODELS = [
+    'Pro/zai-org/GLM-4.7',
+    'deepseek-ai/DeepSeek-V3.2',
+    'Pro/deepseek-ai/DeepSeek-V3.2',
+    'zai-org/GLM-4.6',
+    'Qwen/Qwen3-8B',
+    'Qwen/Qwen3-14B',
+    'Qwen/Qwen3-32B',
+    'Qwen/Qwen3-30B-A3B',
+    'tencent/Hunyuan-A13B-Instruct',
+    'zai-org/GLM-4.5V',
+    'deepseek-ai/DeepSeek-V3.1-Terminus',
+    'Pro/deepseek-ai/DeepSeek-V3.1-Terminus'
+];
+
 window.SiliconFlowProvider = SiliconFlowProvider;
+
