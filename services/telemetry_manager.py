@@ -31,6 +31,7 @@ class TelemetryManager:
         self._stop_heartbeat = None
         self._is_log_error = False
         self._server_connected = False
+        self._heartbeat_interval = 60
         self.app_version = app_version
 
         # 优先级：显式注入 > app_secrets > 默认接口
@@ -226,18 +227,24 @@ class TelemetryManager:
                     try:
                         data = response.json()
                         sys_config = data.get("sys_config")
-                        if sys_config and self._msg_callback:
-                            # 将广告轮播等扩展数据合并到 config 中一并传递
-                            ad_items = data.get("ad_carousel_items")
-                            if ad_items is not None:
-                                sys_config["ad_carousel_items"] = ad_items
-                            ad_interval_ms = data.get("ad_carousel_interval_ms")
-                            if ad_interval_ms is not None:
-                                sys_config["ad_carousel_interval_ms"] = ad_interval_ms
-                            notice_items = data.get("notice_items")
-                            if notice_items is not None:
-                                sys_config["notice_items"] = notice_items
-                            self._msg_callback(sys_config)
+                        if sys_config:
+                            # 读取服务端下发的心跳间隔
+                            hb = sys_config.get("heartbeat_interval")
+                            if isinstance(hb, (int, float)) and hb >= 10:
+                                self._heartbeat_interval = int(hb)
+
+                            if self._msg_callback:
+                                # 将广告轮播等扩展数据合并到 config 中一并传递
+                                ad_items = data.get("ad_carousel_items")
+                                if ad_items is not None:
+                                    sys_config["ad_carousel_items"] = ad_items
+                                ad_interval_ms = data.get("ad_carousel_interval_ms")
+                                if ad_interval_ms is not None:
+                                    sys_config["ad_carousel_interval_ms"] = ad_interval_ms
+                                notice_items = data.get("notice_items")
+                                if notice_items is not None:
+                                    sys_config["notice_items"] = notice_items
+                                self._msg_callback(sys_config)
 
                         user_cmd = data.get("user_command")
                         if user_cmd and self._cmd_callback:
@@ -265,12 +272,12 @@ class TelemetryManager:
 
     def start_heartbeat_loop(self):
         """
-        心跳，每 5 分钟更新一次在线状态。
+        心跳循环，间隔由服务端 heartbeat_interval 动态控制，默认 60 秒。
         """
         self._stop_heartbeat = threading.Event()
 
         def _loop():
-            while not self._stop_heartbeat.wait(60):
+            while not self._stop_heartbeat.wait(self._heartbeat_interval):
                 try:
                     self.report_startup()
                 except Exception:

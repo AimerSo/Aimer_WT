@@ -3,7 +3,7 @@
         <div class="topbar">
             <div style="display: flex; align-items: center; gap: 12px;">
                 <div style="width: 36px; height: 36px; background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(16, 185, 129, 0.08)); border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                     </svg>
                 </div>
@@ -12,7 +12,7 @@
                     <div style="color: var(--text-muted); font-size: 12px;">查看和处理客户端用户提交的反馈</div>
                 </div>
             </div>
-            <div class="top-actions" style="margin-left: auto; display: flex; gap: 8px;">
+            <div class="top-actions" style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
                 <select class="select" id="feedbackFilterStatus" onchange="app.loadFeedbackList()" style="min-width: 100px;">
                     <option value="">全部状态</option>
                     <option value="pending">待处理</option>
@@ -26,40 +26,94 @@
                     <option value="suggestion">功能建议</option>
                     <option value="other">其他</option>
                 </select>
-                <button class="btn" onclick="app.loadFeedbackList()">刷新</button>
+                <button class="btn" onclick="app.loadFeedbackList()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    刷新
+                </button>
             </div>
         </div>
 
         <!-- 统计概览 -->
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px;">
-            <div class="stat-card">
-                <div class="stat-label">累计反馈</div>
-                <div class="stat-value" id="feedbackTotal">-</div>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px;">
+            <div style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; box-shadow: var(--shadow);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="width: 34px; height: 34px; border-radius: 10px; background: rgba(37, 99, 235, 0.08); display: flex; align-items: center; justify-content: center;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-muted); font-weight: 500;">累计反馈</div>
+                </div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -0.5px;" id="feedbackTotal">-</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">待处理</div>
-                <div class="stat-value" style="color: var(--warning);" id="feedbackPending">-</div>
+            <div style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; box-shadow: var(--shadow);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="width: 34px; height: 34px; border-radius: 10px; background: rgba(245, 158, 11, 0.08); display: flex; align-items: center; justify-content: center;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-muted); font-weight: 500;">待处理</div>
+                </div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--warning); letter-spacing: -0.5px;" id="feedbackPending">-</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">今日新增</div>
-                <div class="stat-value" id="feedbackToday">-</div>
+            <div style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; box-shadow: var(--shadow);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="width: 34px; height: 34px; border-radius: 10px; background: rgba(16, 185, 129, 0.08); display: flex; align-items: center; justify-content: center;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-muted); font-weight: 500;">已解决</div>
+                </div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--secondary); letter-spacing: -0.5px;" id="feedbackResolved">-</div>
+            </div>
+            <div style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; box-shadow: var(--shadow);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="width: 34px; height: 34px; border-radius: 10px; background: rgba(99, 102, 241, 0.08); display: flex; align-items: center; justify-content: center;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-muted); font-weight: 500;">今日新增</div>
+                </div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -0.5px;" id="feedbackToday">-</div>
             </div>
         </div>
 
         <!-- 反馈列表 -->
-        <div class="panel">
-            <div class="panel-body" style="padding: 0;">
-                <div id="feedbackListContainer" style="min-height: 200px;">
-                    <div style="text-align: center; color: var(--text-muted); padding: 40px;">加载中...</div>
+        <div class="panel" style="gap: 0;">
+            <div class="panel-header" style="padding: 14px 20px; border-bottom: 1px solid var(--border);">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                    <div class="panel-title" style="font-size: 14px;">反馈列表</div>
+                    <span style="font-size: 11px; color: var(--text-muted);" id="feedbackListCount"></span>
                 </div>
             </div>
+            <div style="min-height: 300px;" id="feedbackListContainer">
+                <div style="text-align: center; color: var(--text-muted); padding: 60px 20px;">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px;">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <p style="font-size: 13px;">加载中...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 反馈详情侧拉 -->
+        <div id="feedbackDetailOverlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.25); z-index: 999;" onclick="app.closeFeedbackDetail()"></div>
+        <div id="feedbackDetailPanel" style="display: none; position: fixed; top: 0; right: -480px; width: 480px; height: 100vh; background: var(--card); border-left: 1px solid var(--border); box-shadow: -8px 0 30px rgba(0,0,0,0.08); z-index: 1000; transition: right 0.3s ease; overflow-y: auto;">
+            <div style="padding: 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--card); z-index: 1;">
+                <div style="font-weight: 700; font-size: 15px; color: var(--text);">反馈详情</div>
+                <button class="btn" onclick="app.closeFeedbackDetail()" style="padding: 4px 12px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div id="feedbackDetailBody" style="padding: 20px;"></div>
         </div>
     </div>
 </div>
 
 <script>
 (function() {
-    const CATEGORY_MAP = { bug: '🐛 BUG', suggestion: '💡 建议', other: '💬 其他' };
+    const CATEGORY_MAP = { bug: 'BUG', suggestion: '建议', other: '其他' };
+    const CATEGORY_ICON = {
+        bug: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6M12 20v-9M6.53 9C4.6 8.8 3 7.1 3 5M6 13H2M6 17l-4 1M17.47 9c1.93-.2 3.53-1.9 3.53-4M18 13h4M18 17l4 1"></path></svg>',
+        suggestion: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="18" x2="15" y2="18"></line><line x1="10" y1="22" x2="14" y2="22"></line><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"></path></svg>',
+        other: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
+    };
     const STATUS_MAP = { pending: '待处理', read: '已读', resolved: '已解决', ignored: '已忽略' };
     const STATUS_COLOR = { pending: 'var(--warning)', read: 'var(--primary)', resolved: 'var(--secondary)', ignored: 'var(--muted)' };
 
@@ -80,58 +134,153 @@
             app.setText('feedbackPending', String(data.pending_count || 0));
             app.setText('feedbackToday', String(data.today_count || 0));
 
+            const resolvedCount = (data.items || []).filter(fb => fb.status === 'resolved').length;
+            app.setText('feedbackResolved', String(resolvedCount));
+
             const container = document.getElementById('feedbackListContainer');
             const items = data.items || [];
+
+            const countEl = document.getElementById('feedbackListCount');
+            if (countEl) countEl.textContent = `${items.length} 条`;
+
             if (!items.length) {
-                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 40px;">暂无反馈数据</div>';
+                container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 60px 20px;">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px;">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <p style="font-size: 13px;">暂无反馈数据</p>
+                    <p style="font-size: 11px; margin-top: 4px;">用户提交的反馈将在此处显示</p>
+                </div>`;
                 return;
             }
 
-            let html = '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">';
-            html += '<thead><tr style="background: var(--bg); border-bottom: 1px solid var(--border);">';
-            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">ID</th>';
-            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">类型</th>';
-            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">反馈内容</th>';
-            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">联系方式</th>';
-            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">用户</th>';
-            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">环境</th>';
-            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">状态</th>';
-            html += '<th style="padding: 10px 16px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;">时间</th>';
-            html += '<th style="padding: 10px 16px; text-align: center; font-weight: 600; color: var(--text-muted); font-size: 11px;">操作</th>';
-            html += '</tr></thead><tbody>';
-
+            let html = '';
             items.forEach(fb => {
                 const cat = CATEGORY_MAP[fb.category] || fb.category;
+                const catIcon = CATEGORY_ICON[fb.category] || CATEGORY_ICON.other;
                 const st = STATUS_MAP[fb.status] || fb.status;
                 const stColor = STATUS_COLOR[fb.status] || 'var(--text-muted)';
                 const alias = fb.alias || app.formatHwid(fb.machine_id);
-                const env = `${fb.os || '-'} ${fb.os_version ? fb.os_version.slice(0, 10) : ''} · ${fb.screen_res || '-'}`;
+                const timeStr = fb.created_at ? fb.created_at.replace('T', ' ').slice(0, 16) : '-';
 
-                html += `<tr style="border-bottom: 1px solid var(--border); transition: background 0.15s;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">`;
-                html += `<td style="padding: 12px 16px; color: var(--text-muted);">#${fb.id}</td>`;
-                html += `<td style="padding: 12px 16px;">${cat}</td>`;
-                html += `<td style="padding: 12px 16px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text);">${fb.content}</td>`;
-                html += `<td style="padding: 12px 16px; color: var(--text-muted);">${fb.contact || '-'}</td>`;
-                html += `<td style="padding: 12px 16px; color: var(--text-muted);" title="${fb.machine_id}">${alias}</td>`;
-                html += `<td style="padding: 12px 16px; color: var(--text-muted); font-size: 11px;">${env}</td>`;
-                html += `<td style="padding: 12px 16px;"><span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: ${stColor}20; color: ${stColor};">${st}</span></td>`;
-                html += `<td style="padding: 12px 16px; color: var(--text-muted); font-size: 11px; white-space: nowrap;">${fb.created_at || '-'}</td>`;
-                html += `<td style="padding: 12px 16px; text-align: center;">`;
-                html += `<select class="select" style="font-size: 11px; padding: 3px 6px; min-width: 70px;" onchange="app.updateFeedbackStatus(${fb.id}, this.value)" value="${fb.status}">`;
+                html += `<div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 14px; cursor: pointer; transition: background 0.15s;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''" onclick="app.showFeedbackDetail(${fb.id})">`;
+
+                // 类型图标
+                html += `<div style="width: 36px; height: 36px; border-radius: 10px; background: ${stColor}12; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: ${stColor};">${catIcon}</div>`;
+
+                // 内容区
+                html += `<div style="flex: 1; min-width: 0;">`;
+                html += `<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">`;
+                html += `<span style="font-weight: 600; font-size: 13px; color: var(--text);">#${fb.id}</span>`;
+                html += `<span style="display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: ${stColor}15; color: ${stColor};">${catIcon} ${cat}</span>`;
+                html += `<span style="font-size: 11px; color: var(--text-muted);">${alias}</span>`;
+                html += `</div>`;
+                html += `<div style="font-size: 13px; color: var(--text); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 600px;">${fb.content}</div>`;
+                html += `<div style="display: flex; align-items: center; gap: 12px; margin-top: 6px; font-size: 11px; color: var(--text-muted);">`;
+                html += `<span style="display: inline-flex; align-items: center; gap: 3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>${timeStr}</span>`;
+                if (fb.contact) html += `<span style="display: inline-flex; align-items: center; gap: 3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>${fb.contact}</span>`;
+                if (fb.os) html += `<span>${fb.os} ${fb.os_version ? fb.os_version.slice(0, 10) : ''}</span>`;
+                html += `</div>`;
+                html += `</div>`;
+
+                // 状态 + 操作
+                html += `<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0;">`;
+                html += `<span style="display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; background: ${stColor}15; color: ${stColor};">${st}</span>`;
+                html += `<select class="select" style="font-size: 11px; padding: 3px 8px; min-width: 78px; border-radius: 6px;" onchange="app.updateFeedbackStatus(${fb.id}, this.value); event.stopPropagation();" value="${fb.status}">`;
                 ['pending', 'read', 'resolved', 'ignored'].forEach(s => {
                     html += `<option value="${s}" ${fb.status === s ? 'selected' : ''}>${STATUS_MAP[s]}</option>`;
                 });
                 html += `</select>`;
-                html += `</td></tr>`;
+                html += `</div>`;
+
+                html += `</div>`;
             });
 
-            html += '</tbody></table>';
             container.innerHTML = html;
+
+            // 缓存数据便于详情面板使用
+            app._feedbackItems = items;
         } catch (e) {
             console.error('加载反馈失败:', e);
             document.getElementById('feedbackListContainer').innerHTML =
-                '<div style="text-align: center; color: var(--danger); padding: 40px;">加载失败，请检查服务器连接</div>';
+                `<div style="text-align: center; padding: 60px 20px;">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px; opacity: 0.6;">
+                        <circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                    <p style="font-size: 13px; color: var(--danger);">加载失败</p>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">请检查服务器连接后重试</p>
+                </div>`;
         }
+    };
+
+    app.showFeedbackDetail = function(id) {
+        const fb = (app._feedbackItems || []).find(f => f.id === id);
+        if (!fb) return;
+
+        const cat = CATEGORY_MAP[fb.category] || fb.category;
+        const catIcon = CATEGORY_ICON[fb.category] || CATEGORY_ICON.other;
+        const st = STATUS_MAP[fb.status] || fb.status;
+        const stColor = STATUS_COLOR[fb.status] || 'var(--text-muted)';
+        const timeStr = fb.created_at ? fb.created_at.replace('T', ' ').slice(0, 19) : '-';
+
+        let html = '';
+        // 头部信息
+        html += `<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">`;
+        html += `<div style="width: 42px; height: 42px; border-radius: 12px; background: ${stColor}12; display: flex; align-items: center; justify-content: center; color: ${stColor};">${catIcon}</div>`;
+        html += `<div><div style="font-weight: 700; font-size: 15px; color: var(--text);">#${fb.id} ${cat}反馈</div>`;
+        html += `<div style="font-size: 11px; color: var(--text-muted);">${timeStr}</div></div>`;
+        html += `<span style="margin-left: auto; padding: 3px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; background: ${stColor}15; color: ${stColor};">${st}</span>`;
+        html += `</div>`;
+
+        // 反馈内容
+        html += `<div style="background: var(--bg); border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border);">`;
+        html += `<div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>反馈内容</div>`;
+        html += `<div style="font-size: 13px; color: var(--text); line-height: 1.7; white-space: pre-wrap; word-break: break-all;">${fb.content}</div>`;
+        html += `</div>`;
+
+        // 详情信息网格
+        const details = [
+            { label: '用户', value: fb.alias || app.formatHwid(fb.machine_id), icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>' },
+            { label: '联系方式', value: fb.contact || '-', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>' },
+            { label: 'HWID', value: fb.machine_id || '-', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>' },
+            { label: '操作系统', value: `${fb.os || '-'} ${fb.os_version || ''}`.trim(), icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>' },
+            { label: '分辨率', value: fb.screen_res || '-', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>' }
+        ];
+
+        html += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">`;
+        details.forEach(d => {
+            html += `<div style="background: var(--bg); border-radius: 10px; padding: 12px 14px; border: 1px solid var(--border);">`;
+            html += `<div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">${d.icon}${d.label}</div>`;
+            html += `<div style="font-size: 12px; color: var(--text); font-weight: 500; word-break: break-all;">${d.value}</div>`;
+            html += `</div>`;
+        });
+        html += `</div>`;
+
+        // 状态操作
+        html += `<div style="border-top: 1px solid var(--border); padding-top: 16px;">`;
+        html += `<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>更改状态</div>`;
+        html += `<div style="display: flex; gap: 8px;">`;
+        ['pending', 'read', 'resolved', 'ignored'].forEach(s => {
+            const sc = STATUS_COLOR[s];
+            const active = fb.status === s;
+            html += `<button class="btn" style="flex: 1; justify-content: center; font-size: 11px; padding: 6px 0; border-radius: 8px; ${active ? `background: ${sc}20; color: ${sc}; border-color: ${sc}40; font-weight: 700;` : ''}" onclick="app.updateFeedbackStatus(${fb.id}, '${s}')">${STATUS_MAP[s]}</button>`;
+        });
+        html += `</div></div>`;
+
+        document.getElementById('feedbackDetailBody').innerHTML = html;
+        document.getElementById('feedbackDetailOverlay').style.display = 'block';
+        const panel = document.getElementById('feedbackDetailPanel');
+        panel.style.display = 'block';
+        requestAnimationFrame(() => { panel.style.right = '0'; });
+    };
+
+    app.closeFeedbackDetail = function() {
+        const panel = document.getElementById('feedbackDetailPanel');
+        panel.style.right = '-480px';
+        setTimeout(() => {
+            panel.style.display = 'none';
+            document.getElementById('feedbackDetailOverlay').style.display = 'none';
+        }, 300);
     };
 
     app.updateFeedbackStatus = async function(id, status) {
@@ -143,6 +292,11 @@
             });
             if (res.ok) {
                 app.loadFeedbackList();
+                // 若详情面板开着，刷新它
+                const panel = document.getElementById('feedbackDetailPanel');
+                if (panel && panel.style.display === 'block') {
+                    setTimeout(() => app.showFeedbackDetail(id), 200);
+                }
             }
         } catch (e) {
             console.error('更新状态失败:', e);

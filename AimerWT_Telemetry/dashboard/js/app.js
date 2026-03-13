@@ -8,7 +8,7 @@ const app = {
     // 配置
     config: {
         apiBase: '',
-        updateInterval: 300 // 5分钟
+        updateInterval: parseInt(localStorage.getItem('dashboard_refresh_interval')) || 60
     },
 
     // 状态
@@ -22,6 +22,8 @@ const app = {
         adminUsers: new Set(),
         updateTimerInterval: null,
         updateElapsedSeconds: 0,
+        autoRefreshPaused: false,
+        fetchIntervalId: null,
         notes: [],
         aiUsageData: [],
         aiUsageStats: null,
@@ -47,8 +49,8 @@ const app = {
         this.startUpdateTimer();
         // 默认加载主页
         this.switchView('dashboard', document.querySelector('[data-view="dashboard"]'));
-        // 启动定时刷新
-        setInterval(() => this.fetchData(), 300000);
+        // 启动定时刷新（动态读取配置间隔）
+        this._startFetchInterval();
 
         // 动态注入 Banner 菜单项（避免 index.html 服务器缓存问题）
         this._injectBannerMenuItem();
@@ -62,9 +64,9 @@ const app = {
         if (!controlSubmenu) return;
         // 避免重复注入
         if (controlSubmenu.querySelector('[data-view="banner"]')) return;
-        // 定位到「公告栏」菜单项后面
-        const announcementItem = controlSubmenu.querySelector('[data-view="announcement"]');
-        if (!announcementItem) return;
+        // 定位到「通知」菜单项后面
+        const notificationItem = controlSubmenu.querySelector('[data-view="notification"]');
+        if (!notificationItem) return;
 
         const bannerItem = document.createElement('div');
         bannerItem.className = 'submenu-item';
@@ -83,7 +85,7 @@ const app = {
             </div>
             <span>Banner</span>
         `;
-        announcementItem.insertAdjacentElement('afterend', bannerItem);
+        notificationItem.insertAdjacentElement('afterend', bannerItem);
     },
 
     /**
@@ -273,6 +275,9 @@ const app = {
                 break;
             case 'feedback':
                 if (typeof this.initFeedback === 'function') this.initFeedback();
+                break;
+            case 'notification':
+                this.initNotification();
                 break;
             default:
                 break;
@@ -1596,6 +1601,7 @@ const app = {
         this.setVal('bannerEditAlertTitle', '');
         this.setVal('bannerEditAlertContent', '');
         this.toggleBannerActionFields();
+        this.updateIconPreview();
     },
 
     editBannerItem(index) {
@@ -1618,6 +1624,7 @@ const app = {
         this.setVal('bannerEditAlertTitle', item.action_title || '');
         this.setVal('bannerEditAlertContent', item.action_content || '');
         this.toggleBannerActionFields();
+        this.updateIconPreview();
     },
 
     cancelBannerEdit() {
@@ -1702,6 +1709,266 @@ const app = {
             this.showAlert('Banner 已清除', 'success');
             this.loadBannerStatus();
         } catch (error) { this.showAlert('清除失败: ' + error.message, 'danger'); }
+    },
+
+    // ==================== 图标选择器（自包含实现）====================
+
+    _iconPickerData: {
+        '\u{1F381} \u798F\u5229\u6D3B\u52A8': [
+            'ri-gift-line', 'ri-gift-fill', 'ri-gift-2-line', 'ri-coupon-line',
+            'ri-coupon-fill', 'ri-coupon-3-line', 'ri-red-packet-line', 'ri-money-cny-circle-line',
+            'ri-copper-coin-line', 'ri-vip-crown-line', 'ri-vip-crown-fill', 'ri-trophy-line',
+            'ri-trophy-fill', 'ri-medal-line', 'ri-award-line', 'ri-hand-coin-line',
+            'ri-percent-line', 'ri-price-tag-3-line', 'ri-shopping-bag-line', 'ri-shopping-cart-line',
+            'ri-cake-line', 'ri-cake-2-line', 'ri-coin-line', 'ri-dice-line'
+        ],
+        '\u{2728} \u88C5\u9970\u6807\u8BB0': [
+            'ri-sparkling-line', 'ri-sparkling-fill', 'ri-magic-line', 'ri-lightbulb-line',
+            'ri-flashlight-line', 'ri-fire-line', 'ri-fire-fill', 'ri-thunderstorms-line',
+            'ri-rainbow-line', 'ri-star-line', 'ri-star-fill', 'ri-star-smile-line',
+            'ri-heart-line', 'ri-heart-fill', 'ri-heart-pulse-line', 'ri-emotion-happy-line',
+            'ri-emotion-laugh-line', 'ri-thumb-up-line', 'ri-thumb-up-fill', 'ri-hand-heart-line',
+            'ri-flower-line', 'ri-leaf-line', 'ri-plant-line', 'ri-seedling-line'
+        ],
+        '\u{1F4E2} \u901A\u77E5\u516C\u544A': [
+            'ri-megaphone-line', 'ri-megaphone-fill', 'ri-notification-line', 'ri-notification-fill',
+            'ri-alarm-line', 'ri-alarm-warning-line', 'ri-bell-line', 'ri-bell-fill',
+            'ri-volume-up-line', 'ri-speaker-line', 'ri-broadcast-line', 'ri-chat-1-line',
+            'ri-chat-3-line', 'ri-message-2-line', 'ri-mail-line', 'ri-mail-send-line',
+            'ri-discuss-line', 'ri-questionnaire-line', 'ri-feedback-line', 'ri-speak-line'
+        ],
+        '\u{26A0}\u{FE0F} \u72B6\u6001\u63D0\u793A': [
+            'ri-information-line', 'ri-information-fill', 'ri-error-warning-line', 'ri-error-warning-fill',
+            'ri-alert-line', 'ri-alert-fill', 'ri-spam-line', 'ri-spam-2-line',
+            'ri-checkbox-circle-line', 'ri-checkbox-circle-fill', 'ri-close-circle-line', 'ri-question-line',
+            'ri-shield-check-line', 'ri-shield-line', 'ri-lock-line', 'ri-lock-unlock-line',
+            'ri-eye-line', 'ri-eye-off-line', 'ri-prohibited-line', 'ri-indeterminate-circle-line'
+        ],
+        '\u{26A1} \u64CD\u4F5C\u5DE5\u5177': [
+            'ri-download-2-line', 'ri-upload-2-line', 'ri-share-line', 'ri-share-forward-line',
+            'ri-links-line', 'ri-external-link-line', 'ri-refresh-line', 'ri-loop-left-line',
+            'ri-search-line', 'ri-filter-line', 'ri-settings-3-line', 'ri-tools-line',
+            'ri-edit-line', 'ri-delete-bin-line', 'ri-add-circle-line', 'ri-qr-code-line',
+            'ri-scan-line', 'ri-clipboard-line', 'ri-save-line', 'ri-pin-distance-line'
+        ],
+        '\u{1F3B5} \u5A92\u4F53\u5A31\u4E50': [
+            'ri-music-2-line', 'ri-headphone-line', 'ri-mic-line', 'ri-volume-down-line',
+            'ri-play-circle-line', 'ri-pause-circle-line', 'ri-movie-line', 'ri-film-line',
+            'ri-camera-line', 'ri-image-line', 'ri-gallery-line', 'ri-live-line',
+            'ri-gamepad-line', 'ri-gamepad-fill', 'ri-sword-line', 'ri-sword-fill'
+        ],
+        '\u{1F4BB} \u7CFB\u7EDF\u8BBE\u5907': [
+            'ri-computer-line', 'ri-mac-line', 'ri-smartphone-line', 'ri-tablet-line',
+            'ri-server-line', 'ri-database-2-line', 'ri-cloud-line', 'ri-cloud-fill',
+            'ri-wifi-line', 'ri-cpu-line', 'ri-hard-drive-2-line', 'ri-terminal-box-line',
+            'ri-code-s-slash-line', 'ri-bug-line', 'ri-git-branch-line', 'ri-braces-line'
+        ],
+        '\u{1F465} \u7528\u6237\u793E\u4EA4': [
+            'ri-user-line', 'ri-user-heart-line', 'ri-user-star-line', 'ri-user-settings-line',
+            'ri-group-line', 'ri-team-line', 'ri-contacts-line', 'ri-account-circle-line',
+            'ri-user-add-line', 'ri-user-follow-line', 'ri-parent-line', 'ri-men-line',
+            'ri-women-line', 'ri-robot-line', 'ri-skull-line', 'ri-emotion-line'
+        ],
+        '\u{1F4BC} \u5546\u52A1\u529E\u516C': [
+            'ri-briefcase-line', 'ri-calendar-line', 'ri-calendar-event-line', 'ri-time-line',
+            'ri-timer-line', 'ri-store-line', 'ri-building-line', 'ri-flag-line',
+            'ri-bookmark-line', 'ri-file-text-line', 'ri-folder-line', 'ri-archive-line',
+            'ri-bar-chart-line', 'ri-pie-chart-line', 'ri-line-chart-line', 'ri-funds-line'
+        ],
+        '\u{1F680} \u51FA\u884C\u5BFC\u822A': [
+            'ri-rocket-line', 'ri-rocket-fill', 'ri-plane-line', 'ri-car-line',
+            'ri-bus-line', 'ri-ship-line', 'ri-train-line', 'ri-walk-line',
+            'ri-map-pin-line', 'ri-road-map-line', 'ri-route-line', 'ri-compass-3-line',
+            'ri-navigation-line', 'ri-send-plane-line', 'ri-earth-line', 'ri-global-line'
+        ],
+        '\u{1F324}\u{FE0F} \u5929\u6C14\u81EA\u7136': [
+            'ri-sun-line', 'ri-sun-fill', 'ri-moon-line', 'ri-moon-fill',
+            'ri-cloudy-line', 'ri-rainy-line', 'ri-snowy-line', 'ri-windy-line',
+            'ri-temp-hot-line', 'ri-temp-cold-line', 'ri-drop-line', 'ri-contrast-drop-line',
+            'ri-mist-line', 'ri-tornado-line', 'ri-haze-line', 'ri-sun-cloudy-line'
+        ]
+    },
+
+    _iconPickerActiveTab: '\u{1F381} \u798F\u5229\u6D3B\u52A8',
+    _iconPickerCdnLoaded: false,
+
+    _ensureIconPickerCdn() {
+        if (this._iconPickerCdnLoaded) return;
+        if (!document.querySelector('link[href*="remixicon"]')) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = 'https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.min.css';
+            document.head.appendChild(link);
+        }
+        this._iconPickerCdnLoaded = true;
+    },
+
+    _ensureIconPickerDom() {
+        if (document.getElementById('iconPickerMask')) return;
+
+        const style = document.createElement('style');
+        style.textContent = `
+            #iconPickerMask{position:fixed;inset:0;background:rgba(0,0,0,0.45);backdrop-filter:blur(4px);z-index:9998;opacity:0;visibility:hidden;transition:all .25s ease}
+            #iconPickerMask.show{opacity:1;visibility:visible}
+            #iconPickerModal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.92);background:#fff;border-radius:18px;box-shadow:0 24px 64px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.06);z-index:9999;width:680px;max-width:92vw;max-height:82vh;opacity:0;visibility:hidden;transition:all .3s cubic-bezier(.34,1.56,.64,1);display:flex;flex-direction:column;overflow:hidden}
+            #iconPickerModal.show{opacity:1;visibility:visible;transform:translate(-50%,-50%) scale(1)}
+            .ip-header{display:flex;justify-content:space-between;align-items:center;padding:20px 24px 16px;border-bottom:1px solid #f0f0f0}
+            .ip-header h3{font-size:17px;font-weight:700;color:#1f2937;margin:0}
+            .ip-close{width:32px;height:32px;border-radius:8px;border:none;background:#f3f4f6;color:#6b7280;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+            .ip-close:hover{background:#e5e7eb;color:#1f2937}
+            .ip-search{margin:12px 24px;padding:10px 14px;border:1px solid #e5e7eb;border-radius:10px;font-size:13px;width:calc(100% - 48px);outline:none;transition:border-color .2s;background:#fafafa}
+            .ip-search:focus{border-color:#6366f1;background:#fff;box-shadow:0 0 0 3px rgba(99,102,241,.08)}
+            .ip-tabs{display:flex;gap:6px;padding:0 24px 12px;flex-wrap:wrap;border-bottom:1px solid #f0f0f0}
+            .ip-tab{padding:5px 12px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;background:#f8f9fa;color:#6b7280;border:1px solid transparent;transition:all .15s;white-space:nowrap;user-select:none}
+            .ip-tab:hover{background:#eef2ff;color:#4338ca;border-color:#e0e7ff}
+            .ip-tab.active{background:#1f2937;color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+            .ip-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;padding:16px 24px;overflow-y:auto;flex:1;max-height:380px}
+            .ip-item{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-radius:10px;cursor:pointer;border:1.5px solid transparent;transition:all .15s;background:#fafafa;position:relative}
+            .ip-item:hover{background:#eef2ff;border-color:#818cf8;transform:translateY(-2px);box-shadow:0 4px 12px rgba(99,102,241,.15)}
+            .ip-item.selected{background:#eef2ff;border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+            .ip-item i{font-size:22px;color:#374151;line-height:1}
+            .ip-item:hover i{color:#4f46e5}
+            .ip-item.selected i{color:#4f46e5}
+            .ip-item .ip-name{font-size:9px;color:#9ca3af;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;padding:0 2px;line-height:1.2}
+            .ip-footer{padding:12px 24px;border-top:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center}
+            .ip-footer .ip-sel{font-size:12px;color:#9ca3af}
+            .ip-footer .ip-sel strong{color:#6366f1;font-weight:600}
+            .ip-empty{grid-column:1/-1;text-align:center;color:#9ca3af;padding:48px 20px;font-size:13px}
+        `;
+        document.head.appendChild(style);
+
+        const mask = document.createElement('div');
+        mask.id = 'iconPickerMask';
+        mask.onclick = () => this.closeIconPicker();
+
+        const modal = document.createElement('div');
+        modal.id = 'iconPickerModal';
+        modal.innerHTML = `
+            <div class="ip-header">
+                <h3>\u{1F3A8} \u9009\u62E9\u56FE\u6807</h3>
+                <button class="ip-close" onclick="app.closeIconPicker()">\u2715</button>
+            </div>
+            <input class="ip-search" id="iconPickerSearch" placeholder="\u8F93\u5165\u5173\u952E\u8BCD\u641C\u7D22\u56FE\u6807 (bell, star, heart...)" oninput="app.filterIcons()">
+            <div class="ip-tabs" id="iconPickerTabs"></div>
+            <div class="ip-grid" id="iconPickerGrid"></div>
+            <div class="ip-footer">
+                <span class="ip-sel" id="iconPickerSelected">\u70B9\u51FB\u56FE\u6807\u5373\u53EF\u9009\u62E9</span>
+                <button class="btn" style="padding:6px 16px;font-size:12px;" onclick="app.closeIconPicker()">\u5173\u95ED</button>
+            </div>
+        `;
+
+        document.body.appendChild(mask);
+        document.body.appendChild(modal);
+    },
+
+    updateIconPreview() {
+        const input = document.getElementById('bannerEditIcon');
+        const preview = document.getElementById('bannerEditIconPreview');
+        if (input && preview) {
+            preview.className = (input.value || '').trim() || 'ri-megaphone-line';
+        }
+    },
+
+    openIconPicker() {
+        this._ensureIconPickerCdn();
+        this._ensureIconPickerDom();
+
+        const currentIcon = (document.getElementById('bannerEditIcon')?.value || '').trim();
+        this._iconPickerActiveTab = '\u{1F381} \u798F\u5229\u6D3B\u52A8';
+
+        if (currentIcon) {
+            for (const [cat, icons] of Object.entries(this._iconPickerData)) {
+                if (icons.includes(currentIcon)) {
+                    this._iconPickerActiveTab = cat;
+                    break;
+                }
+            }
+        }
+
+        this._renderIconPickerTabs();
+        this._renderIconPickerGrid(currentIcon);
+        document.getElementById('iconPickerSearch').value = '';
+        document.getElementById('iconPickerSelected').innerHTML = currentIcon
+            ? '\u5DF2\u9009: <strong>' + currentIcon + '</strong>' : '\u70B9\u51FB\u56FE\u6807\u5373\u53EF\u9009\u62E9';
+        document.getElementById('iconPickerMask').classList.add('show');
+        document.getElementById('iconPickerModal').classList.add('show');
+    },
+
+    closeIconPicker() {
+        document.getElementById('iconPickerMask')?.classList.remove('show');
+        document.getElementById('iconPickerModal')?.classList.remove('show');
+    },
+
+    _renderIconPickerTabs() {
+        const container = document.getElementById('iconPickerTabs');
+        if (!container) return;
+        const cats = Object.keys(this._iconPickerData);
+        container.innerHTML = cats.map(cat => {
+            const cls = cat === this._iconPickerActiveTab ? 'ip-tab active' : 'ip-tab';
+            const escaped = cat.replace(/'/g, "\\'");
+            return '<div class="' + cls + '" onclick="app._switchIconTab(\'' + escaped + '\')">' + cat + '</div>';
+        }).join('');
+    },
+
+    _switchIconTab(cat) {
+        this._iconPickerActiveTab = cat;
+        this._renderIconPickerTabs();
+        const currentIcon = (document.getElementById('bannerEditIcon')?.value || '').trim();
+        const search = (document.getElementById('iconPickerSearch')?.value || '').trim().toLowerCase();
+        this._renderIconPickerGrid(currentIcon, search);
+    },
+
+    filterIcons() {
+        const currentIcon = (document.getElementById('bannerEditIcon')?.value || '').trim();
+        const search = (document.getElementById('iconPickerSearch')?.value || '').trim().toLowerCase();
+        this._renderIconPickerGrid(currentIcon, search);
+    },
+
+    _renderIconPickerGrid(selectedIcon, search) {
+        const container = document.getElementById('iconPickerGrid');
+        if (!container) return;
+
+        let icons;
+        if (search) {
+            icons = [];
+            for (const list of Object.values(this._iconPickerData)) {
+                for (const ic of list) {
+                    if (ic.includes(search) && !icons.includes(ic)) icons.push(ic);
+                }
+            }
+        } else {
+            icons = this._iconPickerData[this._iconPickerActiveTab] || [];
+        }
+
+        if (!icons.length) {
+            container.innerHTML = '<div class="ip-empty">\u6CA1\u6709\u627E\u5230\u5339\u914D\u7684\u56FE\u6807</div>';
+            return;
+        }
+
+        container.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+        icons.forEach(ic => {
+            const div = document.createElement('div');
+            div.className = 'ip-item' + (ic === selectedIcon ? ' selected' : '');
+            div.title = ic;
+            div.onclick = () => this._selectIcon(ic);
+            const short = ic.replace(/^ri-/, '').replace(/-(line|fill)$/, '');
+            div.innerHTML = '<i class="' + ic + '"></i><span class="ip-name">' + short + '</span>';
+            fragment.appendChild(div);
+        });
+        container.appendChild(fragment);
+    },
+
+    _selectIcon(iconClass) {
+        this.setVal('bannerEditIcon', iconClass);
+        this.updateIconPreview();
+        document.getElementById('iconPickerSelected').innerHTML = '\u5DF2\u9009: <strong>' + iconClass + '</strong>';
+
+        document.querySelectorAll('#iconPickerGrid .ip-item').forEach(el => {
+            el.classList.toggle('selected', el.title === iconClass);
+        });
+
+        setTimeout(() => this.closeIconPicker(), 200);
     },
 
     /**
@@ -2104,31 +2371,34 @@ const app = {
      * 初始化设置视图
      */
     initSettings() {
-        // 从 localStorage 加载设置
         const settings = this.loadSettings();
 
-        // 应用设置到表单
-        const themeEl = document.getElementById('settingTheme');
-        const layoutEl = document.getElementById('settingLayout');
-        const animationEl = document.getElementById('settingAnimation');
-        const refreshEl = document.getElementById('settingRefreshInterval');
-        const timeRangeEl = document.getElementById('settingTimeRange');
-        const desktopNotifyEl = document.getElementById('settingDesktopNotify');
-        const soundEl = document.getElementById('settingSound');
-        const exportFormatEl = document.getElementById('settingExportFormat');
-        const dataRetentionEl = document.getElementById('settingDataRetention');
-        const debugModeEl = document.getElementById('settingDebugMode');
+        const fields = {
+            settingTheme: settings.theme || 'light',
+            settingLayout: settings.layout || 'comfortable',
+            settingRefreshInterval: String(this.config.updateInterval),
+            settingTimeRange: settings.timeRange || '30',
+            settingOnlineThreshold: settings.onlineThreshold || '5',
+            settingExportFormat: settings.exportFormat || 'csv',
+            settingDataRetention: settings.dataRetention || '0'
+        };
 
-        if (themeEl) themeEl.value = settings.theme || 'light';
-        if (layoutEl) layoutEl.value = settings.layout || 'comfortable';
-        if (animationEl) animationEl.checked = settings.animation !== false;
-        if (refreshEl) refreshEl.value = settings.refreshInterval || '60';
-        if (timeRangeEl) timeRangeEl.value = settings.timeRange || '30';
-        if (desktopNotifyEl) desktopNotifyEl.checked = settings.desktopNotify !== false;
-        if (soundEl) soundEl.checked = settings.sound !== false;
-        if (exportFormatEl) exportFormatEl.value = settings.exportFormat || 'csv';
-        if (dataRetentionEl) dataRetentionEl.value = settings.dataRetention || '30';
-        if (debugModeEl) debugModeEl.checked = settings.debugMode === true;
+        Object.entries(fields).forEach(([id, value]) => {
+            const el = document.getElementById(id);
+            if (el) el.value = value;
+        });
+
+        const checkboxes = {
+            settingDesktopNotify: settings.desktopNotify !== false,
+            settingSound: settings.sound !== false,
+            settingAutoScrollUser: settings.autoScrollUser === true,
+            settingDebugMode: settings.debugMode === true
+        };
+
+        Object.entries(checkboxes).forEach(([id, checked]) => {
+            const el = document.getElementById(id);
+            if (el) el.checked = checked;
+        });
     },
 
     /**
@@ -2150,46 +2420,63 @@ const app = {
         const settings = {
             theme: document.getElementById('settingTheme')?.value || 'light',
             layout: document.getElementById('settingLayout')?.value || 'comfortable',
-            animation: document.getElementById('settingAnimation')?.checked ?? true,
             refreshInterval: document.getElementById('settingRefreshInterval')?.value || '60',
             timeRange: document.getElementById('settingTimeRange')?.value || '30',
+            onlineThreshold: document.getElementById('settingOnlineThreshold')?.value || '5',
             desktopNotify: document.getElementById('settingDesktopNotify')?.checked ?? true,
             sound: document.getElementById('settingSound')?.checked ?? true,
+            autoScrollUser: document.getElementById('settingAutoScrollUser')?.checked ?? false,
             exportFormat: document.getElementById('settingExportFormat')?.value || 'csv',
-            dataRetention: document.getElementById('settingDataRetention')?.value || '30',
+            dataRetention: document.getElementById('settingDataRetention')?.value || '0',
             debugMode: document.getElementById('settingDebugMode')?.checked ?? false
         };
 
         try {
             localStorage.setItem('dashboard_settings', JSON.stringify(settings));
-            this.showAlert('设置已保存', 'success');
-
-            // 应用设置
             this.applySettings(settings);
+            this.showAlert('设置已保存', 'success');
         } catch (e) {
-            this.showAlert('保存设置失败', 'danger');
+            this.showAlert('保存设置失败', 'error');
         }
     },
 
     /**
-     * 应用设置
+     * 应用设置到运行时
      */
     applySettings(settings) {
-        // 应用主题
+        // 主题
         if (settings.theme === 'dark') {
             document.body.classList.add('dark-theme');
         } else if (settings.theme === 'light') {
             document.body.classList.remove('dark-theme');
         }
 
-        // 应用刷新间隔
-        if (this.updateTimer) {
-            clearInterval(this.updateTimer);
+        // 刷新间隔联动
+        const interval = parseInt(settings.refreshInterval);
+        if (interval > 0 && interval !== this.config.updateInterval) {
+            this.config.updateInterval = interval;
+            localStorage.setItem('dashboard_refresh_interval', interval);
+            this.startUpdateTimer();
+            this._startFetchInterval();
+        } else if (interval === 0) {
+            this.state.autoRefreshPaused = true;
+            if (this.state.fetchIntervalId) {
+                clearInterval(this.state.fetchIntervalId);
+            }
         }
-        const interval = parseInt(settings.refreshInterval) * 1000;
-        if (interval > 0) {
-            this.updateTimer = setInterval(() => this.fetchData(), interval);
-        }
+    },
+
+    /**
+     * 恢复默认设置
+     */
+    resetSettings() {
+        localStorage.removeItem('dashboard_settings');
+        localStorage.removeItem('dashboard_refresh_interval');
+        this.config.updateInterval = 60;
+        this.startUpdateTimer();
+        this._startFetchInterval();
+        this.initSettings();
+        this.showAlert('已恢复默认设置', 'success');
     },
 
     /**
@@ -3771,6 +4058,292 @@ const app = {
         if (this.state.selectedUser) {
             this.renderUserDetailView(this.state.selectedUser);
         }
+    },
+
+    // ── 心跳频率控制 ──────────────────────────────────────
+
+    /**
+     * 初始化通知视图（加载心跳配置）
+     */
+    initNotification() {
+        this._loadHeartbeatStatus();
+        this._loadVersionOptionsForHeartbeat();
+        this.initDashboardRefreshUI();
+    },
+
+    /**
+     * 加载版本列表到心跳范围选择器
+     */
+    async _loadVersionOptionsForHeartbeat() {
+        const select = document.getElementById('hbScopeSelect');
+        if (!select) return;
+        try {
+            const res = await fetch('/admin/stats?range=365');
+            if (!res.ok) return;
+            const data = await res.json();
+            const versions = data.version_options || data.version_stats || [];
+            versions.forEach(v => {
+                const name = v.name || v.version;
+                if (name) {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = `版本 ${name} (${v.value || 0})`;
+                    select.appendChild(opt);
+                }
+            });
+        } catch (e) {
+            console.error('[心跳] 加载版本列表失败:', e);
+        }
+    },
+
+    /**
+     * 从服务端加载当前心跳配置
+     */
+    async _loadHeartbeatStatus() {
+        try {
+            const res = await fetch('/admin/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: '_query' })
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const interval = data.config?.heartbeat_interval || 0;
+            const scope = data.config?.heartbeat_scope || 'all';
+            this._updateHeartbeatUI(interval, scope);
+        } catch (e) {
+            console.error('[心跳] 加载配置失败:', e);
+        }
+    },
+
+    /**
+     * 更新心跳控制区域的 UI 状态
+     */
+    _updateHeartbeatUI(seconds, scope) {
+        const el = document.getElementById('hbCurrentValue');
+        if (el) {
+            if (!seconds || seconds <= 0) {
+                el.textContent = '60秒 (默认)';
+            } else if (seconds < 60) {
+                el.textContent = seconds + '秒';
+            } else if (seconds < 3600) {
+                const m = Math.floor(seconds / 60);
+                const s = seconds % 60;
+                el.textContent = s > 0 ? `${m}分${s}秒` : `${m}分钟`;
+            } else {
+                el.textContent = '1小时';
+            }
+        }
+
+        // 高亮匹配的预设按钮
+        document.querySelectorAll('[data-hb-preset]').forEach(btn => {
+            const val = parseInt(btn.dataset.hbPreset);
+            if (val === seconds) {
+                btn.style.background = 'var(--primary)';
+                btn.style.color = '#fff';
+                btn.style.borderColor = 'var(--primary)';
+            } else {
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+            }
+        });
+
+        // 同步范围选择器
+        const scopeSelect = document.getElementById('hbScopeSelect');
+        if (scopeSelect && scope) {
+            scopeSelect.value = scope;
+        }
+    },
+
+    /**
+     * 应用心跳间隔到服务端
+     */
+    async _applyHeartbeat(seconds) {
+        if (seconds < 10 || seconds > 3600) {
+            this.showAlert('间隔范围: 10~3600 秒', 'warning');
+            return;
+        }
+        const scopeSelect = document.getElementById('hbScopeSelect');
+        const scope = scopeSelect ? scopeSelect.value : 'all';
+
+        try {
+            const res = await fetch('/admin/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'heartbeat',
+                    heartbeat_interval: seconds,
+                    heartbeat_scope: scope
+                })
+            });
+            if (res.ok) {
+                this._updateHeartbeatUI(seconds, scope);
+                const scopeLabel = scope === 'all' ? '全部用户' : `版本 ${scope}`;
+                this.showAlert(`心跳间隔已设为 ${seconds} 秒 (${scopeLabel})`, 'success');
+            }
+        } catch (e) {
+            this.showAlert('设置失败: ' + e.message, 'error');
+        }
+    },
+
+    /**
+     * 预设按钮点击
+     */
+    setHeartbeatPreset(seconds) {
+        const input = document.getElementById('hbCustomInput');
+        if (input) input.value = '';
+        this._applyHeartbeat(seconds);
+    },
+
+    /**
+     * 自定义输入应用
+     */
+    applyHeartbeatCustom() {
+        const input = document.getElementById('hbCustomInput');
+        const val = parseInt(input?.value);
+        if (isNaN(val) || val < 10 || val > 3600) {
+            this.showAlert('请输入 10~3600 之间的秒数', 'warning');
+            if (input) input.focus();
+            return;
+        }
+        this._applyHeartbeat(val);
+    },
+
+    // ── 仪表盘刷新控制 ──────────────────────────────────
+
+    /**
+     * 启动自动拉取数据的定时器
+     */
+    _startFetchInterval() {
+        if (this.state.fetchIntervalId) {
+            clearInterval(this.state.fetchIntervalId);
+        }
+        this.state.fetchIntervalId = setInterval(() => {
+            if (!this.state.autoRefreshPaused) {
+                this.fetchData();
+            }
+        }, this.config.updateInterval * 1000);
+    },
+
+    /**
+     * 初始化仪表盘刷新控制 UI
+     */
+    initDashboardRefreshUI() {
+        const current = this.config.updateInterval;
+        this._updateRefreshUI(current);
+
+        // 同步暂停按钮状态
+        const pauseBtn = document.getElementById('drPauseBtn');
+        if (pauseBtn) {
+            pauseBtn.textContent = this.state.autoRefreshPaused ? '▶ 恢复' : '⏸ 暂停';
+        }
+    },
+
+    /**
+     * 更新仪表盘刷新控制区域的 UI
+     */
+    _updateRefreshUI(seconds) {
+        const el = document.getElementById('drCurrentValue');
+        if (el) {
+            if (seconds < 60) {
+                el.textContent = seconds + '秒';
+            } else {
+                const m = Math.floor(seconds / 60);
+                const s = seconds % 60;
+                el.textContent = s > 0 ? `${m}分${s}秒` : `${m}分钟`;
+            }
+        }
+
+        // 显示最后刷新时间
+        const lastEl = document.getElementById('drLastRefresh');
+        if (lastEl) {
+            lastEl.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        }
+
+        // 高亮匹配的预设按钮
+        document.querySelectorAll('[data-dr-preset]').forEach(btn => {
+            const val = parseInt(btn.dataset.drPreset);
+            if (val === seconds) {
+                btn.style.background = 'var(--primary)';
+                btn.style.color = '#fff';
+                btn.style.borderColor = 'var(--primary)';
+            } else {
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+            }
+        });
+    },
+
+    /**
+     * 应用仪表盘刷新间隔
+     */
+    _applyDashboardRefresh(seconds) {
+        if (seconds < 10 || seconds > 600) {
+            this.showAlert('刷新间隔范围: 10~600 秒', 'warning');
+            return;
+        }
+        this.config.updateInterval = seconds;
+        localStorage.setItem('dashboard_refresh_interval', seconds);
+
+        // 重置计时器和定时拉取
+        this.startUpdateTimer();
+        this._startFetchInterval();
+        this._updateRefreshUI(seconds);
+        this.showAlert(`仪表盘将每 ${seconds} 秒自动刷新`, 'success');
+    },
+
+    /**
+     * 仪表盘刷新预设按钮
+     */
+    setDashboardRefreshPreset(seconds) {
+        const input = document.getElementById('drCustomInput');
+        if (input) input.value = '';
+        this._applyDashboardRefresh(seconds);
+    },
+
+    /**
+     * 仪表盘刷新自定义输入
+     */
+    applyDashboardRefreshCustom() {
+        const input = document.getElementById('drCustomInput');
+        const val = parseInt(input?.value);
+        if (isNaN(val) || val < 10 || val > 600) {
+            this.showAlert('请输入 10~600 之间的秒数', 'warning');
+            if (input) input.focus();
+            return;
+        }
+        this._applyDashboardRefresh(val);
+    },
+
+    /**
+     * 暂停/恢复自动刷新
+     */
+    toggleAutoRefresh() {
+        this.state.autoRefreshPaused = !this.state.autoRefreshPaused;
+        const pauseBtn = document.getElementById('drPauseBtn');
+        if (this.state.autoRefreshPaused) {
+            if (pauseBtn) pauseBtn.textContent = '▶ 恢复';
+            this.showAlert('自动刷新已暂停', 'warning');
+        } else {
+            if (pauseBtn) pauseBtn.textContent = '⏸ 暂停';
+            this.showAlert('自动刷新已恢复', 'success');
+            this.startUpdateTimer();
+        }
+    },
+
+    /**
+     * 手动立即刷新仪表盘数据
+     */
+    manualRefreshNow() {
+        this.fetchData();
+        this.startUpdateTimer();
+        const lastEl = document.getElementById('drLastRefresh');
+        if (lastEl) {
+            lastEl.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        }
+        this.showAlert('数据已手动刷新', 'success');
     }
 };
 

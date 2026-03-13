@@ -324,10 +324,22 @@ class AppApi:
 
         # 初始化遥测系统
         if self._cfg_mgr.get_telemetry_enabled():
-            if LOCAL_TELEMETRY_TEST:
-                # 本地测试模式：连接本地服务器
-                tm = init_telemetry(APP_VERSION, "http://localhost:8080/telemetry")
-                self._logger.info("[遥测] 本地测试模式已启用，连接 localhost:8080")
+            # .dev_mode 标记文件（由遥测控制面板自动管理，在 .gitignore 中，不会上传 Git）
+            _dev_mode_file = Path(__file__).parent / ".dev_mode"
+            _dev_url = None
+            if _dev_mode_file.exists():
+                try:
+                    _dev_url = _dev_mode_file.read_text(encoding="utf-8").strip()
+                except Exception:
+                    pass
+
+            if _dev_url:
+                tm = init_telemetry(APP_VERSION, _dev_url)
+                self._logger.info(f"[遥测] 开发模式已启用，连接 {_dev_url}")
+            elif LOCAL_TELEMETRY_TEST:
+                # 手动开关（备用）
+                tm = init_telemetry(APP_VERSION, "http://localhost:8082/telemetry")
+                self._logger.info("[遥测] 本地测试模式已启用，连接 localhost:8082")
             else:
                 # 正式模式：使用默认服务器
                 tm = init_telemetry(APP_VERSION)

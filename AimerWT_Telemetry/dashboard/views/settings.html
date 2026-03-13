@@ -1,119 +1,208 @@
 <div class="view-container active">
     <div class="app">
         <div class="topbar">
-            <div class="top-actions" style="margin-left: auto;">
-                <button class="btn primary" onclick="app.saveSettings()">保存设置</button>
+            <div class="top-actions" style="margin-left: auto; display: flex; gap: 8px;">
+                <button class="btn" onclick="app.resetSettings()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>恢复默认
+                </button>
+                <button class="btn primary" onclick="app.saveSettings()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>保存设置
+                </button>
             </div>
         </div>
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-title">系统设置</div>
-            </div>
-            <div class="panel-body" style="padding: 24px;">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 32px; max-width: 1000px;">
 
-                    <div style="display: flex; flex-direction: column; gap: 20px;">
-                        <h4 style="border-bottom: 1px solid var(--border); padding-bottom: 10px; color: var(--text-muted); font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">
-                            界面与显示</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
 
-                        <div class="form-group">
-                            <label>界面主题</label>
-                            <select class="select" id="settingTheme" style="width: 100%;">
-                                <option value="light">浅色模式</option>
-                                <option value="dark">深色模式</option>
-                                <option value="auto">跟随系统</option>
-                            </select>
+            <!-- 界面与显示 -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(37, 99, 235, 0.08); display: flex; align-items: center; justify-content: center;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                         </div>
-
-                        <div class="form-group">
-                            <label>仪表盘布局</label>
-                            <select class="select" id="settingLayout" style="width: 100%;">
-                                <option value="comfortable">舒适 (默认)</option>
-                                <option value="compact">紧凑</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label>图表动画</label>
-                            <div style="display: flex; gap: 12px; flex-direction: column;">
-                                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
-                                    <input type="checkbox" id="settingAnimation" checked> 启用平滑过渡动画
-                                </label>
-                            </div>
-                        </div>
+                        <div class="panel-title">界面与显示</div>
                     </div>
-
-                    <div style="display: flex; flex-direction: column; gap: 20px;">
-                        <h4 style="border-bottom: 1px solid var(--border); padding-bottom: 10px; color: var(--text-muted); font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">
-                            数据与行为</h4>
-
-                        <div class="form-group">
-                            <label>自动刷新间隔</label>
-                            <select class="select" id="settingRefreshInterval" style="width: 100%;">
-                                <option value="30">30秒</option>
-                                <option value="60" selected>1分钟</option>
-                                <option value="300">5分钟</option>
-                                <option value="0">关闭自动刷新</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label>默认时间范围</label>
-                            <select class="select" id="settingTimeRange" style="width: 100%;">
-                                <option value="7">最近 7 天</option>
-                                <option value="30" selected>最近 30 天</option>
-                                <option value="90">最近 90 天</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label>通知设置</label>
-                            <div style="display: flex; gap: 12px; flex-direction: column;">
-                                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
-                                    <input type="checkbox" id="settingDesktopNotify" checked> 启用桌面通知
-                                </label>
-                                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
-                                    <input type="checkbox" id="settingSound" checked> 播放提示音
-                                </label>
-                            </div>
-                        </div>
+                </div>
+                <div class="panel-body" style="padding: 20px; display: flex; flex-direction: column; gap: 18px;">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                            界面主题
+                        </label>
+                        <select class="input" id="settingTheme" style="width: 100%;">
+                            <option value="light">浅色模式</option>
+                            <option value="dark" disabled>深色模式（开发中）</option>
+                        </select>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">深色模式将在后续版本中支持</div>
                     </div>
-
-                    <div style="display: flex; flex-direction: column; gap: 20px;">
-                        <h4 style="border-bottom: 1px solid var(--border); padding-bottom: 10px; color: var(--text-muted); font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">
-                            高级选项</h4>
-
-                        <div class="form-group">
-                            <label>默认导出格式</label>
-                            <select class="select" id="settingExportFormat" style="width: 100%;">
-                                <option value="csv">CSV (逗号分隔)</option>
-                                <option value="excel">Excel (.xlsx)</option>
-                                <option value="json">JSON (原始数据)</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label>数据保留策略</label>
-                            <select class="select" id="settingDataRetention" style="width: 100%;">
-                                <option value="7">保留7天</option>
-                                <option value="30" selected>保留30天</option>
-                                <option value="90">保留90天</option>
-                                <option value="0">永久保留</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label>调试模式</label>
-                            <div style="display: flex; gap: 12px; flex-direction: column;">
-                                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
-                                    <input type="checkbox" id="settingDebugMode"> 显示原始 API 响应
-                                </label>
-                            </div>
-                        </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                            仪表盘布局
+                        </label>
+                        <select class="input" id="settingLayout" style="width: 100%;">
+                            <option value="comfortable">舒适（默认间距）</option>
+                            <option value="compact">紧凑（信息密度更高）</option>
+                        </select>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">调整卡片和图表之间的间距</div>
                     </div>
-
                 </div>
             </div>
+
+            <!-- 数据与行为 -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(16, 185, 129, 0.08); display: flex; align-items: center; justify-content: center;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                        </div>
+                        <div class="panel-title">数据与行为</div>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding: 20px; display: flex; flex-direction: column; gap: 18px;">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                            自动刷新间隔
+                        </label>
+                        <select class="input" id="settingRefreshInterval" style="width: 100%;">
+                            <option value="15">15秒（实时监控）</option>
+                            <option value="30">30秒</option>
+                            <option value="60">1分钟（推荐）</option>
+                            <option value="120">2分钟</option>
+                            <option value="300">5分钟</option>
+                            <option value="0">关闭自动刷新</option>
+                        </select>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">与通知页刷新频率控制联动，修改任一处均全局生效</div>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                            默认时间范围
+                        </label>
+                        <select class="input" id="settingTimeRange" style="width: 100%;">
+                            <option value="7">最近 7 天</option>
+                            <option value="30">最近 30 天（推荐）</option>
+                            <option value="90">最近 90 天</option>
+                            <option value="180">最近半年</option>
+                            <option value="365">最近一年</option>
+                        </select>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">主页图表默认加载的时间跨度</div>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                            在线判定阈值
+                        </label>
+                        <select class="input" id="settingOnlineThreshold" style="width: 100%;">
+                            <option value="2">2 分钟（严格）</option>
+                            <option value="5">5 分钟（默认）</option>
+                            <option value="10">10 分钟（宽松）</option>
+                        </select>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">超过此时间未上报的用户被标记为离线</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 通知与提醒 -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(245, 158, 11, 0.08); display: flex; align-items: center; justify-content: center;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                        </div>
+                        <div class="panel-title">通知与提醒</div>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+                    <label style="display: flex; align-items: center; gap: 10px; font-weight: normal; cursor: pointer; font-size: 13px; padding: 8px 12px; border-radius: 8px; background: var(--bg);">
+                        <input type="checkbox" id="settingDesktopNotify" checked>
+                        <div>
+                            <div style="font-weight: 600; font-size: 12px;">桌面通知</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">新用户上线、反馈提交时弹出系统通知</div>
+                        </div>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; font-weight: normal; cursor: pointer; font-size: 13px; padding: 8px 12px; border-radius: 8px; background: var(--bg);">
+                        <input type="checkbox" id="settingSound" checked>
+                        <div>
+                            <div style="font-weight: 600; font-size: 12px;">提示音效</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">操作成功或出错时播放音效反馈</div>
+                        </div>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; font-weight: normal; cursor: pointer; font-size: 13px; padding: 8px 12px; border-radius: 8px; background: var(--bg);">
+                        <input type="checkbox" id="settingAutoScrollUser">
+                        <div>
+                            <div style="font-weight: 600; font-size: 12px;">自动滚动到新用户</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">有新用户上线时自动滚动到最新记录</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- 高级选项 -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(148, 163, 184, 0.1); display: flex; align-items: center; justify-content: center;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                        </div>
+                        <div class="panel-title">高级选项</div>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding: 20px; display: flex; flex-direction: column; gap: 18px;">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            默认导出格式
+                        </label>
+                        <select class="input" id="settingExportFormat" style="width: 100%;">
+                            <option value="csv">CSV（逗号分隔）</option>
+                            <option value="excel">Excel（.xlsx）</option>
+                            <option value="json">JSON（原始数据）</option>
+                        </select>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">导出用户列表时使用的文件格式</div>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            数据保留策略
+                        </label>
+                        <select class="input" id="settingDataRetention" style="width: 100%;">
+                            <option value="0" selected>永久保留（默认）</option>
+                            <option value="30" disabled>保留 30 天（需后端支持）</option>
+                            <option value="90" disabled>保留 90 天（需后端支持）</option>
+                            <option value="365" disabled>保留 1 年（需后端支持）</option>
+                        </select>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">自动清理功能将在后续版本实现，当前所有数据永久保留</div>
+                    </div>
+                    <label style="display: flex; align-items: center; gap: 10px; font-weight: normal; cursor: pointer; font-size: 13px; padding: 8px 12px; border-radius: 8px; background: var(--bg);">
+                        <input type="checkbox" id="settingDebugMode">
+                        <div>
+                            <div style="font-weight: 600; font-size: 12px;">调试模式</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">在控制台输出 API 请求/响应日志</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部信息栏 -->
+        <div style="margin-top: 20px; padding: 16px 20px; background: var(--card); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <span style="display: flex; align-items: center; gap: 4px;">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                    设置保存在浏览器 localStorage 中
+                </span>
+                <span style="display: flex; align-items: center; gap: 4px;">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    仅影响当前浏览器
+                </span>
+                <span style="display: flex; align-items: center; gap: 4px;">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    恢复默认将清除所有自定义偏好
+                </span>
+            </div>
+            <span style="font-weight: 600; color: var(--text);" id="settingsVersion">v1.1</span>
         </div>
     </div>
 </div>

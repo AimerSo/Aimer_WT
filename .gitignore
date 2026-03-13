@@ -33,6 +33,7 @@ AimerWT资源库/
 # Local config (often contains personal game path)
 settings.json
 app_secrets.py
+.dev_mode
 .env
 *.db
 telemetry
@@ -88,3 +89,6 @@ web/redeem/redeem_codes.local.js
 # 遥测服务编译产物（本地构建，不上传）
 AimerWT_Telemetry/*.exe
 AimerWT_Telemetry/*.exe~
+
+# 遥测控制面板（本地开发工具，不上传）
+遥测控制/

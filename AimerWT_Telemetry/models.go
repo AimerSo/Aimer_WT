@@ -64,6 +64,10 @@ type SystemConfig struct {
 	UpdateContent string `json:"update_content"`
 	UpdateUrl     string `json:"update_url"`
 	UpdateScope   string `json:"update_scope"`
+
+	// 心跳上报间隔（秒），客户端据此动态调整上报频率
+	HeartbeatInterval int    `json:"heartbeat_interval"`
+	HeartbeatScope    string `json:"heartbeat_scope"` // all 或指定版本号
 }
 
 // ContentConfig KV 配置持久化表，用于服务重启后恢复运行时状态

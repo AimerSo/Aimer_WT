@@ -290,6 +290,22 @@ func initRouter(r *gin.Engine) {
 					if val, ok := req["scope"].(string); ok {
 						sysConfig.UpdateScope = val
 					}
+
+				case "heartbeat":
+					if val, ok := req["heartbeat_interval"].(float64); ok {
+						iv := int(val)
+						if iv < 10 {
+							iv = 10
+						}
+						if iv > 3600 {
+							iv = 3600
+						}
+						sysConfig.HeartbeatInterval = iv
+					}
+					if val, ok := req["heartbeat_scope"].(string); ok {
+						sysConfig.HeartbeatScope = val
+					}
+
 				case "_query":
 					shouldPersist = false
 				default:
@@ -668,6 +684,9 @@ func initRouter(r *gin.Engine) {
 			clientConfig.UpdateActive = false
 			clientConfig.UpdateContent = ""
 			clientConfig.UpdateUrl = ""
+		}
+		if sysConfig.HeartbeatScope != "" && sysConfig.HeartbeatScope != "all" && sysConfig.HeartbeatScope != record.Version {
+			clientConfig.HeartbeatInterval = 0
 		}
 
 		var pendingCmd string

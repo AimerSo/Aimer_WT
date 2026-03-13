@@ -88,7 +88,11 @@
                         </div>
                         <div class="form-group" style="margin: 0;">
                             <label style="margin-bottom: 6px;">图标</label>
-                            <input class="input" style="width: 100%;" id="bannerEditIcon" placeholder="ri-megaphone-line">
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <i id="bannerEditIconPreview" class="ri-megaphone-line" style="font-size: 18px; color: var(--primary); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 6px; flex-shrink: 0;"></i>
+                                <input class="input" style="flex: 1;" id="bannerEditIcon" placeholder="ri-megaphone-line" oninput="app.updateIconPreview()">
+                                <button class="btn" type="button" style="padding: 6px 12px; font-size: 12px; white-space: nowrap;" onclick="app.openIconPicker()">选择</button>
+                            </div>
                         </div>
                     </div>
                     <div class="form-group" style="margin: 0;">
@@ -144,19 +148,19 @@
         <!-- 说明区 -->
         <div style="margin-top: 16px; padding: 16px 20px; background: var(--card); border-radius: 14px; border: 1px solid var(--border); box-shadow: var(--shadow); display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; font-size: 12px; color: var(--text-muted); line-height: 1.6;">
             <div>
-                <div style="font-weight: 600; color: var(--text); margin-bottom: 4px;">📍 展示位置</div>
+                <div style="font-weight: 600; color: var(--text); margin-bottom: 4px; display: flex; align-items: center; gap: 6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>展示位置</div>
                 <div>客户端标题栏右侧信息带，带脉冲圆点和滚动动画。</div>
             </div>
             <div>
-                <div style="font-weight: 600; color: var(--text); margin-bottom: 4px;">⚡ 优先级</div>
+                <div style="font-weight: 600; color: var(--text); margin-bottom: 4px; display: flex; align-items: center; gap: 6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polyline></svg>优先级</div>
                 <div>update &gt; announcement &gt; slogan，按类型排序后依次轮播。</div>
             </div>
             <div>
-                <div style="font-weight: 600; color: var(--text); margin-bottom: 4px;">🎨 可定制</div>
+                <div style="font-weight: 600; color: var(--text); margin-bottom: 4px; display: flex; align-items: center; gap: 6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"></circle><circle cx="17.5" cy="10.5" r=".5"></circle><circle cx="8.5" cy="7.5" r=".5"></circle><circle cx="6.5" cy="12" r=".5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>可定制</div>
                 <div>文字、图标(Remix Icon)、文字颜色、图标颜色、点击动作。</div>
             </div>
             <div>
-                <div style="font-weight: 600; color: var(--text); margin-bottom: 4px;">🔗 数据链路</div>
+                <div style="font-weight: 600; color: var(--text); margin-bottom: 4px; display: flex; align-items: center; gap: 6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>数据链路</div>
                 <div>仪表盘 → /admin/control → WebSocket → main.py → HeaderBannerModule</div>
             </div>
         </div>

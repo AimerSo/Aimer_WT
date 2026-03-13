@@ -12,21 +12,6 @@
                 </div>
                 <div class="panel-body" style="padding: 0;">
                     <div style="border-bottom: 1px solid var(--border); padding: 16px 20px; display: flex; align-items: center; gap: 16px;">
-                        <div style="width: 40px; height: 40px; background: rgba(37, 99, 235, 0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                                <line x1="16" y1="13" x2="8" y2="13"></line>
-                                <line x1="16" y1="17" x2="8" y2="17"></line>
-                            </svg>
-                        </div>
-                        <div style="flex: 1; min-width: 0;">
-                            <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">公告栏</div>
-                            <div style="color: var(--text-muted); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">远程修改客户端顶部的滚动/静态公告栏文字内容</div>
-                        </div>
-                        <button class="btn primary" style="flex-shrink: 0;" onclick="app.handleControl('notice')">发布</button>
-                    </div>
-                    <div style="border-bottom: 1px solid var(--border); padding: 16px 20px; display: flex; align-items: center; gap: 16px;">
                         <div style="width: 40px; height: 40px; background: rgba(239, 68, 68, 0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -36,7 +21,7 @@
                         </div>
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">紧急通知</div>
-                            <div style="color: var(--text-muted); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">向客户端推送即时模态弹窗，适用于重大更新或维护通知</div>
+                            <div style="color: var(--text-muted); font-size: 12px; line-height: 1.4;">向客户端推送即时模态弹窗，适用于重大更新或维护通知</div>
                         </div>
                         <button class="btn primary" style="flex-shrink: 0;" onclick="app.handleControl('alert')">发布</button>
                     </div>
@@ -50,7 +35,7 @@
                         </div>
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">更新提示</div>
-                            <div style="color: var(--text-muted); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">向客户端推送版本更新提示，可设置推送范围与内容</div>
+                            <div style="color: var(--text-muted); font-size: 12px; line-height: 1.4;">向客户端推送版本更新提示，可设置推送范围与内容</div>
                         </div>
                         <button class="btn primary" style="flex-shrink: 0;" onclick="app.handleControl('update')">发布</button>
                     </div>
@@ -70,7 +55,7 @@
                         </div>
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">维护模式</div>
-                            <div style="color: var(--text-muted); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">开启后仅白名单用户可访问，适用于服务器停机维护</div>
+                            <div style="color: var(--text-muted); font-size: 12px; line-height: 1.4;">开启后仅白名单用户可访问，适用于服务器停机维护</div>
                         </div>
                         <button class="btn primary" style="flex-shrink: 0;" onclick="app.handleControl('maintenance')">设置</button>
                     </div>
@@ -83,10 +68,192 @@
                         </div>
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">JSON 测试接口</div>
-                            <div style="color: var(--text-muted); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">仅用于前端联调与数据结构校验</div>
+                            <div style="color: var(--text-muted); font-size: 12px; line-height: 1.4;">仅用于前端联调与数据结构校验</div>
                         </div>
                         <button class="btn" style="flex-shrink: 0;" onclick="app.handleControl('test')">打开</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 心跳频率控制 -->
+        <div style="margin-top: 20px; background: var(--card); border-radius: 14px; border: 1px solid var(--border); box-shadow: var(--shadow); padding: 20px 24px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(99, 102, 241, 0.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                    </div>
+                    <div>
+                        <div style="font-weight: 700; font-size: 14px; color: var(--text);">心跳频率控制</div>
+                        <div style="color: var(--text-muted); font-size: 11px;">设定客户端向服务器上报数据的间隔，在线客户端将在下次心跳时自动同步</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                    <div style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 8px; background: var(--bg); font-size: 11px; color: var(--text-muted);">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        当前: <span id="hbCurrentValue" style="font-weight: 600; color: var(--text);">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <!-- 预设按钮 -->
+                <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.setHeartbeatPreset(10)" data-hb-preset="10">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px;"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polyline></svg>10秒
+                    </button>
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.setHeartbeatPreset(30)" data-hb-preset="30">30秒</button>
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.setHeartbeatPreset(60)" data-hb-preset="60">1分钟</button>
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.setHeartbeatPreset(120)" data-hb-preset="120">2分钟</button>
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.setHeartbeatPreset(300)" data-hb-preset="300">5分钟</button>
+                </div>
+
+                <div style="width: 1px; height: 24px; background: var(--border); flex-shrink: 0;"></div>
+
+                <!-- 自定义输入 -->
+                <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    <input class="input" type="number" id="hbCustomInput" min="10" max="3600" placeholder="秒" style="width: 72px; text-align: center; font-size: 12px;">
+                    <span style="font-size: 11px; color: var(--text-muted);">秒</span>
+                    <button class="btn primary" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.applyHeartbeatCustom()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px;"><polyline points="20 6 9 17 4 12"></polyline></svg>应用
+                    </button>
+                </div>
+
+                <div style="width: 1px; height: 24px; background: var(--border); flex-shrink: 0;"></div>
+
+                <!-- 推送范围选择 -->
+                <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    <select class="input" id="hbScopeSelect" style="font-size: 12px; padding: 5px 8px; min-width: 130px;">
+                        <option value="all">全部用户</option>
+                    </select>
+                </div>
+
+                <div style="width: 1px; height: 24px; background: var(--border); flex-shrink: 0;"></div>
+
+                <!-- 范围提示 -->
+                <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted);">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    10~3600秒
+                </div>
+            </div>
+
+            <!-- 底部说明 -->
+            <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; font-size: 11px; color: var(--text-muted); line-height: 1.5;">
+                <div>
+                    <div style="font-weight: 600; color: var(--text); margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                        工作原理
+                    </div>
+                    客户端每次心跳时读取服务端返回的间隔值，自动调整下一次上报频率。
+                </div>
+                <div>
+                    <div style="font-weight: 600; color: var(--text); margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        注意事项
+                    </div>
+                    间隔越短在线状态越实时，但服务器压力越大。建议正常运营 60 秒以上。
+                </div>
+                <div>
+                    <div style="font-weight: 600; color: var(--text); margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                        生效时机
+                    </div>
+                    修改立即持久化，已在线客户端将在下次心跳交互时自动切换到新间隔。
+                </div>
+            </div>
+        </div>
+
+        <!-- 仪表盘刷新控制 -->
+        <div style="margin-top: 20px; background: var(--card); border-radius: 14px; border: 1px solid var(--border); box-shadow: var(--shadow); padding: 20px 24px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(16, 185, 129, 0.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </div>
+                    <div>
+                        <div style="font-weight: 700; font-size: 14px; color: var(--text);">仪表盘刷新频率</div>
+                        <div style="color: var(--text-muted); font-size: 11px;">控制本仪表盘多久从服务器拉取一次聚合统计数据（仅影响当前浏览器）</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                    <div style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 8px; background: var(--bg); font-size: 11px; color: var(--text-muted);">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        当前: <span id="drCurrentValue" style="font-weight: 600; color: var(--text);">--</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 8px; background: var(--bg); font-size: 11px; color: var(--text-muted);">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                        上次: <span id="drLastRefresh" style="font-weight: 600; color: var(--text);">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <!-- 预设按钮 -->
+                <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.setDashboardRefreshPreset(15)" data-dr-preset="15">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px;"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polyline></svg>15秒
+                    </button>
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.setDashboardRefreshPreset(30)" data-dr-preset="30">30秒</button>
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.setDashboardRefreshPreset(60)" data-dr-preset="60">1分钟</button>
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.setDashboardRefreshPreset(120)" data-dr-preset="120">2分钟</button>
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.setDashboardRefreshPreset(300)" data-dr-preset="300">5分钟</button>
+                </div>
+
+                <div style="width: 1px; height: 24px; background: var(--border); flex-shrink: 0;"></div>
+
+                <!-- 自定义输入 -->
+                <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    <input class="input" type="number" id="drCustomInput" min="10" max="600" placeholder="秒" style="width: 72px; text-align: center; font-size: 12px;">
+                    <span style="font-size: 11px; color: var(--text-muted);">秒</span>
+                    <button class="btn primary" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.applyDashboardRefreshCustom()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px;"><polyline points="20 6 9 17 4 12"></polyline></svg>应用
+                    </button>
+                </div>
+
+                <div style="width: 1px; height: 24px; background: var(--border); flex-shrink: 0;"></div>
+
+                <!-- 操作按钮 -->
+                <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                    <button class="btn" id="drPauseBtn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.toggleAutoRefresh()">⏸ 暂停</button>
+                    <button class="btn" style="padding: 6px 14px; font-size: 12px; border-radius: 8px;" onclick="app.manualRefreshNow()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>立即刷新
+                    </button>
+                </div>
+
+                <div style="width: 1px; height: 24px; background: var(--border); flex-shrink: 0;"></div>
+
+                <!-- 范围提示 -->
+                <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted);">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    仅当前浏览器生效
+                </div>
+            </div>
+
+            <!-- 底部说明 -->
+            <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; font-size: 11px; color: var(--text-muted); line-height: 1.5;">
+                <div>
+                    <div style="font-weight: 600; color: var(--text); margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                        与心跳的区别
+                    </div>
+                    心跳控制的是「客户端多久上报一次数据」，这里控制的是「你的仪表盘多久拉取一次统计快照」。
+                </div>
+                <div>
+                    <div style="font-weight: 600; color: var(--text); margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                        性能影响
+                    </div>
+                    每次刷新约一次 SQL 聚合查询。60 秒完全无压力，15 秒也不会影响性能。
+                </div>
+                <div>
+                    <div style="font-weight: 600; color: var(--text); margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>
+                        持久化方式
+                    </div>
+                    设置保存在浏览器 localStorage 中，关闭后重新打开仍保留你的偏好。
                 </div>
             </div>
         </div>
