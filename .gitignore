@@ -84,3 +84,7 @@ web/redeem/redeem_codes.local.js
 
 # 本地预览工具
 遥测预览.py
+
+# 遥测服务编译产物（本地构建，不上传）
+AimerWT_Telemetry/*.exe
+AimerWT_Telemetry/*.exe~
