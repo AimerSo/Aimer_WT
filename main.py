@@ -540,6 +540,26 @@ class AppApi:
                     )
                     self._last_notice_items_state = notice_state
 
+            # 7. 项目状态远程控制（更新信息库页面的"状态"和"最后更新"）
+            project_status = config.get("project_status", "")
+            project_last_update = config.get("project_last_update", "")
+            status_map = {
+                "active": {"class": "active", "text": "活跃开发中"},
+                "warning": {"class": "warning", "text": "维护更新中"},
+                "danger": {"class": "danger", "text": "暂停维护"},
+            }
+            if project_status and project_status in status_map:
+                s = status_map[project_status]
+                self._window.evaluate_js(
+                    f"(function(){{ var b=document.getElementById('project-status-badge');"
+                    f"if(b){{ b.className='status-badge {s['class']}'; b.textContent={json.dumps(s['text'], ensure_ascii=False)}; }} }})()"
+                )
+            if project_last_update:
+                self._window.evaluate_js(
+                    f"(function(){{ var el=document.getElementById('project-last-update');"
+                    f"if(el) el.textContent={json.dumps(project_last_update, ensure_ascii=False)}; }})()"
+                )
+
         except Exception as e:
             print(f"消息处理异常: {e}")
 

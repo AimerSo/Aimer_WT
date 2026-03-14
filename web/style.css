@@ -3488,6 +3488,34 @@ i[class^="ri-"] {
     }
 }
 
+.status-badge.warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: #F59E0B;
+}
+
+.status-badge.warning::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #F59E0B;
+    animation: pulse 2s infinite;
+}
+
+.status-badge.danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: #EF4444;
+}
+
+.status-badge.danger::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #EF4444;
+    animation: pulse 2s infinite;
+}
+
 /* ========== 深色模式适配 ========== */
 [data-theme="dark"] .stat-card,
 [data-theme="dark"] .link-card,

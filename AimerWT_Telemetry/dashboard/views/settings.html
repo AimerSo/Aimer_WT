@@ -184,7 +184,50 @@
                     </label>
                 </div>
             </div>
-        </div>
+
+            <!-- 客户端项目信息 -->
+            <div class="panel" style="grid-column: 1 / -1;">
+                <div class="panel-header">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(99, 102, 241, 0.08); display: flex; align-items: center; justify-content: center;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                        </div>
+                        <div>
+                            <div class="panel-title">客户端项目信息</div>
+                            <div style="font-size: 11px; color: var(--text-muted);">远程控制客户端「信息库」页面中的项目状态和最后更新日期</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding: 20px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 16px; align-items: end;">
+                        <div class="form-group" style="margin: 0;">
+                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                开发状态
+                            </label>
+                            <select class="input" id="projectStatusSelect" style="width: 100%;">
+                                <option value="active">🟢 活跃开发中</option>
+                                <option value="warning">🟡 维护更新中</option>
+                                <option value="danger">🔴 暂停维护</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin: 0;">
+                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                                最后更新日期
+                            </label>
+                            <input class="input" type="date" id="projectLastUpdateInput" style="width: 100%;">
+                        </div>
+                        <button class="btn primary" style="height: 38px; white-space: nowrap;" onclick="app.applyProjectInfo()">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px;"><polyline points="20 6 9 17 4 12"></polyline></svg>应用
+                        </button>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        修改将通过心跳同步推送给所有在线客户端，持久化存储在服务器
+                    </div>
+                </div>
+            </div>
 
         <!-- 底部信息栏 -->
         <div style="margin-top: 20px; padding: 16px 20px; background: var(--card); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-muted);">

@@ -1031,16 +1031,25 @@ const app = {
     },
 
     /**
-     * 显示提示
+     * 全局操作反馈提示（所有视图通用）
      */
     showAlert(text, type) {
-        const container = document.getElementById('alertContainer');
-        if (!container) return;
+        let container = document.getElementById('alertContainer');
+        if (!container) {
+            container = document.getElementById('globalToastContainer');
+        }
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'globalToastContainer';
+            container.style.cssText = 'position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;flex-direction:column-reverse;align-items:center;gap:8px;pointer-events:none;';
+            document.body.appendChild(container);
+        }
 
         const div = document.createElement('div');
         div.className = `alert ${type}`;
         div.dataset.source = 'toast';
         div.textContent = text;
+        div.style.pointerEvents = 'auto';
         container.prepend(div);
         requestAnimationFrame(() => div.classList.add('show'));
         setTimeout(() => {
@@ -1654,7 +1663,7 @@ const app = {
         else this._bannerItems.push(item);
         this.renderBannerList();
         this.cancelBannerEdit();
-        this.showAlert('已保存，点击「发布 Banner」生效', 'success');
+        this.submitBanner();
     },
 
     deleteBannerItem(index) {
@@ -2212,13 +2221,27 @@ const app = {
 
     // ==================== 广告轮播管理 ====================
 
+    escapeHtmlSafe(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    },
+
+    setVal(id, val) {
+        const el = document.getElementById(id);
+        if (el) el.value = val;
+    },
+
     _adItems: [],
     _adEditingIndex: -1,
+    _adPreviewTimer: null,
+    _adPreviewIndex: 0,
 
     initAdvertisement() {
         this._adItems = [];
         this._adEditingIndex = -1;
         this.loadAdCarousel();
+        this._initAdPositionCanvas();
     },
 
     async loadAdCarousel() {
@@ -2231,6 +2254,7 @@ const app = {
             if (intervalEl && data.interval_ms) intervalEl.value = data.interval_ms;
             this.renderAdList();
             this.cancelAdEdit();
+            this._renderAdPreview();
         } catch {
             this._adItems = [];
             this.renderAdList();
@@ -2239,81 +2263,167 @@ const app = {
 
     renderAdList() {
         const container = document.getElementById('adCarouselList');
+        const countEl = document.getElementById('adItemCount');
+        if (countEl) countEl.textContent = `${this._adItems.length} / 4`;
+        const addBtn = document.getElementById('adAddBtn');
+        if (addBtn) addBtn.disabled = this._adItems.length >= 4;
+
         if (!container) return;
         if (!this._adItems.length) {
-            container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;"><p>\u6682\u65e0\u5e7f\u544a\u6570\u636e</p><p style="font-size:12px;">\u70b9\u51fb\u53f3\u4e0a\u89d2\u201c\u6dfb\u52a0\u5e7f\u544a\u201d\u5f00\u59cb\u914d\u7f6e</p></div>';
+            container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.3;margin-bottom:8px;"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg><p style="font-size:13px;">暂无广告</p><p style="font-size:11px;">点击右上角「+ 添加」开始配置</p></div>';
             return;
         }
+        const apiBase = this.config.apiBase || '';
         container.innerHTML = this._adItems.map((item, i) => {
-            const isFirst = i === 0;
-            const isLast = i === this._adItems.length - 1;
-            return `<div style="border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.02)'" onmouseout="this.style.background=''" onclick="app.editAdItem(${i})">
-                <div style="width:64px;height:40px;border-radius:6px;overflow:hidden;flex-shrink:0;background:var(--border);display:flex;align-items:center;justify-content:center;">
-                    <img src="" alt="" style="width:100%;height:100%;object-fit:cover;display:none;">
-                    <span style="font-size:10px;color:var(--text-muted)">#${i + 1}</span>
+            const isFirst = i === 0, isLast = i === this._adItems.length - 1;
+            const imgUrl = item.image ? (item.image.startsWith('/') ? apiBase.replace(/\/admin.*/, '') + item.image : item.image) : '';
+            const posStyle = `object-position:${item.position_x || 50}% ${item.position_y || 50}%`;
+            return `<div style="border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.02)'" onmouseout="this.style.background=''" onclick="app.editAdItem(${i})">
+                <div style="width:80px;height:48px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--bg);border:1px solid var(--border);">
+                    ${imgUrl ? `<img src="${this.escapeHtmlSafe(imgUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;${posStyle};">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-muted);">#${i+1}</div>`}
                 </div>
                 <div style="flex:1;min-width:0;">
-                    <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtmlSafe(item.id || '\u672a\u547d\u540d')}</div>
-                    <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtmlSafe(item.url || '-')}</div>
+                    <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtmlSafe(item.id || '未命名')}</div>
+                    <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtmlSafe(item.url || '无链接')}</div>
                 </div>
-                <div style="display:flex;gap:6px;flex-shrink:0;">
-                    <button class="btn" style="padding:4px 8px;font-size:11px;" onclick="event.stopPropagation();app.moveAdItem(${i},-1)" ${isFirst ? 'disabled' : ''}>\u2191</button>
-                    <button class="btn" style="padding:4px 8px;font-size:11px;" onclick="event.stopPropagation();app.moveAdItem(${i},1)" ${isLast ? 'disabled' : ''}>\u2193</button>
-                    <button class="btn" style="padding:4px 8px;font-size:11px;color:var(--danger);" onclick="event.stopPropagation();app.deleteAdItem(${i})">\u5220\u9664</button>
+                <div style="display:flex;gap:4px;flex-shrink:0;">
+                    <button class="btn" style="padding:4px 8px;font-size:11px;height:28px;" onclick="event.stopPropagation();app.moveAdItem(${i},-1)" ${isFirst ? 'disabled' : ''}>↑</button>
+                    <button class="btn" style="padding:4px 8px;font-size:11px;height:28px;" onclick="event.stopPropagation();app.moveAdItem(${i},1)" ${isLast ? 'disabled' : ''}>↓</button>
+                    <button class="btn" style="padding:4px 8px;font-size:11px;height:28px;color:var(--danger);" onclick="event.stopPropagation();app.deleteAdItem(${i})">✕</button>
                 </div>
             </div>`;
         }).join('');
     },
 
-    escapeHtmlSafe(str) {
-        const div = document.createElement('div');
-        div.textContent = str || '';
-        return div.innerHTML;
-    },
-
     addAdItem() {
+        if (this._adItems.length >= 4) { this.showAlert('最多支持 4 张轮播图', 'warning'); return; }
         this._adEditingIndex = -1;
-        const titleEl = document.getElementById('adEditTitle');
-        if (titleEl) titleEl.textContent = '\u6dfb\u52a0\u5e7f\u544a';
-        const emptyEl = document.getElementById('adEditEmpty');
-        const formEl = document.getElementById('adEditForm');
-        if (emptyEl) emptyEl.style.display = 'none';
-        if (formEl) formEl.style.display = '';
+        this._showAdEditForm('添加广告');
         this.setVal('adEditId', 'ad_' + Date.now());
         this.setVal('adEditImage', '');
         this.setVal('adEditAlt', '');
         this.setVal('adEditUrl', '');
+        this.setVal('adEditPosX', '50');
+        this.setVal('adEditPosY', '50');
+        this._updateAdImageUI('', 50, 50);
     },
 
     editAdItem(index) {
         const item = this._adItems[index];
         if (!item) return;
         this._adEditingIndex = index;
-        const titleEl = document.getElementById('adEditTitle');
-        if (titleEl) titleEl.textContent = '\u7f16\u8f91: ' + (item.id || '');
-        const emptyEl = document.getElementById('adEditEmpty');
-        const formEl = document.getElementById('adEditForm');
-        if (emptyEl) emptyEl.style.display = 'none';
-        if (formEl) formEl.style.display = '';
+        this._showAdEditForm('编辑: ' + (item.id || ''));
         this.setVal('adEditId', item.id || '');
         this.setVal('adEditImage', item.image || '');
         this.setVal('adEditAlt', item.alt || '');
         this.setVal('adEditUrl', item.url || '');
+        this.setVal('adEditPosX', String(item.position_x || 50));
+        this.setVal('adEditPosY', String(item.position_y || 50));
+        this._updateAdImageUI(item.image || '', item.position_x || 50, item.position_y || 50);
+    },
+
+    _showAdEditForm(title) {
+        const titleEl = document.getElementById('adEditTitle');
+        if (titleEl) titleEl.textContent = title;
+        const e = document.getElementById('adEditEmpty');
+        const f = document.getElementById('adEditForm');
+        if (e) e.style.display = 'none';
+        if (f) f.style.display = '';
     },
 
     cancelAdEdit() {
         this._adEditingIndex = -1;
         const titleEl = document.getElementById('adEditTitle');
-        if (titleEl) titleEl.textContent = '\u9009\u62e9\u6216\u6dfb\u52a0\u5e7f\u544a';
-        const emptyEl = document.getElementById('adEditEmpty');
-        const formEl = document.getElementById('adEditForm');
-        if (emptyEl) emptyEl.style.display = '';
-        if (formEl) formEl.style.display = 'none';
+        if (titleEl) titleEl.textContent = '选择或添加广告';
+        const e = document.getElementById('adEditEmpty');
+        const f = document.getElementById('adEditForm');
+        if (e) e.style.display = '';
+        if (f) f.style.display = 'none';
     },
 
-    setVal(id, val) {
-        const el = document.getElementById(id);
-        if (el) el.value = val;
+    _updateAdImageUI(imageUrl, posX, posY) {
+        const preview = document.getElementById('adImagePreview');
+        const placeholder = document.getElementById('adImagePlaceholder');
+        const posGroup = document.getElementById('adPositionGroup');
+        const posImg = document.getElementById('adPositionImg');
+        const apiBase = this.config.apiBase || '';
+        const fullUrl = imageUrl ? (imageUrl.startsWith('/') ? apiBase.replace(/\/admin.*/, '') + imageUrl : imageUrl) : '';
+
+        if (fullUrl) {
+            if (preview) { preview.src = fullUrl; preview.style.display = 'block'; preview.style.objectPosition = `${posX}% ${posY}%`; }
+            if (placeholder) placeholder.style.display = 'none';
+            if (posGroup) posGroup.style.display = '';
+            if (posImg) { posImg.src = fullUrl; posImg.style.objectPosition = `${posX}% ${posY}%`; }
+            this._updateCrosshair(posX, posY);
+        } else {
+            if (preview) { preview.style.display = 'none'; preview.src = ''; }
+            if (placeholder) placeholder.style.display = '';
+            if (posGroup) posGroup.style.display = 'none';
+        }
+    },
+
+    _updateCrosshair(px, py) {
+        const ch = document.getElementById('adCrosshair');
+        if (ch) { ch.style.left = px + '%'; ch.style.top = py + '%'; }
+        const lx = document.getElementById('adPosXLabel');
+        const ly = document.getElementById('adPosYLabel');
+        if (lx) lx.textContent = px;
+        if (ly) ly.textContent = py;
+    },
+
+    _initAdPositionCanvas() {
+        const canvas = document.getElementById('adPositionCanvas');
+        if (!canvas) return;
+        const handler = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            let x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+            let y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+            x = Math.max(0, Math.min(100, x));
+            y = Math.max(0, Math.min(100, y));
+            this.setVal('adEditPosX', String(x));
+            this.setVal('adEditPosY', String(y));
+            this._updateCrosshair(x, y);
+            const posImg = document.getElementById('adPositionImg');
+            const preview = document.getElementById('adImagePreview');
+            if (posImg) posImg.style.objectPosition = `${x}% ${y}%`;
+            if (preview) preview.style.objectPosition = `${x}% ${y}%`;
+        };
+        let dragging = false;
+        canvas.addEventListener('mousedown', (e) => { dragging = true; handler(e); });
+        canvas.addEventListener('mousemove', (e) => { if (dragging) handler(e); });
+        document.addEventListener('mouseup', () => { dragging = false; });
+    },
+
+    resetAdPosition() {
+        this.setVal('adEditPosX', '50');
+        this.setVal('adEditPosY', '50');
+        this._updateCrosshair(50, 50);
+        const posImg = document.getElementById('adPositionImg');
+        const preview = document.getElementById('adImagePreview');
+        if (posImg) posImg.style.objectPosition = '50% 50%';
+        if (preview) preview.style.objectPosition = '50% 50%';
+    },
+
+    async handleAdImageUpload(event) {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        if (file.size > 8 * 1024 * 1024) { this.showAlert('文件不能超过 8MB', 'warning'); return; }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/upload`, {
+                method: 'POST', body: formData
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || res.status); }
+            const data = await res.json();
+            this.setVal('adEditImage', data.url);
+            const px = parseInt(document.getElementById('adEditPosX')?.value) || 50;
+            const py = parseInt(document.getElementById('adEditPosY')?.value) || 50;
+            this._updateAdImageUI(data.url, px, py);
+            this.showAlert('图片上传成功', 'success');
+        } catch (e) { this.showAlert('上传失败: ' + e.message, 'danger'); }
+        event.target.value = '';
     },
 
     saveAdItem() {
@@ -2321,9 +2431,12 @@ const app = {
             id: (document.getElementById('adEditId')?.value || '').trim(),
             image: (document.getElementById('adEditImage')?.value || '').trim(),
             alt: (document.getElementById('adEditAlt')?.value || '').trim(),
-            url: (document.getElementById('adEditUrl')?.value || '').trim()
+            url: (document.getElementById('adEditUrl')?.value || '').trim(),
+            position_x: parseInt(document.getElementById('adEditPosX')?.value) || 50,
+            position_y: parseInt(document.getElementById('adEditPosY')?.value) || 50
         };
-        if (!item.id) { this.showAlert('\u8bf7\u586b\u5199\u5e7f\u544a ID', 'warning'); return; }
+        if (!item.id) { this.showAlert('请填写广告 ID', 'warning'); return; }
+        if (!item.image) { this.showAlert('请上传图片', 'warning'); return; }
         if (this._adEditingIndex >= 0) {
             this._adItems[this._adEditingIndex] = item;
         } else {
@@ -2331,39 +2444,94 @@ const app = {
         }
         this.renderAdList();
         this.cancelAdEdit();
-        this.showAlert('\u5df2\u66f4\u65b0\u672c\u5730\u5217\u8868\uff0c\u70b9\u51fb\u201c\u4fdd\u5b58\u5168\u90e8\u914d\u7f6e\u201d\u63d0\u4ea4\u5230\u670d\u52a1\u5668', 'success');
+        this._renderAdPreview();
+        this.publishAdCarousel();
     },
 
     deleteAdItem(index) {
         this._adItems.splice(index, 1);
         this.renderAdList();
+        this._renderAdPreview();
         if (this._adEditingIndex === index) this.cancelAdEdit();
-        this.showAlert('\u5df2\u5220\u9664\uff0c\u70b9\u51fb\u201c\u4fdd\u5b58\u5168\u90e8\u914d\u7f6e\u201d\u63d0\u4ea4\u5230\u670d\u52a1\u5668', 'success');
     },
 
     moveAdItem(index, direction) {
         const newIndex = index + direction;
         if (newIndex < 0 || newIndex >= this._adItems.length) return;
-        const temp = this._adItems[index];
-        this._adItems[index] = this._adItems[newIndex];
-        this._adItems[newIndex] = temp;
+        [this._adItems[index], this._adItems[newIndex]] = [this._adItems[newIndex], this._adItems[index]];
         this.renderAdList();
+        this._renderAdPreview();
     },
 
-    async saveAdCarouselAll() {
+    async publishAdCarousel() {
         const intervalMs = parseInt(document.getElementById('adIntervalMs')?.value) || 4500;
         const payload = { items: this._adItems, interval_ms: intervalMs };
         try {
             const res = await fetch(`${this.config.apiBase}/admin/ad-carousel`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            if (!res.ok) throw new Error('\u670d\u52a1\u5668\u8fd4\u56de ' + res.status);
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
             await res.json();
-            this.showAlert('\u5e7f\u544a\u914d\u7f6e\u5df2\u4fdd\u5b58\u5230\u670d\u52a1\u5668', 'success');
-        } catch (error) {
-            this.showAlert('\u4fdd\u5b58\u5931\u8d25: ' + error.message, 'danger');
+            this.showAlert(`广告配置已发布（${this._adItems.length} 张）`, 'success');
+        } catch (error) { this.showAlert('发布失败: ' + error.message, 'danger'); }
+    },
+
+    // 实时预览渲染
+    _renderAdPreview() {
+        const track = document.getElementById('adPreviewTrack');
+        const dotsWrap = document.getElementById('adPreviewDots');
+        if (!track || !dotsWrap) return;
+
+        if (this._adPreviewTimer) { clearInterval(this._adPreviewTimer); this._adPreviewTimer = null; }
+        this._adPreviewIndex = 0;
+
+        const apiBase = this.config.apiBase || '';
+        const items = this._adItems.filter(x => x && x.image);
+
+        if (!items.length) {
+            track.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;">暂无轮播图片</div>';
+            track.style.transform = '';
+            dotsWrap.innerHTML = '';
+            return;
+        }
+
+        track.innerHTML = items.map(item => {
+            const url = item.image.startsWith('/') ? apiBase.replace(/\/admin.*/, '') + item.image : item.image;
+            const pos = `object-position:${item.position_x||50}% ${item.position_y||50}%`;
+            return `<div style="min-width:100%;height:100%;flex-shrink:0;"><img src="${this.escapeHtmlSafe(url)}" alt="${this.escapeHtmlSafe(item.alt||'')}" style="width:100%;height:100%;object-fit:cover;${pos};display:block;"></div>`;
+        }).join('');
+        track.style.transform = 'translateX(0%)';
+
+        dotsWrap.innerHTML = items.map((_, i) =>
+            `<div style="width:7px;height:7px;border-radius:50%;background:${i===0?'#fff':'rgba(255,255,255,0.5)'};transition:all 0.2s;cursor:pointer;" data-dot="${i}"></div>`
+        ).join('');
+
+        dotsWrap.onclick = (e) => {
+            const idx = e.target.dataset?.dot;
+            if (idx != null) { this._adPreviewGoTo(parseInt(idx)); }
+        };
+
+        if (items.length > 1) {
+            const intervalMs = parseInt(document.getElementById('adIntervalMs')?.value) || 4500;
+            this._adPreviewTimer = setInterval(() => {
+                this._adPreviewIndex = (this._adPreviewIndex + 1) % items.length;
+                this._adPreviewGoTo(this._adPreviewIndex);
+            }, intervalMs);
+        }
+    },
+
+    _adPreviewGoTo(index) {
+        const track = document.getElementById('adPreviewTrack');
+        const dotsWrap = document.getElementById('adPreviewDots');
+        if (!track) return;
+        this._adPreviewIndex = index;
+        track.style.transform = `translateX(-${index * 100}%)`;
+        if (dotsWrap) {
+            dotsWrap.querySelectorAll('div').forEach((d, i) => {
+                d.style.background = i === index ? '#fff' : 'rgba(255,255,255,0.5)';
+                d.style.transform = i === index ? 'scale(1.2)' : 'scale(1)';
+            });
         }
     },
 
@@ -2399,6 +2567,50 @@ const app = {
             const el = document.getElementById(id);
             if (el) el.checked = checked;
         });
+
+        this._loadProjectInfo();
+    },
+
+    /**
+     * 从服务端加载项目信息状态并回填到设置 UI
+     */
+    async _loadProjectInfo() {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/control`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: '_query' })
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const cfg = data.config || {};
+            const statusEl = document.getElementById('projectStatusSelect');
+            const dateEl = document.getElementById('projectLastUpdateInput');
+            if (statusEl && cfg.project_status) statusEl.value = cfg.project_status;
+            if (dateEl && cfg.project_last_update) {
+                const m = cfg.project_last_update.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+                if (m) dateEl.value = `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+            }
+        } catch {}
+    },
+
+    /**
+     * 提交项目状态和最后更新日期到服务端
+     */
+    async applyProjectInfo() {
+        const status = document.getElementById('projectStatusSelect')?.value || 'active';
+        const dateVal = document.getElementById('projectLastUpdateInput')?.value;
+        if (!dateVal) { this.showAlert('请选择最后更新日期', 'warning'); return; }
+        const [y, m, d] = dateVal.split('-');
+        const dateStr = `${y} 年 ${parseInt(m)} 月 ${parseInt(d)} 日`;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/control`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'project_info', project_status: status, project_last_update: dateStr })
+            });
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            const labels = { active: '活跃开发中', warning: '维护更新中', danger: '暂停维护' };
+            this.showAlert(`项目信息已更新：${labels[status] || status}，${dateStr}`, 'success');
+        } catch (e) { this.showAlert('更新失败: ' + e.message, 'danger'); }
     },
 
     /**

@@ -68,6 +68,10 @@ type SystemConfig struct {
 	// 心跳上报间隔（秒），客户端据此动态调整上报频率
 	HeartbeatInterval int    `json:"heartbeat_interval"`
 	HeartbeatScope    string `json:"heartbeat_scope"` // all 或指定版本号
+
+	// 项目状态（客户端信息库展示）
+	ProjectStatus     string `json:"project_status"`      // active / warning / danger
+	ProjectLastUpdate string `json:"project_last_update"`  // 如 "2026 年 3 月 14 日"
 }
 
 // ContentConfig KV 配置持久化表，用于服务重启后恢复运行时状态
@@ -79,10 +83,12 @@ type ContentConfig struct {
 
 // AdCarouselItem 广告轮播数据结构（序列化后存入 ContentConfig）
 type AdCarouselItem struct {
-	ID    string `json:"id"`
-	Image string `json:"image"`
-	Alt   string `json:"alt"`
-	URL   string `json:"url"`
+	ID        string `json:"id"`
+	Image     string `json:"image"`
+	Alt       string `json:"alt"`
+	URL       string `json:"url"`
+	PositionX int    `json:"position_x"` // object-position x% (0-100，默认 50)
+	PositionY int    `json:"position_y"` // object-position y% (0-100，默认 50)
 }
 
 // NoticeItem 公告列表数据表（对应客户端 notice_data.js 的数据结构）

@@ -70,6 +70,9 @@
             var img = document.createElement("img");
             img.src = item.image;
             img.alt = item.alt || ("ad-" + (index + 1));
+            var px = item.position_x != null ? item.position_x : 50;
+            var py = item.position_y != null ? item.position_y : 50;
+            img.style.objectPosition = px + "% " + py + "%";
             link.appendChild(img);
 
             link.addEventListener("click", function (event) {

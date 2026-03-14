@@ -14,7 +14,9 @@
 
 .notice-react-update-modal {
     width: min(768px, 92vw);
+    height: 85vh;
     max-height: 85vh;
+    min-height: 85vh;
     border-radius: 24px;
     background: #ffffff;
     border: 1px solid #f3f4f6;

@@ -82,21 +82,22 @@
             });
         }
 
-        // 从右侧滚入的动画（update 类型固定显示不滚动）
-        if (item.type !== 'update') {
-            requestAnimationFrame(function () {
-                var textEl = el.querySelector('.header_banner_text');
-                if (!textEl) return;
-                var clipWidth = textEl.parentElement.clientWidth;
-                var textWidth = textEl.scrollWidth;
-                textEl.style.setProperty('--clip-width', clipWidth + 'px');
-                textEl.style.setProperty('--scroll-offset', '-' + textWidth + 'px');
-                var totalTravel = clipWidth + textWidth;
-                var duration = Math.max(5, totalTravel / 30);
-                textEl.style.setProperty('--scroll-duration', duration + 's');
-                textEl.classList.add('is_scrolling');
-            });
-        }
+        // 仅当文字宽度超出容器时才启用滚动动画（所有类型统一逻辑）
+        requestAnimationFrame(function () {
+            var textEl = el.querySelector('.header_banner_text');
+            if (!textEl) return;
+            var clipWidth = textEl.parentElement.clientWidth;
+            var textWidth = textEl.scrollWidth;
+            // 文字能够完全容纳在容器内，则静态显示
+            if (textWidth <= clipWidth + 2) return;
+            // 文字超出容器，启用滚动
+            textEl.style.setProperty('--clip-width', clipWidth + 'px');
+            textEl.style.setProperty('--scroll-offset', '-' + textWidth + 'px');
+            var totalTravel = clipWidth + textWidth;
+            var duration = Math.max(5, totalTravel / 30);
+            textEl.style.setProperty('--scroll-duration', duration + 's');
+            textEl.classList.add('is_scrolling');
+        });
 
         // Hover tooltip
         el.addEventListener('mouseenter', function () {
@@ -197,9 +198,24 @@
         startRotation();
     }
 
+    function calcMaxWidth() {
+        if (!_container) return;
+        var headerLeft = document.querySelector('.header-left');
+        var headerNav = document.querySelector('.header-nav');
+        if (headerLeft && headerNav) {
+            var leftEnd = headerLeft.getBoundingClientRect().right;
+            var navStart = headerNav.getBoundingClientRect().left;
+            var available = navStart - leftEnd - 12;
+            _container.style.maxWidth = Math.max(available, 0) + 'px';
+        }
+    }
+
     function init() {
         _container = document.getElementById('header_banner_slot');
         if (!_container) return;
+
+        calcMaxWidth();
+        window.addEventListener('resize', calcMaxWidth);
 
         _items = DEFAULT_SLOGANS.slice();
         refreshDisplay();

@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +17,13 @@ import (
 )
 
 func initRouter(r *gin.Engine) {
+	// 静态文件服务：上传的广告图片
+	uploadsDir := "uploads"
+	if _, err := os.Stat(uploadsDir); os.IsNotExist(err) {
+		os.MkdirAll(uploadsDir, 0755)
+	}
+	r.Static("/uploads", uploadsDir)
+
 	authMiddleware := func(c *gin.Context) {
 		user, pass, hasAuth := c.Request.BasicAuth()
 		if hasAuth && user == adminUser && pass == adminPass {
@@ -86,7 +96,7 @@ func initRouter(r *gin.Engine) {
 
 				baseQuery.Count(&stats.TotalUsers)
 
-				onlineThreshold := time.Now().Add(-2 * time.Minute)
+				onlineThreshold := time.Now().Add(-7 * time.Minute)
 				baseQuery.Session(&gorm.Session{}).Where("last_seen_at > ?", onlineThreshold).Count(&stats.OnlineUsers)
 
 				today := time.Now().Format("2006-01-02")
@@ -306,6 +316,14 @@ func initRouter(r *gin.Engine) {
 						sysConfig.HeartbeatScope = val
 					}
 
+				case "project_info":
+					if val, ok := req["project_status"].(string); ok {
+						sysConfig.ProjectStatus = val
+					}
+					if val, ok := req["project_last_update"].(string); ok {
+						sysConfig.ProjectLastUpdate = val
+					}
+
 				case "_query":
 					shouldPersist = false
 				default:
@@ -417,6 +435,32 @@ func initRouter(r *gin.Engine) {
 				}
 
 				c.JSON(200, gin.H{"status": "success", "count": len(req.Items)})
+			})
+
+			// 广告图片上传接口（单文件，最大 8MB）
+			admin.POST("/upload", func(c *gin.Context) {
+				c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<20)
+				file, err := c.FormFile("file")
+				if err != nil {
+					c.JSON(400, gin.H{"error": "文件读取失败: " + err.Error()})
+					return
+				}
+
+				ext := strings.ToLower(filepath.Ext(file.Filename))
+				allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true}
+				if !allowed[ext] {
+					c.JSON(400, gin.H{"error": "不支持的文件类型，仅支持 jpg/png/webp/gif"})
+					return
+				}
+
+				filename := fmt.Sprintf("ad_%d%s", time.Now().UnixMilli(), ext)
+				dstPath := filepath.Join("uploads", filename)
+				if err := c.SaveUploadedFile(file, dstPath); err != nil {
+					c.JSON(500, gin.H{"error": "文件保存失败: " + err.Error()})
+					return
+				}
+
+				c.JSON(200, gin.H{"status": "success", "url": "/uploads/" + filename, "filename": filename})
 			})
 
 			// 公告列表 CRUD API
@@ -704,9 +748,20 @@ func initRouter(r *gin.Engine) {
 			"user_seq_id":  userSeqID,
 		}
 
-		// 构建广告轮播数据供客户端同步
+		// 构建广告轮播数据供客户端同步（图片路径补全为完整 URL）
 		if adItemsRaw := LoadConfig("ad_carousel_items"); adItemsRaw != "" {
-			adJson, _ := json.Marshal(LoadAdCarouselItems())
+			items := LoadAdCarouselItems()
+			scheme := "http"
+			if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+				scheme = "https"
+			}
+			baseURL := scheme + "://" + c.Request.Host
+			for i := range items {
+				if len(items[i].Image) > 0 && items[i].Image[0] == '/' {
+					items[i].Image = baseURL + items[i].Image
+				}
+			}
+			adJson, _ := json.Marshal(items)
 			var parsed interface{}
 			json.Unmarshal(adJson, &parsed)
 			response["ad_carousel_items"] = parsed

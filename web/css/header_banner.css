@@ -2,10 +2,10 @@
 #header_banner_slot {
     display: none;
     align-items: center;
-    max-width: 160px;
     height: 100%;
     overflow: hidden;
-    margin-left: -18px;
+    clip-path: inset(0);
+    margin-left: 4px;
     -webkit-app-region: no-drag;
     app-region: no-drag;
     position: relative;
@@ -31,6 +31,7 @@
     position: relative;
     user-select: none;
     max-width: 100%;
+    min-width: 0;
 }
 
 .header_banner:hover {
@@ -53,9 +54,10 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
+    position: relative;
     transform: translateY(3px);
-    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 8%, black 85%, transparent 100%);
-    mask-image: linear-gradient(to right, transparent 0%, black 8%, black 85%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 6%, black 90%, transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0%, black 6%, black 90%, transparent 100%);
 }
 
 .header_banner_text {
