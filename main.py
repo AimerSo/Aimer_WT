@@ -476,19 +476,22 @@ class AppApi:
                     )
                     self._last_notice_content = None
 
-            # 4. 更新提示 (内容变化时才提示)
+            # 4. 更新提示 (同一条内容只提示一次，持久化到配置文件)
             if config.get("update_active"):
                 content = config.get("update_content", "")
                 update_url = config.get("update_url", "")
 
                 update_key = f"{content}|{update_url}"
-                if content and (self._last_update_content != update_key):
+                saved_key = self._cfg_mgr._config.get("last_update_key", "") if self._cfg_mgr else ""
+                if content and update_key != saved_key:
                     self._logger.info(f"[更新] {content}")
                     self._window.evaluate_js(safe_js_call("showAlert", "发现新版本", content, "success", update_url))
                     self._window.evaluate_js(
                         f"if(window.HeaderBannerModule) HeaderBannerModule.pushUpdate({json.dumps(content, ensure_ascii=False)}, {json.dumps(update_url, ensure_ascii=False)})"
                     )
-                    self._last_update_content = update_key
+                    if self._cfg_mgr:
+                        self._cfg_mgr._config["last_update_key"] = update_key
+                        self._cfg_mgr.save_config()
 
             # 5. 广告轮播远程覆盖 (服务端配置了广告数据时覆盖客户端本地配置)
             ad_items = config.get("ad_carousel_items")

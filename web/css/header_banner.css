@@ -2,13 +2,15 @@
 #header_banner_slot {
     display: none;
     align-items: center;
+    justify-content: center;
     height: 100%;
     overflow: hidden;
     clip-path: inset(0);
-    margin-left: 4px;
+    min-width: 0;
     -webkit-app-region: no-drag;
     app-region: no-drag;
-    position: relative;
+    position: absolute;
+    top: 0;
 }
 
 #header_banner_slot.has-content {

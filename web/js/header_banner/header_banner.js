@@ -20,6 +20,7 @@
     var _currentIndex = 0;
     var _timer = null;
     var _update_dismissed = false;
+    var _currentUpdateKey = null;
 
     var DEFAULT_SLOGANS = [];
 
@@ -76,9 +77,7 @@
         if (closeBtn) {
             closeBtn.addEventListener('click', function (e) {
                 e.stopPropagation();
-                _update_dismissed = true;
-                removeByType('update');
-                refreshDisplay();
+                clearUpdate();
             });
         }
 
@@ -202,11 +201,15 @@
         if (!_container) return;
         var headerLeft = document.querySelector('.header-left');
         var headerNav = document.querySelector('.header-nav');
-        if (headerLeft && headerNav) {
-            var leftEnd = headerLeft.getBoundingClientRect().right;
-            var navStart = headerNav.getBoundingClientRect().left;
-            var available = navStart - leftEnd - 12;
-            _container.style.maxWidth = Math.max(available, 0) + 'px';
+        var header = document.querySelector('.app-header');
+        if (headerLeft && headerNav && header) {
+            var headerRect = header.getBoundingClientRect();
+            var pl = parseFloat(getComputedStyle(header).paddingLeft) || 0;
+            var leftEnd = headerLeft.getBoundingClientRect().right - headerRect.left - pl;
+            var navStart = headerNav.getBoundingClientRect().left - headerRect.left - pl;
+            var available = navStart - leftEnd - 8;
+            _container.style.left = (leftEnd + 4) + 'px';
+            _container.style.width = Math.max(available, 0) + 'px';
         }
     }
 
@@ -224,7 +227,12 @@
     // === 公开 API ===
 
     function pushUpdate(text, url) {
+        var updateKey = (text || '') + '|' + (url || '');
+        try {
+            if (localStorage.getItem('dismissed_update_key') === updateKey) return;
+        } catch (e) {}
         if (_update_dismissed) return;
+        _currentUpdateKey = updateKey;
         removeByType('update');
         _items.unshift({
             type: 'update',
@@ -269,6 +277,10 @@
     }
 
     function clearUpdate() {
+        _update_dismissed = true;
+        if (_currentUpdateKey) {
+            try { localStorage.setItem('dismissed_update_key', _currentUpdateKey); } catch (e) {}
+        }
         removeByType('update');
         refreshDisplay();
     }

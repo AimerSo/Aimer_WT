@@ -461,6 +461,7 @@ i[class^="ri-"] {
     justify-content: space-between;
     /* 左右分布 */
     transition: background-color 0.3s;
+    position: relative;
     /* Header 默认不可拖拽；由子区域通过 -webkit-app-region 控制可拖拽区域 */
 }
 
