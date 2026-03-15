@@ -4615,13 +4615,15 @@ def main() -> int:
 
     # 启动
     icon_path = str(WEB_DIR / "assets" / "logo.ico")
+    # WebKitGTK (Linux) 下 file:// 协议会阻止 JS 模块加载，需启用 HTTP 服务
+    use_http_server = sys.platform != "win32"
     try:
         # 尝试使用 edgechromium 内核（性能更好）
         webview.start(
             _on_start,
             window,
             debug=False,
-            http_server=False,
+            http_server=use_http_server,
             gui="edgechromium",
             icon=icon_path,
         )
@@ -4646,7 +4648,7 @@ def main() -> int:
 
         try:
             # 降级启动
-            webview.start(_on_start, window, debug=False, http_server=False, icon=icon_path)
+            webview.start(_on_start, window, debug=False, http_server=use_http_server, icon=icon_path)
             return 0
         except Exception as e2:
             log.exception("webview 启动失败（含降级）")

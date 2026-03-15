@@ -13,13 +13,18 @@
 """
 import os
 import sys
-import winreg
+import platform
 from pathlib import Path
 from typing import Optional
 
 from utils.logger import get_logger
 
 log = get_logger(__name__)
+
+IS_WINDOWS = platform.system() == "Windows"
+
+if IS_WINDOWS:
+    import winreg
 
 # 注册表路径
 REGISTRY_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -77,6 +82,8 @@ class AutostartManager:
         Returns:
             是否已启用
         """
+        if not IS_WINDOWS:
+            return False
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self._registry_key, 0, winreg.KEY_READ) as key:
                 try:
@@ -98,6 +105,9 @@ class AutostartManager:
         Returns:
             是否设置成功
         """
+        if not IS_WINDOWS:
+            log.warning("非 Windows 平台，不支持注册表方式的开机自启动")
+            return False
         try:
             exe_path = self._get_executable_path(silent)
             
@@ -122,6 +132,8 @@ class AutostartManager:
         Returns:
             是否禁用成功
         """
+        if not IS_WINDOWS:
+            return True
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self._registry_key, 0, winreg.KEY_WRITE) as key:
                 try:
@@ -162,6 +174,8 @@ class AutostartManager:
         Returns:
             注册表值，如果不存在返回 None
         """
+        if not IS_WINDOWS:
+            return None
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self._registry_key, 0, winreg.KEY_READ) as key:
                 try:
