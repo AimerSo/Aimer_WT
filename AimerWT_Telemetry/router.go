@@ -16,6 +16,24 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// matchScope 判断用户是否匹配推送范围，支持 tag:/star/admin 前缀
+func matchScope(scope string, record TelemetryRecord) bool {
+	if scope == "" || scope == "all" {
+		return true
+	}
+	if scope == "star" {
+		return record.IsStarred
+	}
+	if scope == "admin" {
+		return record.IsAdmin
+	}
+	if strings.HasPrefix(scope, "tag:") {
+		tag_name := strings.TrimPrefix(scope, "tag:")
+		return strings.Contains(record.Tags, `"`+tag_name+`"`)
+	}
+	return scope == record.Version
+}
+
 func initRouter(r *gin.Engine) {
 	// 静态文件服务：上传的广告图片
 	uploadsDir := "uploads"
@@ -149,6 +167,9 @@ func initRouter(r *gin.Engine) {
 						"screen_resolution": r.ScreenRes,
 						"python_version":    r.PythonVersion,
 						"locale":            r.Locale,
+						"is_starred":        r.IsStarred,
+						"is_admin":          r.IsAdmin,
+						"tags":              r.Tags,
 						"updated_at":        r.LastSeenAt.Format("2006-01-02 15:04:05"),
 						"created_at":        r.CreatedAt.Format("2006-01-02 15:04:05"),
 						"minutes_ago":       int(time.Since(r.LastSeenAt).Minutes()),
@@ -165,6 +186,11 @@ func initRouter(r *gin.Engine) {
 				stats.ArchOptions = getAllOptions("arch")
 				stats.VersionOptions = getAllOptions("version")
 				stats.LocaleOptions = getAllOptions("locale")
+
+				// 标签选项供前端 scope 选择器使用
+				var tagOptions []UserTag
+				db.Order("sort_order asc, id asc").Find(&tagOptions)
+				stats.TagOptions = tagOptions
 
 				c.JSON(200, stats)
 			})
@@ -636,6 +662,140 @@ func initRouter(r *gin.Engine) {
 
 		// AI 代理管理路由
 		initAIRoutes(admin)
+
+		// ==================== 标签管理 API ====================
+
+		admin.GET("/tags", func(c *gin.Context) {
+			var tags []UserTag
+			db.Order("sort_order asc, id asc").Find(&tags)
+			c.JSON(200, gin.H{"tags": tags})
+		})
+
+		admin.POST("/tags", func(c *gin.Context) {
+			var tag UserTag
+			if err := c.ShouldBindJSON(&tag); err != nil {
+				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				return
+			}
+			tag.ID = 0
+			tag.IsSystem = false
+			if tag.Name == "" {
+				c.JSON(400, gin.H{"error": "name is required"})
+				return
+			}
+			var count int64
+			db.Model(&UserTag{}).Where("name = ?", tag.Name).Count(&count)
+			if count > 0 {
+				c.JSON(409, gin.H{"error": "tag name already exists"})
+				return
+			}
+			if err := db.Create(&tag).Error; err != nil {
+				c.JSON(500, gin.H{"error": "Create failed"})
+				return
+			}
+			c.JSON(200, gin.H{"status": "success", "tag": tag})
+		})
+
+		admin.PUT("/tags/:id", func(c *gin.Context) {
+			id := c.Param("id")
+			var existing UserTag
+			if err := db.First(&existing, id).Error; err != nil {
+				c.JSON(404, gin.H{"error": "Not found"})
+				return
+			}
+			var updates UserTag
+			if err := c.ShouldBindJSON(&updates); err != nil {
+				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				return
+			}
+			updateMap := map[string]interface{}{}
+			if updates.DisplayName != "" {
+				updateMap["display_name"] = updates.DisplayName
+			}
+			if updates.Color != "" {
+				updateMap["color"] = updates.Color
+			}
+			if updates.Icon != "" {
+				updateMap["icon"] = updates.Icon
+			}
+			if updates.SortOrder != 0 {
+				updateMap["sort_order"] = updates.SortOrder
+			}
+			if !existing.IsSystem && updates.Name != "" {
+				updateMap["name"] = updates.Name
+			}
+			if len(updateMap) > 0 {
+				db.Model(&existing).Updates(updateMap)
+			}
+			db.First(&existing, id)
+			c.JSON(200, gin.H{"status": "success", "tag": existing})
+		})
+
+		admin.DELETE("/tags/:id", func(c *gin.Context) {
+			id := c.Param("id")
+			var tag UserTag
+			if err := db.First(&tag, id).Error; err != nil {
+				c.JSON(404, gin.H{"error": "Not found"})
+				return
+			}
+			if tag.IsSystem {
+				c.JSON(403, gin.H{"error": "系统内置标签不可删除"})
+				return
+			}
+			db.Delete(&tag)
+			c.JSON(200, gin.H{"status": "success"})
+		})
+
+		// ==================== 用户标签操作 API ====================
+
+		admin.POST("/user-tags", func(c *gin.Context) {
+			var req struct {
+				MachineID string   `json:"machine_id"`
+				Tags      []string `json:"tags"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				return
+			}
+			tagsJson, _ := json.Marshal(req.Tags)
+			if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("tags", string(tagsJson)).Error; err != nil {
+				c.JSON(500, gin.H{"error": "Update failed"})
+				return
+			}
+			c.JSON(200, gin.H{"status": "success"})
+		})
+
+		admin.POST("/user-star", func(c *gin.Context) {
+			var req struct {
+				MachineID string `json:"machine_id"`
+				IsStarred bool   `json:"is_starred"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				return
+			}
+			if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("is_starred", req.IsStarred).Error; err != nil {
+				c.JSON(500, gin.H{"error": "Update failed"})
+				return
+			}
+			c.JSON(200, gin.H{"status": "success"})
+		})
+
+		admin.POST("/user-admin", func(c *gin.Context) {
+			var req struct {
+				MachineID string `json:"machine_id"`
+				IsAdmin   bool   `json:"is_admin"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				return
+			}
+			if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("is_admin", req.IsAdmin).Error; err != nil {
+				c.JSON(500, gin.H{"error": "Update failed"})
+				return
+			}
+			c.JSON(200, gin.H{"status": "success"})
+		})
 	}
 
 	// 客户端 AI 聊天端点（UA 校验，不需要 Basic Auth）
@@ -715,21 +875,26 @@ func initRouter(r *gin.Engine) {
 		}
 
 		clientConfig := sysConfig
-		if sysConfig.AlertScope != "all" && sysConfig.AlertScope != record.Version {
+
+		// 查询当前用户的持久化标签数据，用于 scope 匹配
+		var dbRecord TelemetryRecord
+		db.Where("machine_id = ?", record.MachineID).First(&dbRecord)
+
+		if !matchScope(sysConfig.AlertScope, dbRecord) {
 			clientConfig.AlertActive = false
 			clientConfig.AlertTitle = ""
 			clientConfig.AlertContent = ""
 		}
-		if sysConfig.NoticeScope != "all" && sysConfig.NoticeScope != record.Version {
+		if !matchScope(sysConfig.NoticeScope, dbRecord) {
 			clientConfig.NoticeActive = false
 			clientConfig.NoticeContent = ""
 		}
-		if sysConfig.UpdateScope != "all" && sysConfig.UpdateScope != record.Version {
+		if !matchScope(sysConfig.UpdateScope, dbRecord) {
 			clientConfig.UpdateActive = false
 			clientConfig.UpdateContent = ""
 			clientConfig.UpdateUrl = ""
 		}
-		if sysConfig.HeartbeatScope != "" && sysConfig.HeartbeatScope != "all" && sysConfig.HeartbeatScope != record.Version {
+		if sysConfig.HeartbeatScope != "" && !matchScope(sysConfig.HeartbeatScope, dbRecord) {
 			clientConfig.HeartbeatInterval = 0
 		}
 

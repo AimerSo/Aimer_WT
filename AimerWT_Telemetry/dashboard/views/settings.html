@@ -229,6 +229,29 @@
                 </div>
             </div>
 
+            <!-- 标签管理 -->
+            <div class="panel" style="grid-column: 1 / -1;">
+                <div class="panel-header">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(168, 85, 247, 0.08); display: flex; align-items: center; justify-content: center;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+                        </div>
+                        <div>
+                            <div class="panel-title">标签管理</div>
+                            <div style="font-size: 11px; color: var(--text-muted);">管理用户标签（系统内置标签不可删除）</div>
+                        </div>
+                    </div>
+                    <button class="btn primary" onclick="app.showCreateTagDialog()" style="font-size: 12px; padding: 5px 12px;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>新建标签
+                    </button>
+                </div>
+                <div class="panel-body" style="padding: 20px;">
+                    <div id="tagManageList" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                        <div style="color: var(--text-muted); font-size: 13px;">加载中...</div>
+                    </div>
+                </div>
+            </div>
+
         <!-- 底部信息栏 -->
         <div style="margin-top: 20px; padding: 16px 20px; background: var(--card); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
             <div style="display: flex; align-items: center; gap: 16px;">

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -27,7 +28,7 @@ func initDB() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 	db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{}, &FeedbackRecord{},
-		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{})
+		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{})
 }
 
 func loadDashboard() {
@@ -43,6 +44,7 @@ func loadDashboard() {
 
 func main() {
 	initDB()
+	seedSystemTags()
 	RestoreSysConfig()
 	loadDashboard()
 
@@ -91,4 +93,23 @@ func buildWhereClause(c *gin.Context) string {
 		return " AND " + strings.Join(clauses, " AND ")
 	}
 	return ""
+}
+
+// seedSystemTags 启动时预置系统内置标签（不可删除）
+func seedSystemTags() {
+	presets := []UserTag{
+		{Name: "tester", DisplayName: "\U0001F9EA 测试志愿者", Color: "#3b82f6", Icon: "ri-flask-line", IsSystem: true, SortOrder: 1, CreatedAt: time.Now()},
+		{Name: "friend", DisplayName: "\U0001F465 朋友", Color: "#22c55e", Icon: "ri-user-heart-line", IsSystem: true, SortOrder: 2, CreatedAt: time.Now()},
+		{Name: "risk", DisplayName: "\u26A0\uFE0F 风险用户", Color: "#ef4444", Icon: "ri-alert-line", IsSystem: true, SortOrder: 3, CreatedAt: time.Now()},
+		{Name: "vip", DisplayName: "\U0001F48E VIP", Color: "#a855f7", Icon: "ri-vip-diamond-line", IsSystem: true, SortOrder: 4, CreatedAt: time.Now()},
+		{Name: "internal", DisplayName: "\U0001F527 内测组", Color: "#f97316", Icon: "ri-tools-line", IsSystem: true, SortOrder: 5, CreatedAt: time.Now()},
+	}
+	for _, tag := range presets {
+		var count int64
+		db.Model(&UserTag{}).Where("name = ?", tag.Name).Count(&count)
+		if count == 0 {
+			db.Create(&tag)
+		}
+	}
+	log.Println("[Tags] 系统标签初始化完成")
 }

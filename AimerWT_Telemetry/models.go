@@ -17,6 +17,9 @@ type TelemetryRecord struct {
 	Locale         string    `json:"locale"`
 	SessionID      int       `json:"session_id"`
 	PendingCommand string    `json:"pending_command"`
+	IsStarred      bool      `json:"is_starred"`
+	IsAdmin        bool      `json:"is_admin"`
+	Tags           string    `gorm:"type:text;default:'[]'" json:"tags"`
 	LastSeenAt     time.Time `gorm:"autoUpdateTime" json:"last_seen_at"`
 	CreatedAt      time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
@@ -37,6 +40,7 @@ type StatsResponse struct {
 	ArchOptions    []map[string]any `json:"arch_options"`
 	VersionOptions []map[string]any `json:"version_options"`
 	LocaleOptions  []map[string]any `json:"locale_options"`
+	TagOptions     []UserTag        `json:"tag_options"`
 }
 
 type DrilldownResponse struct {
@@ -148,4 +152,16 @@ type AIUserLimit struct {
 	ID          uint   `gorm:"primaryKey;autoIncrement" json:"id"`
 	MachineID   string `gorm:"uniqueIndex;type:varchar(64)" json:"machine_id"`
 	HourlyLimit int    `json:"hourly_limit"`
+}
+
+// UserTag 用户标签元数据（管理标签名称/颜色/图标）
+type UserTag struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	Name        string    `gorm:"uniqueIndex;type:varchar(32)" json:"name"`
+	DisplayName string    `json:"display_name"`
+	Color       string    `json:"color"`
+	Icon        string    `json:"icon"`
+	IsSystem    bool      `json:"is_system"`
+	SortOrder   int       `json:"sort_order"`
+	CreatedAt   time.Time `gorm:"autoCreateTime" json:"created_at"`
 }

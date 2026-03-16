@@ -404,6 +404,16 @@ const app = {
         this.renderRecentUsers(data.recent_users || []);
 
         this.state.latestUsersData = data.recent_users || [];
+
+        // 从后端同步星标/管理员状态到内存 Set
+        this.state.markedUsers.clear();
+        this.state.adminUsers.clear();
+        this.state.latestUsersData.forEach(u => {
+            const uid = u.hwid || u.hwid_hash || u.uid;
+            if (u.is_starred) this.state.markedUsers.add(uid);
+            if (u.is_admin) this.state.adminUsers.add(uid);
+        });
+
         if (this.state.currentView === 'userlist') {
             this.renderUserList(this.state.latestUsersData);
         }
@@ -1474,20 +1484,53 @@ const app = {
             if (!res.ok) return;
             const data = await res.json();
             const versions = data.version_stats || data.version_options || [];
-            if (!versions.length) return;
+            const tags = data.tag_options || [];
 
             selectIds.forEach(id => {
                 const el = document.getElementById(id);
                 if (!el) return;
                 const current = el.value;
-                // 保留第一个 all 选项，清除其余旧选项
                 while (el.options.length > 1) el.remove(1);
-                versions.forEach(item => {
-                    const opt = document.createElement('option');
-                    opt.value = item.name;
-                    opt.textContent = `${item.name}（${item.value} 人）`;
-                    el.appendChild(opt);
-                });
+
+                // 按版本分组
+                if (versions.length) {
+                    const vg = document.createElement('optgroup');
+                    vg.label = '── 按版本 ──';
+                    versions.forEach(item => {
+                        const opt = document.createElement('option');
+                        opt.value = item.name;
+                        opt.textContent = `${item.name}（${item.value} 人）`;
+                        vg.appendChild(opt);
+                    });
+                    el.appendChild(vg);
+                }
+
+                // 按标签分组
+                if (tags.length) {
+                    const tg = document.createElement('optgroup');
+                    tg.label = '── 按标签 ──';
+                    tags.forEach(tag => {
+                        const opt = document.createElement('option');
+                        opt.value = `tag:${tag.name}`;
+                        opt.textContent = `${tag.display_name}`;
+                        tg.appendChild(opt);
+                    });
+                    el.appendChild(tg);
+                }
+
+                // 特殊分组
+                const sg = document.createElement('optgroup');
+                sg.label = '── 特殊分组 ──';
+                const star_opt = document.createElement('option');
+                star_opt.value = 'star';
+                star_opt.textContent = '⭐ 星标用户';
+                sg.appendChild(star_opt);
+                const admin_opt = document.createElement('option');
+                admin_opt.value = 'admin';
+                admin_opt.textContent = '🔑 管理员';
+                sg.appendChild(admin_opt);
+                el.appendChild(sg);
+
                 el.value = current || 'all';
             });
         } catch {
@@ -2569,6 +2612,7 @@ const app = {
         });
 
         this._loadProjectInfo();
+        this._loadTagManageList();
     },
 
     /**
@@ -2591,6 +2635,122 @@ const app = {
                 if (m) dateEl.value = `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
             }
         } catch {}
+    },
+
+    /**
+     * 加载并渲染标签管理列表
+     */
+    async _loadTagManageList() {
+        const container = document.getElementById('tagManageList');
+        if (!container) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/tags`);
+            if (!res.ok) throw new Error();
+            const data = await res.json();
+            const tags = data.tags || [];
+            if (!tags.length) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">暂无标签</div>';
+                return;
+            }
+            container.innerHTML = tags.map(tag => {
+                const system_badge = tag.is_system
+                    ? '<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#e2e8f0;color:#64748b;margin-left:6px;">内置</span>'
+                    : '';
+                const delete_btn = tag.is_system
+                    ? ''
+                    : `<button onclick="app.deleteTag(${tag.id})" style="margin-left:8px;background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;" title="删除">×</button>`;
+                return `<div style="display:flex;align-items:center;padding:8px 14px;border-radius:10px;border:1.5px solid ${tag.color}33;background:${tag.color}0a;">
+                    <span style="width:12px;height:12px;border-radius:50%;background:${tag.color};margin-right:8px;flex-shrink:0;"></span>
+                    <span style="font-size:13px;font-weight:600;color:${tag.color};">${tag.display_name}</span>
+                    ${system_badge}
+                    <span style="margin-left:6px;font-size:11px;color:var(--text-muted);">(${tag.name})</span>
+                    ${delete_btn}
+                </div>`;
+            }).join('');
+        } catch {
+            container.innerHTML = '<div style="color: var(--danger); font-size: 13px;">加载失败</div>';
+        }
+    },
+
+    /**
+     * 弹出新建标签对话框
+     */
+    showCreateTagDialog() {
+        const title = '新建标签';
+        const content = `
+            <div class="form-group">
+                <label>标签标识 (英文)</label>
+                <input class="input" style="width: 100%;" id="newTagName" placeholder="例如: beta_user">
+            </div>
+            <div class="form-group">
+                <label>显示名称</label>
+                <input class="input" style="width: 100%;" id="newTagDisplayName" placeholder="例如: 🔥 Beta 用户">
+            </div>
+            <div class="form-group">
+                <label>颜色</label>
+                <input class="input" type="color" id="newTagColor" value="#6366f1" style="width: 60px; height: 36px; padding: 2px;">
+            </div>
+        `;
+
+        document.getElementById('controlModalTitle').textContent = title;
+        document.getElementById('controlModalBody').innerHTML = content;
+        document.getElementById('controlModal').dataset.action = 'create_tag';
+
+        const submit_btn = document.getElementById('controlModalSubmit');
+        submit_btn.textContent = '创建标签';
+        submit_btn.setAttribute('onclick', 'app.submitCreateTag()');
+
+        document.getElementById('controlModalMask').classList.add('show');
+        document.getElementById('controlModal').classList.add('show');
+    },
+
+    /**
+     * 提交新建标签
+     */
+    async submitCreateTag() {
+        const name = document.getElementById('newTagName')?.value?.trim();
+        const display_name = document.getElementById('newTagDisplayName')?.value?.trim();
+        const color = document.getElementById('newTagColor')?.value || '#6366f1';
+        if (!name || !display_name) {
+            this.showAlert('标识和显示名称不能为空', 'warning');
+            return;
+        }
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, display_name, color, icon: '' })
+            });
+            if (res.status === 409) {
+                this.showAlert('标签标识已存在', 'warning');
+                return;
+            }
+            if (!res.ok) throw new Error();
+            this.closeControlModal();
+            this.showAlert('标签创建成功', 'success');
+            this._loadTagManageList();
+        } catch {
+            this.showAlert('创建失败', 'danger');
+        }
+    },
+
+    /**
+     * 删除自定义标签
+     */
+    async deleteTag(tag_id) {
+        if (!confirm('确定要删除这个标签吗？')) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/tags/${tag_id}`, { method: 'DELETE' });
+            if (res.status === 403) {
+                this.showAlert('系统内置标签不可删除', 'warning');
+                return;
+            }
+            if (!res.ok) throw new Error();
+            this.showAlert('标签已删除', 'success');
+            this._loadTagManageList();
+        } catch {
+            this.showAlert('删除失败', 'danger');
+        }
     },
 
     /**
@@ -2847,6 +3007,19 @@ const app = {
             if (alias && alias !== originalName) {
                 nameHtml = `${alias} <span style="color: var(--text-muted); font-weight: normal; font-size: 0.9em;">(${originalName})</span>`;
             }
+            // 解析用户标签 badge
+            let tag_badges_html = '';
+            if (isMarked) tag_badges_html += '<span style="margin-left:4px;" title="星标">⭐</span>';
+            if (isAdmin) tag_badges_html += '<span style="margin-left:4px;" title="管理员">🔑</span>';
+            let user_tags = [];
+            try { user_tags = typeof user.tags === 'string' ? JSON.parse(user.tags || '[]') : (user.tags || []); } catch {}
+            const all_tag_defs = this.state.dashboardData?.tag_options || [];
+            user_tags.forEach(tn => {
+                const def = all_tag_defs.find(t => t.name === tn);
+                if (def) {
+                    tag_badges_html += `<span style="margin-left:4px;padding:1px 6px;border-radius:8px;font-size:10px;background:${def.color}22;color:${def.color};font-weight:600;" title="${def.display_name}">${def.display_name}</span>`;
+                }
+            });
 
             const userData = encodeURIComponent(JSON.stringify(user));
 
@@ -2856,6 +3029,7 @@ const app = {
                     <div style="display: flex; align-items: center; ${nameStyle}">
                         <div class="recent-avatar" style="width: 32px; height: 32px; font-size: 11px; margin-right: 8px; flex-shrink: 0; ${avatarBgStyle}">#${user.id || '-'}</div>
                         <span>${nameHtml}</span>
+                        ${tag_badges_html}
                     </div>
                 </td>
                 <td class="hwid-cell" style="font-family: monospace; font-size: 12px;" data-hwid="${hwid}">${displayHwid}</td>
@@ -3065,6 +3239,11 @@ const app = {
                     </div>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">用户标签</div>
+                    <div id="userTagBadges" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
                     <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">权限管理</div>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <button class="btn" onclick="app.banFeedback('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: var(--warning); border-color: var(--warning); color: white;">
@@ -3109,6 +3288,85 @@ const app = {
 
         html += `</div>`;
         container.innerHTML = html;
+
+        // 动态填充标签 badge 选择器
+        this._renderUserTagBadges(hwid, user);
+    },
+
+    /**
+     * 渲染用户标签 badge 选择器（可点击切换）
+     */
+    async _renderUserTagBadges(hwid, user) {
+        const container = document.getElementById('userTagBadges');
+        if (!container) return;
+
+        let all_tags = [];
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/tags`);
+            if (res.ok) {
+                const data = await res.json();
+                all_tags = data.tags || [];
+            }
+        } catch {}
+
+        let current_tags = [];
+        try {
+            current_tags = typeof user.tags === 'string' ? JSON.parse(user.tags || '[]') : (user.tags || []);
+        } catch {}
+
+        container.innerHTML = all_tags.map(tag => {
+            const active = current_tags.includes(tag.name);
+            const bg = active ? `${tag.color}22` : 'var(--bg)';
+            const border = active ? tag.color : 'var(--border)';
+            const color = active ? tag.color : 'var(--text-muted)';
+            const check = active ? '✓ ' : '';
+            return `<button onclick="app.toggleUserTag('${hwid}','${tag.name}')" style="
+                padding: 4px 12px; border-radius: 16px; font-size: 12px; font-weight: 600;
+                border: 1.5px solid ${border}; background: ${bg}; color: ${color};
+                cursor: pointer; transition: all .15s;
+            ">${check}${tag.display_name}</button>`;
+        }).join('');
+    },
+
+    /**
+     * 切换用户标签（持久化到后端）
+     */
+    async toggleUserTag(hwid, tag_name) {
+        const user = this.state.selectedUser;
+        if (!user) return;
+
+        let current_tags = [];
+        try {
+            current_tags = typeof user.tags === 'string' ? JSON.parse(user.tags || '[]') : (user.tags || []);
+        } catch {}
+
+        const idx = current_tags.indexOf(tag_name);
+        if (idx >= 0) {
+            current_tags.splice(idx, 1);
+        } else {
+            current_tags.push(tag_name);
+        }
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/user-tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine_id: hwid, tags: current_tags })
+            });
+            if (!res.ok) throw new Error();
+        } catch {
+            this.showAlert('标签更新失败', 'danger');
+            return;
+        }
+
+        user.tags = JSON.stringify(current_tags);
+        this.showAlert(idx >= 0 ? '已移除标签' : '已添加标签', 'success');
+        this._renderUserTagBadges(hwid, user);
+
+        // 同步到列表数据
+        const list_user = this.state.latestUsersData?.find(u => (u.hwid || u.hwid_hash) === hwid);
+        if (list_user) list_user.tags = user.tags;
+        if (this.state.latestUsersData) this.renderUserList(this.state.latestUsersData);
     },
 
     /**
@@ -3369,42 +3627,77 @@ const app = {
     },
 
     /**
-     * 切换用户标记
+     * 切换用户星标（持久化到后端）
      */
-    toggleMarkUser(hwid) {
-        if (this.state.markedUsers.has(hwid)) {
-            this.state.markedUsers.delete(hwid);
-            this.showAlert('已取消标记', 'success');
-        } else {
+    async toggleMarkUser(hwid) {
+        const was_starred = this.state.markedUsers.has(hwid);
+        const new_starred = !was_starred;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/user-star`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine_id: hwid, is_starred: new_starred })
+            });
+            if (!res.ok) throw new Error();
+        } catch {
+            this.showAlert('操作失败', 'danger');
+            return;
+        }
+
+        if (new_starred) {
             this.state.markedUsers.add(hwid);
             this.showAlert('已标记用户', 'warning');
+        } else {
+            this.state.markedUsers.delete(hwid);
+            this.showAlert('已取消标记', 'success');
         }
+
+        // 同步本地用户数据
+        const user_data = this.state.latestUsersData?.find(u => (u.hwid || u.hwid_hash) === hwid);
+        if (user_data) user_data.is_starred = new_starred;
+        if (this.state.selectedUser) this.state.selectedUser.is_starred = new_starred;
 
         if (this.state.selectedUser && this.state.selectedUser.hwid === hwid) {
             this.renderUserDetailView(this.state.selectedUser);
         }
-
         if (this.state.latestUsersData) {
             this.renderUserList(this.state.latestUsersData);
         }
     },
 
     /**
-     * 切换管理员状态
+     * 切换管理员标记（持久化到后端）
      */
-    toggleAdminUser(hwid) {
-        if (this.state.adminUsers.has(hwid)) {
-            this.state.adminUsers.delete(hwid);
-            this.showAlert('已取消管理员', 'success');
-        } else {
+    async toggleAdminUser(hwid) {
+        const was_admin = this.state.adminUsers.has(hwid);
+        const new_admin = !was_admin;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/user-admin`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine_id: hwid, is_admin: new_admin })
+            });
+            if (!res.ok) throw new Error();
+        } catch {
+            this.showAlert('操作失败', 'danger');
+            return;
+        }
+
+        if (new_admin) {
             this.state.adminUsers.add(hwid);
             this.showAlert('已标记为管理员', 'success');
+        } else {
+            this.state.adminUsers.delete(hwid);
+            this.showAlert('已取消管理员', 'success');
         }
+
+        const user_data = this.state.latestUsersData?.find(u => (u.hwid || u.hwid_hash) === hwid);
+        if (user_data) user_data.is_admin = new_admin;
+        if (this.state.selectedUser) this.state.selectedUser.is_admin = new_admin;
 
         if (this.state.selectedUser && this.state.selectedUser.hwid === hwid) {
             this.renderUserDetailView(this.state.selectedUser);
         }
-
         if (this.state.latestUsersData) {
             this.renderUserList(this.state.latestUsersData);
         }
