@@ -89,6 +89,7 @@ web/redeem/redeem_codes.local.js
 # 遥测服务编译产物（本地构建，不上传）
 AimerWT_Telemetry/*.exe
 AimerWT_Telemetry/*.exe~
+AimerWT_Telemetry/AimerWT_Telemetry_linux
 
 # 遥测控制面板（本地开发工具，不上传）
 遥测控制/
@@ -98,3 +99,14 @@ two_phase_changelog.md
 web/ads/README_ads_structure.md
 web/ai/目录结构说明.md
 作者端v1/说明.md
+
+# 测试文件（本地调试用，不上传）
+test_main_server_message.py
+services/test_telemetry_manager.py
+AimerWT_Telemetry/router_test.go
+
+# 广告图片上传目录（运行时生成，不上传）
+AimerWT_Telemetry/uploads/
+
+# 遥测数据库（运行时生成，不上传）
+AimerWT_Telemetry/telemetry.db

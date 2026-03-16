@@ -3,7 +3,10 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -69,14 +72,55 @@ func RestoreSysConfig() {
 	log.Println("[Config] 已从数据库恢复 sysConfig")
 }
 
-// SaveAdCarouselItems 将广告轮播数据持久化
+// SaveAdCarouselItems 将广告轮播数据持久化，并清理不再引用的旧图片
 func SaveAdCarouselItems(items []AdCarouselItem) {
+	// 获取旧配置中引用的图片路径
+	oldItems := LoadAdCarouselItems()
+	oldImages := make(map[string]bool)
+	for _, item := range oldItems {
+		if item.Image != "" {
+			oldImages[item.Image] = true
+		}
+	}
+
+	// 获取新配置中引用的图片路径
+	newImages := make(map[string]bool)
+	for _, item := range items {
+		if item.Image != "" {
+			newImages[item.Image] = true
+		}
+	}
+
+	// 保存新配置
 	data, err := json.Marshal(items)
 	if err != nil {
 		log.Printf("[Config] 广告轮播序列化失败: %v", err)
 		return
 	}
 	SaveConfig("ad_carousel_items", string(data))
+
+	// 删除不再引用的旧图片文件
+	for img := range oldImages {
+		if newImages[img] {
+			continue
+		}
+		// 提取本地路径部分（/uploads/xxx.webp → uploads/xxx.webp）
+		localPath := img
+		if idx := strings.Index(localPath, "/uploads/"); idx >= 0 {
+			localPath = localPath[idx+1:]
+		} else if strings.HasPrefix(localPath, "/uploads/") {
+			localPath = localPath[1:]
+		}
+		if !strings.HasPrefix(localPath, "uploads/") {
+			continue
+		}
+		absPath := filepath.Join(".", localPath)
+		if _, err := os.Stat(absPath); err == nil {
+			if err := os.Remove(absPath); err == nil {
+				log.Printf("[Config] 已清理孤儿广告图片: %s", localPath)
+			}
+		}
+	}
 }
 
 // LoadAdCarouselItems 从数据库加载广告轮播数据

@@ -3,6 +3,7 @@
 import argparse
 import base64
 import csv
+import copy
 import hashlib
 import itertools
 import json
@@ -42,7 +43,14 @@ from services.hangar_manager import HangarManager
 from services.bank_preview_service import BankPreviewService
 from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
-from services.telemetry_manager import init_telemetry, get_hwid, get_telemetry_connection_status, get_user_seq_id, submit_feedback
+from services.telemetry_manager import (
+    get_hwid,
+    get_telemetry_connection_status,
+    get_telemetry_manager,
+    get_user_seq_id,
+    init_telemetry,
+    submit_feedback,
+)
 try:
     from services.theme_unlock import ThemeUnlockService
 except Exception:
@@ -288,6 +296,7 @@ class AppApi:
 
         # _window 为私有变量，避免 pywebview 扫描序列化窗口对象导致递归错误
         self._window = None
+        self._latest_server_config = None
 
         # 管理器实例：配置、语音包库、涂装、炮镜、游戏目录操作
         # 注意：所有管理器现在统一使用 logger.py 的日誌系统
@@ -317,35 +326,14 @@ class AppApi:
         self._audition_scan_lock = threading.Lock()
 
         # ========== 本地测试配置 ==========
-        # 设置为 True 启用本地遥测测试（连接 localhost:8080）
+        # 设置为 True 启用本地遥测测试（连接 localhost:8082）
         # 正常上线时设置为 False，使用正式服务器
-        LOCAL_TELEMETRY_TEST = False
+        self._local_telemetry_test = False
         # ==================================
 
         # 初始化遥测系统
-        if self._cfg_mgr.get_telemetry_enabled():
-            # .dev_mode 标记文件（由遥测控制面板自动管理，在 .gitignore 中，不会上传 Git）
-            _dev_mode_file = Path(__file__).parent / ".dev_mode"
-            _dev_url = None
-            if _dev_mode_file.exists():
-                try:
-                    _dev_url = _dev_mode_file.read_text(encoding="utf-8").strip()
-                except Exception:
-                    pass
-
-            if _dev_url:
-                tm = init_telemetry(APP_VERSION, _dev_url)
-                self._logger.info(f"[遥测] 开发模式已启用，连接 {_dev_url}")
-            elif LOCAL_TELEMETRY_TEST:
-                # 手动开关（备用）
-                tm = init_telemetry(APP_VERSION, "http://localhost:8082/telemetry")
-                self._logger.info("[遥测] 本地测试模式已启用，连接 localhost:8082")
-            else:
-                # 正式模式：使用默认服务器
-                tm = init_telemetry(APP_VERSION)
-            tm.set_server_message_callback(self.on_server_message)
-            tm.set_user_command_callback(self.on_user_command)
-            tm.set_log_callback(self._logger)
+        self._is_dev_mode = False
+        self._initialize_telemetry()
 
         self._search_running = False
         self._is_busy = False
@@ -363,9 +351,121 @@ class AppApi:
         self._last_ad_carousel_state = None  # 广告轮播配置去重
         self._last_notice_items_state = None  # 公告列表配置去重
 
-    def on_server_message(self, config: dict):
-        """处理服务端下发的系统消息（公告/更新/维护）"""
-        if not self._window:
+        # 服务器数据缓存文件路径
+        self._server_cache_file = Path(self._cfg_mgr.config_dir) / "server_cache.json"
+
+    def _resolve_telemetry_target_url(self):
+        """解析当前应连接的遥测地址，并同步开发模式状态。"""
+        dev_mode_file = Path(__file__).parent / ".dev_mode"
+        dev_url = None
+        if dev_mode_file.exists():
+            try:
+                dev_url = dev_mode_file.read_text(encoding="utf-8").strip()
+            except Exception:
+                dev_url = None
+
+        self._is_dev_mode = False
+        if dev_url:
+            self._is_dev_mode = True
+            return dev_url, f"[遥测] 开发模式已启用，连接 {dev_url}"
+
+        if self._local_telemetry_test:
+            self._is_dev_mode = True
+            return "http://localhost:8082/telemetry", "[遥测] 本地测试模式已启用，连接 localhost:8082"
+
+        return None, None
+
+    def _initialize_telemetry(self):
+        """初始化遥测实例，并在绑定回调后补拉一次当前配置。"""
+        if not self._cfg_mgr.get_telemetry_enabled():
+            return None
+
+        telemetry_url, telemetry_message = self._resolve_telemetry_target_url()
+        telemetry_manager = init_telemetry(APP_VERSION, telemetry_url)
+        self._bind_telemetry_callbacks(telemetry_manager)
+
+        # init_telemetry 会立即启动首次上报，这里补拉一次，避免首帧配置丢在回调绑定之前。
+        telemetry_manager.report_startup()
+
+        if telemetry_message:
+            self._logger.info(telemetry_message)
+        return telemetry_manager
+
+    def _bind_telemetry_callbacks(self, telemetry_manager):
+        telemetry_manager.set_server_message_callback(self.on_server_message)
+        telemetry_manager.set_user_command_callback(self.on_user_command)
+        telemetry_manager.set_log_callback(self._logger)
+
+    def _build_notice_items_apply_js(self, notice_items):
+        items_json = json.dumps(notice_items, ensure_ascii=False)
+        return (
+            "(function(){"
+            f"var items={items_json};"
+            "function apply(){"
+            "if(!window.app) return false;"
+            "window.app.noticeData = items;"
+            "if(window.NoticeBoardModule && typeof window.NoticeBoardModule.renderNoticeBoard === 'function') {"
+            "window.NoticeBoardModule.renderNoticeBoard(window.app);"
+            "}"
+            "return true;"
+            "}"
+            "if(apply()) return;"
+            "var attempts = 0;"
+            "var timer = window.setInterval(function(){"
+            "attempts += 1;"
+            "if(apply() || attempts >= 20){ window.clearInterval(timer); }"
+            "}, 300);"
+            "})();"
+        )
+
+    def _build_ad_carousel_apply_js(self, ad_items, ad_interval_ms):
+        items_json = json.dumps(ad_items, ensure_ascii=False)
+        interval_clause = ""
+        if isinstance(ad_interval_ms, int) and ad_interval_ms > 0:
+            interval_clause = f"window.AIMER_AD_CAROUSEL_CONFIG.autoPlayIntervalMs = {ad_interval_ms};"
+        return (
+            "(function(){"
+            f"var items={items_json};"
+            "function apply(){"
+            "if(!window.AIMER_AD_CAROUSEL_CONFIG) return false;"
+            "window.AIMER_AD_CAROUSEL_CONFIG.items = items;"
+            f"{interval_clause}"
+            "if(window.AdCarouselModule && typeof window.AdCarouselModule.refresh === 'function') {"
+            "window.AdCarouselModule.refresh();"
+            "}"
+            "return true;"
+            "}"
+            "if(apply()) return;"
+            "var attempts = 0;"
+            "var timer = window.setInterval(function(){"
+            "attempts += 1;"
+            "if(apply() || attempts >= 20){ window.clearInterval(timer); }"
+            "}, 300);"
+            "})();"
+        )
+
+    def _schedule_server_config_replay(self, delays=(0.8, 2.0, 4.0)):
+        """在首页脚本陆续就绪后重放最近一次服务端配置。"""
+        if not self._window or not isinstance(self._latest_server_config, dict):
+            return
+
+        latest_config = copy.deepcopy(self._latest_server_config)
+
+        def _replay():
+            for delay in delays:
+                time.sleep(delay)
+                if not self._window:
+                    return
+                try:
+                    self._apply_server_message(copy.deepcopy(latest_config), force=True)
+                except Exception:
+                    log.debug("重放服务端配置失败", exc_info=True)
+
+        threading.Thread(target=_replay, name="ServerConfigReplay", daemon=True).start()
+
+    def _apply_server_message(self, config: dict, force: bool = False):
+        """将服务端配置应用到当前窗口。"""
+        if not self._window or not isinstance(config, dict):
             return
 
         def safe_js_call(func_name, *args):
@@ -379,7 +479,7 @@ class AppApi:
             maint_msg = config.get("maintenance_msg", "")
             maint_key = f"{is_maint}:{maint_msg}"
 
-            if is_maint and (self._last_maintenance_status != maint_key):
+            if is_maint and (force or self._last_maintenance_status != maint_key):
                 self._logger.warning(f"[SYS] ⚠️ 维护模式已开启: {maint_msg}")
                 self._window.evaluate_js(safe_js_call("showWarnToast", "维护模式已开启", maint_msg, 8000))
 
@@ -391,7 +491,7 @@ class AppApi:
                 content = config.get("alert_content", "")
                 full_alert_key = f"{title}|{content}"
 
-                if content and (self._last_alert_content != full_alert_key):
+                if content and (force or self._last_alert_content != full_alert_key):
                     self._logger.info(f"[通知] {title}")
                     self._window.evaluate_js(safe_js_call("showAlert", title, content, "info"))
                     self._window.evaluate_js(
@@ -421,27 +521,22 @@ class AppApi:
                             }
                         banner_items = [item]
 
-                # 构建 notice_key 判断是否变化
                 notice_key = json.dumps(banner_items, ensure_ascii=False, sort_keys=True)
-                if banner_items and (self._last_notice_content != notice_key):
-                    # 先清除旧的 announcement 和 slogan
+                if banner_items and (force or self._last_notice_content != notice_key):
                     self._window.evaluate_js(
                         "if(window.HeaderBannerModule) HeaderBannerModule.clearAnnouncement()"
                     )
 
-                    # 注入轮播间隔
                     if banner_interval and banner_interval != 6:
                         self._window.evaluate_js(
                             f"(function(){{ var m=window.HeaderBannerModule; if(m && m._setInterval) m._setInterval({int(banner_interval) * 1000}); }})()"
                         )
 
-                    # 逐条注入 banner items
                     for item in banner_items:
                         text = item.get("text", "")
                         if not text:
                             continue
 
-                        # 构建 action 对象
                         action_obj = None
                         action_type = item.get("action_type", "none")
                         if action_type == "url" and item.get("action_url"):
@@ -453,7 +548,6 @@ class AppApi:
                                 "content": item.get("action_content", text),
                                 "level": "info"
                             }
-                        # 注入已有 action 属性（兼容旧格式）
                         if not action_obj and item.get("action"):
                             action_obj = item["action"]
 
@@ -461,39 +555,38 @@ class AppApi:
                         if action_obj:
                             action_json = json.dumps(action_obj, ensure_ascii=False)
                             self._window.evaluate_js(
-                                f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({text_json}, {action_json})"
+                                f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({text_json}, {action_json}, true)"
                             )
                         else:
                             self._window.evaluate_js(
-                                f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({text_json})"
+                                f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({text_json}, null, true)"
                             )
                     self._last_notice_content = notice_key
             else:
-                # notice 通道关闭时清除 Banner
-                if self._last_notice_content is not None:
+                if force or self._last_notice_content is not None:
                     self._window.evaluate_js(
                         "if(window.HeaderBannerModule) HeaderBannerModule.clearAnnouncement()"
                     )
                     self._last_notice_content = None
 
-            # 4. 更新提示 (同一条内容只提示一次，持久化到配置文件)
+            # 4. 更新提示
             if config.get("update_active"):
                 content = config.get("update_content", "")
                 update_url = config.get("update_url", "")
 
                 update_key = f"{content}|{update_url}"
-                saved_key = self._cfg_mgr._config.get("last_update_key", "") if self._cfg_mgr else ""
-                if content and update_key != saved_key:
+                saved_key = self._cfg_mgr.config.get("last_update_key", "") if self._cfg_mgr else ""
+                if content and (force or update_key != saved_key):
                     self._logger.info(f"[更新] {content}")
                     self._window.evaluate_js(safe_js_call("showAlert", "发现新版本", content, "success", update_url))
                     self._window.evaluate_js(
                         f"if(window.HeaderBannerModule) HeaderBannerModule.pushUpdate({json.dumps(content, ensure_ascii=False)}, {json.dumps(update_url, ensure_ascii=False)})"
                     )
                     if self._cfg_mgr:
-                        self._cfg_mgr._config["last_update_key"] = update_key
+                        self._cfg_mgr.config["last_update_key"] = update_key
                         self._cfg_mgr.save_config()
 
-            # 5. 广告轮播远程覆盖 (服务端配置了广告数据时覆盖客户端本地配置)
+            # 5. 广告轮播远程覆盖
             ad_items = config.get("ad_carousel_items")
             ad_interval_ms = config.get("ad_carousel_interval_ms")
             if isinstance(ad_items, list):
@@ -501,29 +594,16 @@ class AppApi:
                     "items": ad_items,
                     "interval_ms": ad_interval_ms,
                 }, ensure_ascii=False, sort_keys=True)
-                if self._last_ad_carousel_state != ad_state:
-                    js_parts = []
-                    if isinstance(ad_items, list):
-                        js_parts.append(
-                            f"window.AIMER_AD_CAROUSEL_CONFIG.items = {json.dumps(ad_items, ensure_ascii=False)}"
-                        )
-                    if isinstance(ad_interval_ms, int) and ad_interval_ms > 0:
-                        js_parts.append(f"window.AIMER_AD_CAROUSEL_CONFIG.autoPlayIntervalMs = {ad_interval_ms}")
-                    js_parts.append(
-                        "if(window.AdCarouselModule && typeof window.AdCarouselModule.refresh === 'function') "
-                        "{ window.AdCarouselModule.refresh(); }"
-                    )
-                    self._window.evaluate_js(
-                        "if(window.AIMER_AD_CAROUSEL_CONFIG) { " + "; ".join(js_parts) + "; }"
-                    )
+                if force or self._last_ad_carousel_state != ad_state:
+                    self._window.evaluate_js(self._build_ad_carousel_apply_js(ad_items, ad_interval_ms))
                     self._last_ad_carousel_state = ad_state
+                    self._save_server_cache(ad_carousel={"items": ad_items, "interval_ms": ad_interval_ms})
 
-            # 6. 公告列表远程覆盖 (服务端有公告数据时覆盖客户端本地 noticeData)
+            # 6. 公告列表远程覆盖
             notice_items = config.get("notice_items")
             if isinstance(notice_items, list):
                 notice_state = json.dumps(notice_items, ensure_ascii=False, sort_keys=True)
-                if self._last_notice_items_state != notice_state:
-                    # 将后端字段名 is_pinned 转为前端字段名 isPinned
+                if force or self._last_notice_items_state != notice_state:
                     mapped = []
                     for item in notice_items:
                         mapped.append({
@@ -536,14 +616,11 @@ class AppApi:
                             "content": item.get("content", ""),
                             "isPinned": item.get("is_pinned", False)
                         })
-                    items_json = json.dumps(mapped, ensure_ascii=False)
-                    self._window.evaluate_js(
-                        f"if(window.app) {{ app.noticeData = {items_json}; "
-                        f"if(window.NoticeBoardModule) NoticeBoardModule.renderNoticeBoard(app); }}"
-                    )
+                    self._window.evaluate_js(self._build_notice_items_apply_js(mapped))
                     self._last_notice_items_state = notice_state
+                    self._save_server_cache(notice_items=mapped)
 
-            # 7. 项目状态远程控制（更新信息库页面的"状态"和"最后更新"）
+            # 7. 项目状态远程控制
             project_status = config.get("project_status", "")
             project_last_update = config.get("project_last_update", "")
             status_map = {
@@ -565,6 +642,12 @@ class AppApi:
 
         except Exception as e:
             print(f"消息处理异常: {e}")
+
+    def on_server_message(self, config: dict):
+        """处理服务端下发的系统消息（公告/更新/维护）"""
+        if isinstance(config, dict):
+            self._latest_server_config = copy.deepcopy(config)
+        self._apply_server_message(config)
 
     def on_user_command(self, cmd_json: str):
         """处理针对当前用户的特定指令驱动"""
@@ -595,6 +678,91 @@ class AppApi:
     def set_window(self, window):
         # 绑定 PyWebview Window 实例到桥接层，供后续 API 调用使用。
         self._window = window
+        # 注入上次服务器数据缓存，填补启动到首次服务器响应之间的空档
+        self._inject_server_cache()
+        # 重放最近一次服务器配置，覆盖窗口和首页脚本尚未就绪的时机差。
+        self._schedule_server_config_replay()
+
+    def _save_server_cache(self, notice_items=None, ad_carousel=None):
+        """将服务器下发的公告/广告数据持久化到本地缓存文件（开发模式跳过）"""
+        if getattr(self, '_is_dev_mode', False):
+            return
+        try:
+            cache = self._load_server_cache()
+            if notice_items is not None:
+                cache["notice_items"] = notice_items
+            if ad_carousel is not None:
+                cache["ad_carousel"] = ad_carousel
+            cache_file = self._server_cache_file
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cache_file.with_suffix('.tmp')
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(cache, f, ensure_ascii=False)
+            tmp.replace(cache_file)
+        except Exception as e:
+            log.debug(f"保存服务器缓存失败: {e}")
+
+    def _load_server_cache(self):
+        """读取本地缓存的服务器数据"""
+        try:
+            if self._server_cache_file.exists():
+                with open(self._server_cache_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception as e:
+            log.debug(f"读取服务器缓存失败: {e}")
+        return {}
+
+    def _inject_server_cache(self):
+        """启动时从本地缓存注入公告/广告数据到前端（开发模式跳过）"""
+        if getattr(self, '_is_dev_mode', False):
+            return
+        if not self._window:
+            return
+
+        def _do_inject():
+            import time
+            time.sleep(0.8)
+            if not self._window:
+                return
+            try:
+                cache = self._load_server_cache()
+
+                # 注入缓存的公告数据
+                cached_notices = cache.get("notice_items")
+                if isinstance(cached_notices, list) and cached_notices:
+                    items_json = json.dumps(cached_notices, ensure_ascii=False)
+                    self._window.evaluate_js(
+                        f"if(window.app) {{ app.noticeData = {items_json}; "
+                        f"if(window.NoticeBoardModule) NoticeBoardModule.renderNoticeBoard(app); }}"
+                    )
+                    log.info(f"[缓存] 已注入 {len(cached_notices)} 条缓存公告")
+
+                # 注入缓存的广告轮播数据
+                cached_ad = cache.get("ad_carousel")
+                if isinstance(cached_ad, dict):
+                    ad_items = cached_ad.get("items")
+                    ad_interval = cached_ad.get("interval_ms")
+                    if isinstance(ad_items, list) and ad_items:
+                        js_parts = [
+                            f"window.AIMER_AD_CAROUSEL_CONFIG.items = {json.dumps(ad_items, ensure_ascii=False)}"
+                        ]
+                        if isinstance(ad_interval, int) and ad_interval > 0:
+                            js_parts.append(f"window.AIMER_AD_CAROUSEL_CONFIG.autoPlayIntervalMs = {ad_interval}")
+                        js_parts.append(
+                            "if(window.AdCarouselModule && typeof window.AdCarouselModule.refresh === 'function') "
+                            "{ window.AdCarouselModule.refresh(); }"
+                        )
+                        self._window.evaluate_js(
+                            "if(window.AIMER_AD_CAROUSEL_CONFIG) { " + "; ".join(js_parts) + "; }"
+                        )
+                        log.info(f"[缓存] 已注入 {len(ad_items)} 条缓存广告")
+            except Exception as e:
+                log.debug(f"注入服务器缓存失败: {e}")
+
+        t = threading.Thread(target=_do_inject, name="ServerCacheInject", daemon=True)
+        t.start()
 
     def _load_json_with_fallback(self, file_path):
         # 按编码回退策略读取 JSON 文件并解析为 Python 对象。
@@ -851,22 +1019,22 @@ class AppApi:
         """
         self._cfg_mgr.set_telemetry_enabled(enabled)
 
-        # 无论开启还是关闭，都获取单例（如果尚未初始化则初始化）
-        tm = init_telemetry(APP_VERSION)
-
         if enabled:
-            # 重新绑定回调
-            tm.set_server_message_callback(self.on_server_message)
-            tm.set_user_command_callback(self.on_user_command)
-            tm.set_log_callback(self._logger)
+            telemetry_url, telemetry_message = self._resolve_telemetry_target_url()
+            tm = init_telemetry(APP_VERSION, telemetry_url)
+            self._bind_telemetry_callbacks(tm)
 
             # 手动重启服务：先停止可能存在的旧循环，再启动新循环
             tm.stop()
             tm.start_heartbeat_loop()
             tm.report_startup()
+            if telemetry_message:
+                self._logger.info(telemetry_message)
             self._logger.info("[SYS] 遥测服务已启用")
         else:
-            tm.stop()
+            tm = get_telemetry_manager()
+            if tm:
+                tm.stop()
             self._logger.info("[SYS] 遥测服务已停用")
 
     def submit_feedback(self, contact, content, category="other"):
@@ -3586,23 +3754,63 @@ class AppApi:
         def _run():
             try:
                 mod_path = self._lib_mgr.library_dir / mod_name
-                self._logic.install_from_library(
+                result = self._logic.install_from_library(
                     mod_path, install_list, progress_callback=self.update_loading_ui
                 )
 
-                # 安装完成，通知前端
+                # 根据安装结果通知前端
                 if self._window:
-                    self._window.evaluate_js(
-                        f"if(app.onInstallSuccess) app.onInstallSuccess('{mod_name}')"
-                    )
-                    msg_js = json.dumps("安装完成", ensure_ascii=False)
-                    self._window.evaluate_js(
-                        f"if(window.MinimalistLoading) MinimalistLoading.update(100, {msg_js})"
-                    )
+                    if isinstance(result, dict):
+                        if result.get("success"):
+                            failed_count = result.get("failed", 0)
+                            if failed_count > 0:
+                                # 部分成功
+                                msg = f"安装完成，但有 {failed_count} 个文件复制失败"
+                                msg_js = json.dumps(msg, ensure_ascii=False)
+                                self._window.evaluate_js(
+                                    f"if(window.MinimalistLoading) MinimalistLoading.update(100, {msg_js})"
+                                )
+                            else:
+                                msg_js = json.dumps("安装完成", ensure_ascii=False)
+                                self._window.evaluate_js(
+                                    f"if(window.MinimalistLoading) MinimalistLoading.update(100, {msg_js})"
+                                )
+                            self._window.evaluate_js(
+                                f"if(app.onInstallSuccess) app.onInstallSuccess('{mod_name}')"
+                            )
+                        else:
+                            # 安装失败
+                            error_msg = result.get("error", "")
+                            failed_count = result.get("failed", 0)
+                            if error_msg:
+                                msg = f"安装失败：{error_msg}"
+                            elif failed_count > 0:
+                                msg = f"安装失败：{failed_count} 个文件复制失败"
+                            else:
+                                msg = "安装失败"
+                            msg_js = json.dumps(msg, ensure_ascii=False)
+                            self._window.evaluate_js(
+                                f"if(window.MinimalistLoading) MinimalistLoading.update(100, {msg_js})"
+                            )
+                    else:
+                        # 兼容旧版返回 bool 的情况
+                        if result:
+                            self._window.evaluate_js(
+                                f"if(app.onInstallSuccess) app.onInstallSuccess('{mod_name}')"
+                            )
+                            msg_js = json.dumps("安装完成", ensure_ascii=False)
+                            self._window.evaluate_js(
+                                f"if(window.MinimalistLoading) MinimalistLoading.update(100, {msg_js})"
+                            )
+                        else:
+                            msg_js = json.dumps("安装失败", ensure_ascii=False)
+                            self._window.evaluate_js(
+                                f"if(window.MinimalistLoading) MinimalistLoading.update(100, {msg_js})"
+                            )
             except Exception as e:
                 log.error(f"安装失败: {e}")
                 if self._window:
-                    msg_js = json.dumps("安装失败", ensure_ascii=False)
+                    msg_js = json.dumps(f"安装失败：{e}", ensure_ascii=False)
                     self._window.evaluate_js(
                         f"if(window.MinimalistLoading) MinimalistLoading.update(100, {msg_js})"
                     )

@@ -1,0 +1,68 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="panel" style="height: calc(100vh - 40px); display: flex; flex-direction: column;">
+            <div class="panel-header" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; flex-shrink: 0;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div class="panel-title" style="margin: 0;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                        AimerWT 主软件
+                    </div>
+                    <span style="color: var(--text-muted); font-size: 0.85em;">前端界面预览（部分功能在浏览器中不可用）</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button class="btn" onclick="document.getElementById('appFrame').src = document.getElementById('appFrame').src" style="font-size: 0.85em;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                        刷新
+                    </button>
+                    <button class="btn primary" onclick="window.open('/app/index.html', '_blank')" style="font-size: 0.85em;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                            <polyline points="15 3 21 3 21 9"></polyline>
+                            <line x1="10" y1="14" x2="21" y2="3"></line>
+                        </svg>
+                        新窗口打开
+                    </button>
+                </div>
+            </div>
+            <div class="panel-body" style="flex: 1; padding: 0; overflow: hidden; position: relative;">
+                <iframe id="appFrame"
+                        src="/app/index.html"
+                        style="width: 100%; height: 100%; border: none; background: #F5F7FA;"
+                        sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                        loading="lazy">
+                </iframe>
+                <div id="appFrameOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: none; background: rgba(30,30,46,0.85); align-items: center; justify-content: center; flex-direction: column; color: #fff; font-size: 1.1em; gap: 12px; z-index: 10;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <span>加载失败，请确认服务已启动</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var frame = document.getElementById('appFrame');
+    var overlay = document.getElementById('appFrameOverlay');
+    if (!frame) return;
+
+    frame.addEventListener('error', function() {
+        if (overlay) overlay.style.display = 'flex';
+    });
+
+    frame.addEventListener('load', function() {
+        if (overlay) overlay.style.display = 'none';
+    });
+})();
+</script>

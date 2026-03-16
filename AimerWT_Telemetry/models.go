@@ -48,6 +48,19 @@ type DrilldownResponse struct {
 	Items  []map[string]any `json:"items"`
 }
 
+type BannerItem struct {
+	Type          string                 `json:"type"`
+	Text          string                 `json:"text"`
+	Icon          string                 `json:"icon"`
+	Color         string                 `json:"color"`
+	IconColor     string                 `json:"icon_color"`
+	ActionType    string                 `json:"action_type"`
+	ActionURL     string                 `json:"action_url"`
+	ActionTitle   string                 `json:"action_title"`
+	ActionContent string                 `json:"action_content"`
+	Action        map[string]interface{} `json:"action,omitempty"`
+}
+
 type SystemConfig struct {
 	Maintenance    bool   `json:"maintenance"`
 	MaintenanceMsg string `json:"maintenance_msg"`
@@ -60,9 +73,15 @@ type SystemConfig struct {
 	AlertScope   string `json:"alert_scope"`
 
 	// 常驻公告 (覆盖公告栏文字)
-	NoticeActive  bool   `json:"notice_active"`
-	NoticeContent string `json:"notice_content"`
-	NoticeScope   string `json:"notice_scope"`
+	NoticeActive        bool         `json:"notice_active"`
+	NoticeContent       string       `json:"notice_content"`
+	NoticeScope         string       `json:"notice_scope"`
+	NoticeActionType    string       `json:"notice_action_type"`
+	NoticeActionURL     string       `json:"notice_action_url"`
+	NoticeActionTitle   string       `json:"notice_action_title"`
+	NoticeActionContent string       `json:"notice_action_content"`
+	BannerItems         []BannerItem `json:"banner_items"`
+	BannerInterval      int          `json:"banner_interval"`
 
 	UpdateActive  bool   `json:"update_active"`
 	UpdateContent string `json:"update_content"`
@@ -75,7 +94,7 @@ type SystemConfig struct {
 
 	// 项目状态（客户端信息库展示）
 	ProjectStatus     string `json:"project_status"`      // active / warning / danger
-	ProjectLastUpdate string `json:"project_last_update"`  // 如 "2026 年 3 月 14 日"
+	ProjectLastUpdate string `json:"project_last_update"` // 如 "2026 年 3 月 14 日"
 }
 
 // ContentConfig KV 配置持久化表，用于服务重启后恢复运行时状态
@@ -98,8 +117,8 @@ type AdCarouselItem struct {
 // NoticeItem 公告列表数据表（对应客户端 notice_data.js 的数据结构）
 type NoticeItem struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	Type      string    `json:"type"`                          // urgent / update / event / normal
-	Tag       string    `json:"tag"`                           // 紧急 / 更新 / 活动 / 日常
+	Type      string    `json:"type"` // urgent / update / event / normal
+	Tag       string    `json:"tag"`  // 紧急 / 更新 / 活动 / 日常
 	Title     string    `json:"title"`
 	Summary   string    `json:"summary"`
 	Content   string    `gorm:"type:text" json:"content"`
@@ -112,31 +131,31 @@ type NoticeItem struct {
 
 // FeedbackRecord 用户反馈数据表
 type FeedbackRecord struct {
-	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	MachineID  string    `gorm:"index;type:varchar(64)" json:"machine_id"`
-	Version    string    `json:"version"`
-	Contact    string    `json:"contact"`
-	Content    string    `gorm:"type:text" json:"content"`
-	Category   string    `json:"category"`                        // bug / suggestion / other
-	OS         string    `json:"os"`
-	OSVersion  string    `json:"os_version"`
-	ScreenRes  string    `json:"screen_res"`
-	Locale     string    `json:"locale"`
-	Status     string    `json:"status" gorm:"default:'pending'"` // pending / read / resolved / ignored
-	AdminNote  string    `gorm:"type:text" json:"admin_note"`
-	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID string    `gorm:"index;type:varchar(64)" json:"machine_id"`
+	Version   string    `json:"version"`
+	Contact   string    `json:"contact"`
+	Content   string    `gorm:"type:text" json:"content"`
+	Category  string    `json:"category"` // bug / suggestion / other
+	OS        string    `json:"os"`
+	OSVersion string    `json:"os_version"`
+	ScreenRes string    `json:"screen_res"`
+	Locale    string    `json:"locale"`
+	Status    string    `json:"status" gorm:"default:'pending'"` // pending / read / resolved / ignored
+	AdminNote string    `gorm:"type:text" json:"admin_note"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // AIUsageRecord AI 对话用量记录
 type AIUsageRecord struct {
-	ID              uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	MachineID       string    `gorm:"index;type:varchar(64)" json:"machine_id"`
-	Model           string    `json:"model"`
-	PromptTokens    int       `json:"prompt_tokens"`
-	CompletionTokens int      `json:"completion_tokens"`
-	TotalTokens     int       `json:"total_tokens"`
-	CreatedAt       time.Time `gorm:"autoCreateTime" json:"created_at"`
+	ID               uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID        string    `gorm:"index;type:varchar(64)" json:"machine_id"`
+	Model            string    `json:"model"`
+	PromptTokens     int       `json:"prompt_tokens"`
+	CompletionTokens int       `json:"completion_tokens"`
+	TotalTokens      int       `json:"total_tokens"`
+	CreatedAt        time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
 // AIUserBan AI 功能封禁记录

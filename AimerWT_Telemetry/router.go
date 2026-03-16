@@ -34,6 +34,50 @@ func matchScope(scope string, record TelemetryRecord) bool {
 	return scope == record.Version
 }
 
+func parseBannerItems(raw any) ([]BannerItem, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var items []BannerItem
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func intValue(raw any) (int, bool) {
+	switch value := raw.(type) {
+	case int:
+		return value, true
+	case int32:
+		return int(value), true
+	case int64:
+		return int(value), true
+	case float32:
+		return int(value), true
+	case float64:
+		return int(value), true
+	case json.Number:
+		parsed, err := value.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(parsed), true
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return 0, false
+	}
+}
+
 func initRouter(r *gin.Engine) {
 	// 静态文件服务：上传的广告图片
 	uploadsDir := "uploads"
@@ -60,7 +104,7 @@ func initRouter(r *gin.Engine) {
 			return
 		}
 
-		if path == "/telemetry" {
+		if path == "/telemetry" || path == "/feedback" {
 			ua := c.GetHeader("User-Agent")
 			if len(ua) < 14 || ua[:14] != "AimerWT-Client" {
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Access Denied"})
@@ -76,6 +120,9 @@ func initRouter(r *gin.Engine) {
 	r.Static("/css", "./dashboard/css")
 	r.Static("/js", "./dashboard/js")
 	r.Static("/views", "./dashboard/views")
+
+	// 主软件前端文件（供 dashboard 内嵌浏览）
+	r.Static("/app", "../web")
 
 	authorized := r.Group("/", authMiddleware)
 	{
@@ -311,6 +358,40 @@ func initRouter(r *gin.Engine) {
 					}
 					if val, ok := req["scope"].(string); ok {
 						sysConfig.NoticeScope = val
+					}
+					if val, ok := req["notice_action_type"].(string); ok {
+						sysConfig.NoticeActionType = val
+					}
+					if val, ok := req["notice_action_url"].(string); ok {
+						sysConfig.NoticeActionURL = val
+					}
+					if val, ok := req["notice_action_title"].(string); ok {
+						sysConfig.NoticeActionTitle = val
+					}
+					if val, ok := req["notice_action_content"].(string); ok {
+						sysConfig.NoticeActionContent = val
+					}
+					if rawItems, exists := req["banner_items"]; exists {
+						items, err := parseBannerItems(rawItems)
+						if err != nil {
+							c.JSON(400, gin.H{"error": "Invalid banner_items"})
+							return
+						}
+						sysConfig.BannerItems = items
+					}
+					if rawInterval, exists := req["banner_interval"]; exists {
+						if interval, ok := intValue(rawInterval); ok && interval > 0 {
+							sysConfig.BannerInterval = interval
+						}
+					}
+					if !sysConfig.NoticeActive {
+						sysConfig.NoticeContent = ""
+						sysConfig.NoticeActionType = ""
+						sysConfig.NoticeActionURL = ""
+						sysConfig.NoticeActionTitle = ""
+						sysConfig.NoticeActionContent = ""
+						sysConfig.BannerItems = nil
+						sysConfig.BannerInterval = 0
 					}
 
 				case "update":

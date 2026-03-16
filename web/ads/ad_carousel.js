@@ -35,7 +35,7 @@
 
         var cfg = window.AIMER_AD_CAROUSEL_CONFIG || {};
         var items = Array.isArray(cfg.items) ? cfg.items.filter(function (x) {
-            return x && x.image && x.url;
+            return x && x.image;
         }) : [];
 
         if (!items.length) {
@@ -64,7 +64,7 @@
 
         function appendSlide(item, index) {
             var link = createEl("a", "ad-slide");
-            link.href = item.url;
+            link.href = item.url || "#";
             link.dataset.index = String(index);
 
             var img = document.createElement("img");

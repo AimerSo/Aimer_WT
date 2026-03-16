@@ -47,6 +47,8 @@ const app = {
     init() {
         this.setupEventListeners();
         this.startUpdateTimer();
+        // 加载 RemixIcon CDN（标签图标渲染需要）
+        this._ensureIconPickerCdn();
         // 默认加载主页
         this.switchView('dashboard', document.querySelector('[data-view="dashboard"]'));
         // 启动定时刷新（动态读取配置间隔）
@@ -278,6 +280,9 @@ const app = {
                 break;
             case 'notification':
                 this.initNotification();
+                break;
+            case 'notice_manage':
+                this.initNoticeManage();
                 break;
             default:
                 break;
@@ -2012,6 +2017,10 @@ const app = {
     },
 
     _selectIcon(iconClass) {
+        if (typeof this._iconSelectCallback === 'function') {
+            this._iconSelectCallback(iconClass);
+            return;
+        }
         this.setVal('bannerEditIcon', iconClass);
         this.updateIconPreview();
         document.getElementById('iconPickerSelected').innerHTML = '\u5DF2\u9009: <strong>' + iconClass + '</strong>';
@@ -2100,6 +2109,31 @@ const app = {
 
     // ==================== 公告列表管理 ====================
 
+    /* 初始化公告管理独立视图（notice_manage）*/
+    initNoticeManage() {
+        this.loadNoticeList();
+    },
+
+    /* 刷新公告预览区域 */
+    _refreshNoticePreview() {
+        var container = document.getElementById('noticePreviewContainer');
+        if (!container) return;
+        if (window.NoticePreviewModule && typeof window.NoticePreviewModule.renderPreview === 'function') {
+            window.NoticePreviewModule.renderPreview(container, this._noticeItems);
+        }
+        var countEl = document.getElementById('nmNoticeCountNum');
+        if (countEl) countEl.textContent = String(this._noticeItems.length);
+    },
+
+    /* 类型切换时自动填充标签文字 */
+    _onNoticeTypeChange() {
+        var typeEl = document.getElementById('noticeEditType');
+        var tagEl = document.getElementById('noticeEditTag');
+        if (!typeEl || !tagEl) return;
+        var tagMap = { update: '更新', urgent: '紧急', event: '活动', bonus: '福利', normal: '日常' };
+        tagEl.value = tagMap[typeEl.value] || '日常';
+    },
+
     _noticeItems: [],
     _noticeEditingId: null,
 
@@ -2122,6 +2156,7 @@ const app = {
         if (!container) return;
         if (!this._noticeItems.length) {
             container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;"><p>\u6682\u65e0\u516c\u544a\u6570\u636e</p><p style="font-size:12px;">\u70b9\u51fb\u201c\u65b0\u5efa\u516c\u544a\u201d\u5f00\u59cb\u6dfb\u52a0</p></div>';
+            this._refreshNoticePreview();
             return;
         }
         const typeColors = { urgent: 'var(--danger)', update: 'var(--primary)', event: 'rgb(124,58,237)', bonus: 'var(--secondary)', normal: 'var(--text-muted)' };
@@ -2145,6 +2180,7 @@ const app = {
                 </div>
             </div>`;
         }).join('');
+        this._refreshNoticePreview();
     },
 
     /**
@@ -2159,10 +2195,11 @@ const app = {
         // 按新顺序逐条 PUT 更新 order 字段
         try {
             for (let i = 0; i < this._noticeItems.length; i++) {
+                this._noticeItems[i].sort_order = i;
                 await fetch(`${this.config.apiBase}/admin/notices/${this._noticeItems[i].id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ...this._noticeItems[i], order: i })
+                    body: JSON.stringify({ ...this._noticeItems[i], sort_order: i })
                 });
             }
         } catch { /* 排序失败静默处理，刷新即恢复 */ }
@@ -2233,6 +2270,12 @@ const app = {
         }
         try {
             const isEdit = this._noticeEditingId !== null;
+            if (isEdit) {
+                const currentItem = this._noticeItems.find(item => item.id === this._noticeEditingId);
+                payload.sort_order = currentItem?.sort_order ?? 0;
+            } else {
+                payload.sort_order = this._noticeItems.length;
+            }
             const url = isEdit
                 ? `${this.config.apiBase}/admin/notices/${this._noticeEditingId}`
                 : `${this.config.apiBase}/admin/notices`;
@@ -2659,9 +2702,10 @@ const app = {
                 const delete_btn = tag.is_system
                     ? ''
                     : `<button onclick="app.deleteTag(${tag.id})" style="margin-left:8px;background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;" title="删除">×</button>`;
-                return `<div style="display:flex;align-items:center;padding:8px 14px;border-radius:10px;border:1.5px solid ${tag.color}33;background:${tag.color}0a;">
-                    <span style="width:12px;height:12px;border-radius:50%;background:${tag.color};margin-right:8px;flex-shrink:0;"></span>
-                    <span style="font-size:13px;font-weight:600;color:${tag.color};">${tag.display_name}</span>
+                const icon_class = tag.icon || 'ri-price-tag-3-line';
+                return `<div style="display:flex;align-items:center;padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);">
+                    <i class="${icon_class}" style="font-size:15px;color:#64748b;margin-right:8px;flex-shrink:0;"></i>
+                    <span style="font-size:13px;font-weight:600;color:var(--text);">${this._stripEmoji(tag.display_name)}</span>
                     ${system_badge}
                     <span style="margin-left:6px;font-size:11px;color:var(--text-muted);">(${tag.name})</span>
                     ${delete_btn}
@@ -2676,6 +2720,8 @@ const app = {
      * 弹出新建标签对话框
      */
     showCreateTagDialog() {
+        this._ensureIconPickerCdn();
+        this._newTagIcon = 'ri-price-tag-3-line';
         const title = '新建标签';
         const content = `
             <div class="form-group">
@@ -2684,11 +2730,17 @@ const app = {
             </div>
             <div class="form-group">
                 <label>显示名称</label>
-                <input class="input" style="width: 100%;" id="newTagDisplayName" placeholder="例如: 🔥 Beta 用户">
+                <input class="input" style="width: 100%;" id="newTagDisplayName" placeholder="例如: Beta 用户（无需添加 emoji）">
             </div>
             <div class="form-group">
-                <label>颜色</label>
-                <input class="input" type="color" id="newTagColor" value="#6366f1" style="width: 60px; height: 36px; padding: 2px;">
+                <label>图标</label>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div id="newTagIconPreview" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;color:#64748b;background:var(--bg);">
+                        <i class="ri-price-tag-3-line"></i>
+                    </div>
+                    <button type="button" class="btn" onclick="app._openTagIconPicker()" style="font-size:12px;">选择图标</button>
+                    <span id="newTagIconName" style="font-size:11px;color:var(--text-muted);">ri-price-tag-3-line</span>
+                </div>
             </div>
         `;
 
@@ -2710,7 +2762,7 @@ const app = {
     async submitCreateTag() {
         const name = document.getElementById('newTagName')?.value?.trim();
         const display_name = document.getElementById('newTagDisplayName')?.value?.trim();
-        const color = document.getElementById('newTagColor')?.value || '#6366f1';
+        const icon = this._newTagIcon || 'ri-price-tag-3-line';
         if (!name || !display_name) {
             this.showAlert('标识和显示名称不能为空', 'warning');
             return;
@@ -2719,7 +2771,7 @@ const app = {
             const res = await fetch(`${this.config.apiBase}/admin/tags`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, display_name, color, icon: '' })
+                body: JSON.stringify({ name, display_name, color: '#64748b', icon })
             });
             if (res.status === 409) {
                 this.showAlert('标签标识已存在', 'warning');
@@ -2732,6 +2784,47 @@ const app = {
         } catch {
             this.showAlert('创建失败', 'danger');
         }
+    },
+
+    /**
+     * 去除字符串开头的 emoji 及空格，返回纯文本标签名
+     */
+    _stripEmoji(text) {
+        if (!text) return '';
+        // 移除开头的 emoji（SMP 表情符号 + 杂项符号等）及后面的空格
+        return text.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{FE0F}\u{200D}\u{20E3}\u{2702}-\u{27B0}\u{26A0}]+\s*/u, '').trim();
+    },
+
+    /**
+     * 打开图标选择器弹窗（新建标签专用）
+     */
+    _openTagIconPicker() {
+        this._ensureIconPickerCdn();
+        this._ensureIconPickerDom();
+
+        this._iconPickerActiveTab = Object.keys(this._iconPickerData)[0];
+        this._renderIconPickerTabs();
+        this._renderIconPickerGrid(this._newTagIcon || '');
+        document.getElementById('iconPickerSearch').value = '';
+        document.getElementById('iconPickerSelected').innerHTML = '点击图标即可选择';
+
+        const mask = document.getElementById('iconPickerMask');
+        const modal = document.getElementById('iconPickerModal');
+        mask.classList.add('show');
+        modal.classList.add('show');
+
+        // 临时替换图标选择回调
+        this._origIconSelectCb = this._iconSelectCallback;
+        this._iconSelectCallback = (icon_cls) => {
+            this._newTagIcon = icon_cls;
+            const preview = document.getElementById('newTagIconPreview');
+            if (preview) preview.innerHTML = `<i class="${icon_cls}"></i>`;
+            const nameSpan = document.getElementById('newTagIconName');
+            if (nameSpan) nameSpan.textContent = icon_cls;
+            mask.classList.remove('show');
+            modal.classList.remove('show');
+            this._iconSelectCallback = this._origIconSelectCb;
+        };
     },
 
     /**
@@ -3017,7 +3110,9 @@ const app = {
             user_tags.forEach(tn => {
                 const def = all_tag_defs.find(t => t.name === tn);
                 if (def) {
-                    tag_badges_html += `<span style="margin-left:4px;padding:1px 6px;border-radius:8px;font-size:10px;background:${def.color}22;color:${def.color};font-weight:600;" title="${def.display_name}">${def.display_name}</span>`;
+                    const icon_cls = def.icon || 'ri-price-tag-3-line';
+                    const label = this._stripEmoji(def.display_name);
+                    tag_badges_html += `<span style="margin-left:4px;padding:1px 6px;border-radius:8px;font-size:10px;background:var(--bg);border:1px solid var(--border);color:#64748b;font-weight:600;display:inline-flex;align-items:center;gap:3px;" title="${def.display_name}"><i class="${icon_cls}" style="font-size:11px;"></i>${label}</span>`;
                 }
             });
 
@@ -3316,15 +3411,17 @@ const app = {
 
         container.innerHTML = all_tags.map(tag => {
             const active = current_tags.includes(tag.name);
-            const bg = active ? `${tag.color}22` : 'var(--bg)';
-            const border = active ? tag.color : 'var(--border)';
-            const color = active ? tag.color : 'var(--text-muted)';
-            const check = active ? '✓ ' : '';
+            const bg = active ? '#f0f0f0' : 'var(--bg)';
+            const border = active ? '#94a3b8' : 'var(--border)';
+            const txt_color = active ? '#1e293b' : 'var(--text-muted)';
+            const icon_cls = tag.icon || 'ri-price-tag-3-line';
+            const label = this._stripEmoji(tag.display_name);
+            const check = active ? '<i class="ri-check-line" style="font-size:12px;margin-right:2px;"></i>' : '';
             return `<button onclick="app.toggleUserTag('${hwid}','${tag.name}')" style="
                 padding: 4px 12px; border-radius: 16px; font-size: 12px; font-weight: 600;
-                border: 1.5px solid ${border}; background: ${bg}; color: ${color};
-                cursor: pointer; transition: all .15s;
-            ">${check}${tag.display_name}</button>`;
+                border: 1.5px solid ${border}; background: ${bg}; color: ${txt_color};
+                cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 4px;
+            ">${check}<i class="${icon_cls}" style="font-size:13px;color:#64748b;"></i>${label}</button>`;
         }).join('');
     },
 

@@ -81,6 +81,21 @@
         return [];
     }
 
+    /* 将日期文本简化为 M.D 格式（如 "3.16"），用于往期动态列表展示 */
+    function formatShortDate(dateStr) {
+        if (!dateStr) return '';
+        var s = String(dateStr).trim();
+        if (s === '今天') {
+            var d = new Date();
+            return (d.getMonth() + 1) + '.' + d.getDate();
+        }
+        var m = s.match(/(\d{1,2})\s*月\s*(\d{1,2})/);
+        if (m) return m[1] + '.' + m[2];
+        m = s.match(/(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.]|$)/);
+        if (m) return parseInt(m[1], 10) + '.' + parseInt(m[2], 10);
+        return '';
+    }
+
     function renderNoticeBoard(app) {
         const container = document.getElementById('notice-board') || document.querySelector('.notice-content');
         if (!container) return;
@@ -109,12 +124,14 @@
 
         const listHtml = others.map((item) => {
             const meta = getTypeMeta(item.type);
+            const shortDate = formatShortDate(item.date);
             return `
                 <div class="notice-item" data-type="${escapeHtml(item.type)}" data-notice-id="${escapeHtml(item.id)}">
                     <div class="notice-item-main">
                         <span class="notice-tag ${escapeHtml(meta.tagClass)}">${escapeHtml(item.tag)}</span>
                         <span class="notice-item-title">${escapeHtml(item.title)}</span>
                     </div>
+                    ${shortDate ? `<span class="notice-item-date">${escapeHtml(shortDate)}</span>` : ''}
                     <i class="ri-arrow-right-s-line notice-item-arrow"></i>
                 </div>
             `;

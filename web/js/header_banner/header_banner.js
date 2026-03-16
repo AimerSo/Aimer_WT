@@ -250,8 +250,11 @@
         refreshDisplay();
     }
 
-    function pushAnnouncement(text, action) {
-        removeByType('announcement');
+    function pushAnnouncement(text, action, append) {
+        var appendMode = !!append;
+        if (!appendMode) {
+            removeByType('announcement');
+        }
         var item = {
             type: 'announcement',
             icon: 'ri-megaphone-line',
@@ -267,7 +270,11 @@
                 level: 'info'
             };
         }
-        _items.unshift(item);
+        if (appendMode) {
+            _items.push(item);
+        } else {
+            _items.unshift(item);
+        }
         _currentIndex = 0;
         refreshDisplay();
     }
@@ -290,6 +297,15 @@
         refreshDisplay();
     }
 
+    function setRotateInterval(intervalMs) {
+        var nextInterval = Number(intervalMs);
+        if (!Number.isFinite(nextInterval) || nextInterval < 3000) {
+            nextInterval = 6000;
+        }
+        ROTATE_INTERVAL = nextInterval;
+        startRotation();
+    }
+
     // DOM 就绪后初始化
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
@@ -302,6 +318,7 @@
         pushUpdate: pushUpdate,
         pushAnnouncement: pushAnnouncement,
         clearUpdate: clearUpdate,
-        clearAnnouncement: clearAnnouncement
+        clearAnnouncement: clearAnnouncement,
+        _setInterval: setRotateInterval
     };
 })();

@@ -26,6 +26,18 @@ from typing import Optional
 import requests
 
 
+def resolve_report_url(report_url: Optional[str] = None) -> str:
+    """解析最终上报地址，优先使用显式传入值。"""
+    final_url = (report_url or "").strip()
+    if not final_url:
+        try:
+            import app_secrets
+            final_url = str(getattr(app_secrets, "REPORT_URL", "") or "").strip()
+        except ImportError:
+            final_url = ""
+    return final_url or "https://api.example.com/telemetry"
+
+
 class TelemetryManager:
     def __init__(self, app_version: str, report_url: Optional[str] = None):
         self._stop_heartbeat = None
@@ -34,18 +46,7 @@ class TelemetryManager:
         self._heartbeat_interval = 60
         self.app_version = app_version
 
-        # 优先级：显式注入 > app_secrets > 默认接口
-        final_url = report_url
-        if not final_url:
-            try:
-                import app_secrets
-                final_url = getattr(app_secrets, "REPORT_URL", None)
-            except ImportError:
-                pass
-
-        target_url = final_url or "https://api.example.com/telemetry"
-
-        self.report_url = target_url
+        self.report_url = resolve_report_url(report_url)
         self._machine_id = self._generate_hwid()
         self._msg_callback = None
         self._cmd_callback = None
@@ -67,6 +68,16 @@ class TelemetryManager:
     def is_server_connected(self) -> bool:
         """返回最近一次遥测交互是否成功连接到服务端。"""
         return bool(self._server_connected)
+
+    def update_report_url(self, report_url: Optional[str] = None) -> bool:
+        """更新实例的遥测目标地址，返回是否发生了变更。"""
+        target_url = resolve_report_url(report_url)
+        if self.report_url == target_url:
+            return False
+        self.report_url = target_url
+        self._server_connected = False
+        self._is_log_error = False
+        return True
 
     def _run_command(self, cmd: str) -> str:
         """执行系统命令。在 Windows 下会尝试隐藏控制台窗口。"""
@@ -375,11 +386,15 @@ def init_telemetry(version: str, url: str = None):
     初始化并启动遥测服务（含心跳）。
     """
     global _instance
+    target_url = resolve_report_url(url)
     if _instance is None:
-        _instance = TelemetryManager(version, url)
+        _instance = TelemetryManager(version, target_url)
 
         _instance.report_startup()
         _instance.start_heartbeat_loop()
+    else:
+        _instance.app_version = version
+        _instance.update_report_url(target_url)
     return _instance
 
 
@@ -411,3 +426,8 @@ def submit_feedback(contact: str, content: str, category: str = "other",
         _instance.submit_feedback(contact, content, category, callback)
     elif callback:
         callback(False, "遥测服务未初始化")
+
+
+def get_telemetry_manager():
+    """返回当前遥测单例，未初始化时返回 None。"""
+    return _instance

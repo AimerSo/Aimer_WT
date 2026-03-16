@@ -6,6 +6,7 @@
     <title>AimerWT | 遥测数据仪表盘 v1.1</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/notice_preview.css">
 </head>
 <body>
     <div class="layout-wrapper">
@@ -73,6 +74,19 @@
                             </svg>
                         </div>
                         <span>广告</span>
+                    </div>
+                    <div class="submenu-item" data-view="notice_manage" onclick="app.switchView('notice_manage', this); event.stopPropagation();">
+                        <div class="submenu-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="8" y1="6" x2="21" y2="6"></line>
+                                <line x1="8" y1="12" x2="21" y2="12"></line>
+                                <line x1="8" y1="18" x2="21" y2="18"></line>
+                                <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                            </svg>
+                        </div>
+                        <span>公告</span>
                     </div>
                     <div class="submenu-item" data-view="feedback" onclick="app.switchView('feedback', this); event.stopPropagation();">
                         <div class="submenu-icon">
@@ -167,6 +181,16 @@
                     </div>
                     <span>数据分析</span>
                 </div>
+                <div class="menu-item" data-view="app_browser" onclick="app.switchView('app_browser', this)">
+                    <div class="menu-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                    </div>
+                    <span>浏览主软件</span>
+                </div>
                 <div class="menu-item" data-view="settings" onclick="app.switchView('settings', this)">
                     <div class="menu-icon">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -233,6 +257,7 @@
         <div class="drawer-body" id="drawerBody"></div>
     </div>
 
+    <script src="js/notice_preview.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
