@@ -1528,11 +1528,11 @@ const app = {
                 sg.label = '── 特殊分组 ──';
                 const star_opt = document.createElement('option');
                 star_opt.value = 'star';
-                star_opt.textContent = '⭐ 星标用户';
+                star_opt.textContent = '☆ 星标用户';
                 sg.appendChild(star_opt);
                 const admin_opt = document.createElement('option');
                 admin_opt.value = 'admin';
-                admin_opt.textContent = '🔑 管理员';
+                admin_opt.textContent = '▸ 管理员';
                 sg.appendChild(admin_opt);
                 el.appendChild(sg);
 
@@ -2059,7 +2059,21 @@ const app = {
                 setChannel('Alert', !!cfg.alert_active);
                 setChannel('Update', !!cfg.update_active);
                 this.setVal('announcementAlertStatus', cfg.alert_active ? 'on' : 'off');
-                this.setVal('announcementUpdateStatus', cfg.update_active ? 'on' : 'off');
+
+                // 更新推送状态预览
+                const preview = document.getElementById('updatePushPreview');
+                const previewText = document.getElementById('updatePushPreviewText');
+                if (preview) {
+                    if (cfg.update_active && cfg.update_content) {
+                        preview.style.display = 'block';
+                        if (previewText) previewText.textContent = cfg.update_content;
+                    } else {
+                        preview.style.display = 'none';
+                    }
+                }
+                // 回填表单内容
+                this.setVal('announcementUpdateContent', cfg.update_content || '');
+                this.setVal('announcementUpdateUrl', cfg.update_url || '');
             } else {
                 setChannel('Alert', false);
                 setChannel('Update', false);
@@ -2086,7 +2100,7 @@ const app = {
             payload.content = document.getElementById('announcementAlertContent')?.value || '';
             payload.scope = document.getElementById('announcementAlertScope')?.value || 'all';
         } else if (type === 'update') {
-            payload.update_active = document.getElementById('announcementUpdateStatus')?.value === 'on';
+            payload.update_active = true;
             payload.content = document.getElementById('announcementUpdateContent')?.value || '';
             payload.url = document.getElementById('announcementUpdateUrl')?.value || '';
             payload.scope = document.getElementById('announcementUpdateScope')?.value || 'all';
@@ -2104,6 +2118,25 @@ const app = {
             this.loadAnnouncementStatus();
         } catch (error) {
             this.showAlert('推送失败: ' + error.message, 'danger');
+        }
+    },
+
+    /**
+     * 取消更新提示推送，将 update_active 设为 false
+     */
+    async cancelUpdatePush() {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/control`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'update', update_active: false, content: '', url: '' })
+            });
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            await res.json();
+            this.showAlert('已取消更新提示推送', 'success');
+            this.loadAnnouncementStatus();
+        } catch (error) {
+            this.showAlert('取消推送失败: ' + error.message, 'danger');
         }
     },
 
@@ -2154,33 +2187,70 @@ const app = {
     renderNoticeList() {
         const container = document.getElementById('noticeItemList');
         if (!container) return;
+        const countEl = document.getElementById('nmNoticeCountNum');
+        if (countEl) countEl.textContent = this._noticeItems.length;
+
         if (!this._noticeItems.length) {
             container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;"><p>\u6682\u65e0\u516c\u544a\u6570\u636e</p><p style="font-size:12px;">\u70b9\u51fb\u201c\u65b0\u5efa\u516c\u544a\u201d\u5f00\u59cb\u6dfb\u52a0</p></div>';
             this._refreshNoticePreview();
             return;
         }
-        const typeColors = { urgent: 'var(--danger)', update: 'var(--primary)', event: 'rgb(124,58,237)', bonus: 'var(--secondary)', normal: 'var(--text-muted)' };
+        const typeColors = { urgent: '#dc2626', update: '#2563eb', event: '#7c3aed', bonus: '#059669', normal: '#6b7280' };
+        const typeBgs = { urgent: 'rgba(239,68,68,0.06)', update: 'rgba(37,99,235,0.06)', event: 'rgba(124,58,237,0.06)', bonus: 'rgba(16,185,129,0.06)', normal: 'rgba(107,114,128,0.06)' };
+
         container.innerHTML = this._noticeItems.map((item, idx) => {
-            const color = typeColors[item.type] || 'var(--text-muted)';
-            const pinIcon = item.is_pinned ? '<span style="color:var(--warning);font-size:11px;margin-left:4px;" title="\u7f6e\u9876">\u2b50</span>' : '';
+            const color = typeColors[item.type] || '#6b7280';
+            const bg = typeBgs[item.type] || 'rgba(107,114,128,0.06)';
+            const isEditing = this._noticeEditingId === item.id;
             const isFirst = idx === 0;
             const isLast = idx === this._noticeItems.length - 1;
-            return `<div style="border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.02)'" onmouseout="this.style.background=''" onclick="app.editNoticeItem(${item.id})">
-                <span style="font-size:11px;color:var(--text-muted);width:20px;text-align:center;flex-shrink:0;">${idx + 1}</span>
-                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color};flex-shrink:0;"></span>
-                <span style="font-size:11px;padding:1px 8px;border-radius:4px;background:rgba(0,0,0,0.04);color:${color};flex-shrink:0;">${this.escapeHtmlSafe(item.tag || item.type)}</span>
-                <div style="flex:1;min-width:0;">
-                    <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtmlSafe(item.title)}${pinIcon}</div>
-                    <div style="font-size:11px;color:var(--text-muted);">${this.escapeHtmlSafe(item.date || '')}</div>
+            const pinBadge = item.is_pinned ? `<span style="display:inline-flex;align-items:center;gap:2px;font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(245,158,11,0.08);color:#d97706;flex-shrink:0;">📌 \u7f6e\u9876</span>` : '';
+            const activeBorder = isEditing ? `border-left:3px solid ${color};` : 'border-left:3px solid transparent;';
+            const activeHighlight = isEditing ? 'background:rgba(37,99,235,0.03);' : '';
+
+            return `<div class="nm-card" style="border-radius:10px;border:1px solid var(--border);${activeBorder}${activeHighlight}overflow:hidden;transition:all 0.15s;cursor:pointer;" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)'" onmouseout="this.style.boxShadow=''" onclick="app.editNoticeItem(${item.id})">
+                <div style="padding:10px 12px 6px;">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                        <span style="font-size:10px;padding:1px 7px;border-radius:4px;background:${bg};color:${color};font-weight:600;flex-shrink:0;">${this.escapeHtmlSafe(item.tag || item.type)}</span>
+                        ${pinBadge}
+                        <span style="font-size:10px;color:var(--text-muted);margin-left:auto;flex-shrink:0;">${this.escapeHtmlSafe(item.date || '')}</span>
+                    </div>
+                    <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.4;">${this.escapeHtmlSafe(item.title)}</div>
+                    ${item.summary ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${this.escapeHtmlSafe(item.summary)}</div>` : ''}
                 </div>
-                <div style="display:flex;gap:4px;flex-shrink:0;">
-                    <button class="btn" style="padding:3px 6px;font-size:10px;" onclick="event.stopPropagation();app.moveNoticeItem(${idx},-1)" ${isFirst ? 'disabled' : ''}>↑</button>
-                    <button class="btn" style="padding:3px 6px;font-size:10px;" onclick="event.stopPropagation();app.moveNoticeItem(${idx},1)" ${isLast ? 'disabled' : ''}>↓</button>
-                    <button class="btn" style="padding:3px 6px;font-size:10px;color:var(--danger);" onclick="event.stopPropagation();app.deleteNoticeItem(${item.id})">\u5220\u9664</button>
+                <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:4px 10px 8px;border-top:1px solid var(--border);background:rgba(0,0,0,0.01);" onclick="event.stopPropagation()">
+                    <button class="btn" style="padding:2px 6px;font-size:10px;height:22px;min-width:22px;justify-content:center;" onclick="app.moveNoticeItem(${idx},-1)" ${isFirst ? 'disabled' : ''} title="\u4e0a\u79fb">↑</button>
+                    <button class="btn" style="padding:2px 6px;font-size:10px;height:22px;min-width:22px;justify-content:center;" onclick="app.moveNoticeItem(${idx},1)" ${isLast ? 'disabled' : ''} title="\u4e0b\u79fb">↓</button>
+                    <div style="flex:1;"></div>
+                    <button class="btn" style="padding:2px 8px;font-size:10px;height:22px;color:var(--danger);border-color:rgba(239,68,68,0.2);" onclick="app.deleteNoticeItem(${item.id})" title="\u5220\u9664">\u5220\u9664</button>
                 </div>
             </div>`;
         }).join('');
         this._refreshNoticePreview();
+    },
+
+    /**
+     * 编辑/预览 Tab 切换
+     */
+    _switchNoticeTab(tab) {
+        const editPane = document.getElementById('noticeTabEdit');
+        const previewPane = document.getElementById('noticeTabPreview');
+        const tabEdit = document.getElementById('nmTabEdit');
+        const tabPreview = document.getElementById('nmTabPreview');
+        if (!editPane || !previewPane) return;
+
+        if (tab === 'preview') {
+            editPane.style.display = 'none';
+            previewPane.style.display = '';
+            if (tabEdit) tabEdit.classList.remove('primary');
+            if (tabPreview) tabPreview.classList.add('primary');
+            this._refreshNoticePreview();
+        } else {
+            editPane.style.display = '';
+            previewPane.style.display = 'none';
+            if (tabEdit) tabEdit.classList.add('primary');
+            if (tabPreview) tabPreview.classList.remove('primary');
+        }
     },
 
     /**
@@ -2221,6 +2291,8 @@ const app = {
         this.setVal('noticeEditContent', '');
         const pinnedEl = document.getElementById('noticeEditPinned');
         if (pinnedEl) pinnedEl.checked = false;
+        this._switchNoticeTab('edit');
+        this.renderNoticeList();
     },
 
     editNoticeItem(id) {
@@ -2241,6 +2313,8 @@ const app = {
         this.setVal('noticeEditContent', item.content || '');
         const pinnedEl = document.getElementById('noticeEditPinned');
         if (pinnedEl) pinnedEl.checked = !!item.is_pinned;
+        this._switchNoticeTab('edit');
+        this.renderNoticeList();
     },
 
     cancelNoticeEdit() {
@@ -2251,6 +2325,7 @@ const app = {
         const formEl = document.getElementById('noticeEditForm');
         if (emptyEl) emptyEl.style.display = '';
         if (formEl) formEl.style.display = 'none';
+        this.renderNoticeList();
     },
 
     async saveNoticeItem() {
@@ -2322,12 +2397,26 @@ const app = {
     _adEditingIndex: -1,
     _adPreviewTimer: null,
     _adPreviewIndex: 0,
+    _adCropper: null,
 
     initAdvertisement() {
         this._adItems = [];
         this._adEditingIndex = -1;
         this.loadAdCarousel();
-        this._initAdPositionCanvas();
+        // 初始化 ImageCropper（延迟到编辑时首次创建）
+        this._adCropper = null;
+    },
+
+    _ensureAdCropper() {
+        if (this._adCropper) return this._adCropper;
+        const mount = document.getElementById('adCropperMount');
+        if (!mount || !window.ImageCropper) return null;
+        this._adCropper = new window.ImageCropper(mount, {
+            aspectRatio: 640 / 380,
+            outputWidth: 640,
+            outputHeight: 380
+        });
+        return this._adCropper;
     },
 
     async loadAdCarousel() {
@@ -2363,10 +2452,9 @@ const app = {
         container.innerHTML = this._adItems.map((item, i) => {
             const isFirst = i === 0, isLast = i === this._adItems.length - 1;
             const imgUrl = item.image ? (item.image.startsWith('/') ? apiBase.replace(/\/admin.*/, '') + item.image : item.image) : '';
-            const posStyle = `object-position:${item.position_x || 50}% ${item.position_y || 50}%`;
             return `<div style="border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='rgba(0,0,0,0.02)'" onmouseout="this.style.background=''" onclick="app.editAdItem(${i})">
                 <div style="width:80px;height:48px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--bg);border:1px solid var(--border);">
-                    ${imgUrl ? `<img src="${this.escapeHtmlSafe(imgUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;${posStyle};">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-muted);">#${i+1}</div>`}
+                    ${imgUrl ? `<img src="${this.escapeHtmlSafe(imgUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-muted);">#${i+1}</div>`}
                 </div>
                 <div style="flex:1;min-width:0;">
                     <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtmlSafe(item.id || '未命名')}</div>
@@ -2389,9 +2477,8 @@ const app = {
         this.setVal('adEditImage', '');
         this.setVal('adEditAlt', '');
         this.setVal('adEditUrl', '');
-        this.setVal('adEditPosX', '50');
-        this.setVal('adEditPosY', '50');
-        this._updateAdImageUI('', 50, 50);
+        const cropper = this._ensureAdCropper();
+        if (cropper) cropper.clear();
     },
 
     editAdItem(index) {
@@ -2403,9 +2490,14 @@ const app = {
         this.setVal('adEditImage', item.image || '');
         this.setVal('adEditAlt', item.alt || '');
         this.setVal('adEditUrl', item.url || '');
-        this.setVal('adEditPosX', String(item.position_x || 50));
-        this.setVal('adEditPosY', String(item.position_y || 50));
-        this._updateAdImageUI(item.image || '', item.position_x || 50, item.position_y || 50);
+        const cropper = this._ensureAdCropper();
+        if (cropper && item.image) {
+            const apiBase = this.config.apiBase || '';
+            const fullUrl = item.image.startsWith('/') ? apiBase.replace(/\/admin.*/, '') + item.image : item.image;
+            cropper.loadImageUrl(fullUrl).catch(() => cropper.clear());
+        } else if (cropper) {
+            cropper.clear();
+        }
     },
 
     _showAdEditForm(title) {
@@ -2425,104 +2517,46 @@ const app = {
         const f = document.getElementById('adEditForm');
         if (e) e.style.display = '';
         if (f) f.style.display = 'none';
+        if (this._adCropper) this._adCropper.clear();
     },
 
-    _updateAdImageUI(imageUrl, posX, posY) {
-        const preview = document.getElementById('adImagePreview');
-        const placeholder = document.getElementById('adImagePlaceholder');
-        const posGroup = document.getElementById('adPositionGroup');
-        const posImg = document.getElementById('adPositionImg');
-        const apiBase = this.config.apiBase || '';
-        const fullUrl = imageUrl ? (imageUrl.startsWith('/') ? apiBase.replace(/\/admin.*/, '') + imageUrl : imageUrl) : '';
+    /**
+     * 保存广告项：先用 ImageCropper 裁剪导出，上传裁剪图，再保存配置
+     */
+    async saveAdItem() {
+        const adId = (document.getElementById('adEditId')?.value || '').trim();
+        const alt = (document.getElementById('adEditAlt')?.value || '').trim();
+        const url = (document.getElementById('adEditUrl')?.value || '').trim();
+        if (!adId) { this.showAlert('请填写广告 ID', 'warning'); return; }
 
-        if (fullUrl) {
-            if (preview) { preview.src = fullUrl; preview.style.display = 'block'; preview.style.objectPosition = `${posX}% ${posY}%`; }
-            if (placeholder) placeholder.style.display = 'none';
-            if (posGroup) posGroup.style.display = '';
-            if (posImg) { posImg.src = fullUrl; posImg.style.objectPosition = `${posX}% ${posY}%`; }
-            this._updateCrosshair(posX, posY);
-        } else {
-            if (preview) { preview.style.display = 'none'; preview.src = ''; }
-            if (placeholder) placeholder.style.display = '';
-            if (posGroup) posGroup.style.display = 'none';
+        const cropper = this._adCropper;
+        let imageUrl = (document.getElementById('adEditImage')?.value || '').trim();
+
+        // 如果 cropper 有图片，导出裁剪结果并上传
+        if (cropper && cropper.hasImage()) {
+            try {
+                const blob = await cropper.crop('image/webp', 0.85);
+                if (!blob) { this.showAlert('裁剪失败', 'danger'); return; }
+                const formData = new FormData();
+                formData.append('file', blob, 'cropped_' + Date.now() + '.webp');
+                const res = await fetch(`${this.config.apiBase}/admin/upload`, {
+                    method: 'POST', body: formData
+                });
+                if (!res.ok) {
+                    const d = await res.json().catch(() => ({}));
+                    throw new Error(d.error || res.status);
+                }
+                const data = await res.json();
+                imageUrl = data.url;
+            } catch (e) {
+                this.showAlert('图片上传失败: ' + e.message, 'danger');
+                return;
+            }
         }
-    },
 
-    _updateCrosshair(px, py) {
-        const ch = document.getElementById('adCrosshair');
-        if (ch) { ch.style.left = px + '%'; ch.style.top = py + '%'; }
-        const lx = document.getElementById('adPosXLabel');
-        const ly = document.getElementById('adPosYLabel');
-        if (lx) lx.textContent = px;
-        if (ly) ly.textContent = py;
-    },
+        if (!imageUrl) { this.showAlert('请上传图片', 'warning'); return; }
 
-    _initAdPositionCanvas() {
-        const canvas = document.getElementById('adPositionCanvas');
-        if (!canvas) return;
-        const handler = (e) => {
-            const rect = canvas.getBoundingClientRect();
-            let x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
-            let y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-            x = Math.max(0, Math.min(100, x));
-            y = Math.max(0, Math.min(100, y));
-            this.setVal('adEditPosX', String(x));
-            this.setVal('adEditPosY', String(y));
-            this._updateCrosshair(x, y);
-            const posImg = document.getElementById('adPositionImg');
-            const preview = document.getElementById('adImagePreview');
-            if (posImg) posImg.style.objectPosition = `${x}% ${y}%`;
-            if (preview) preview.style.objectPosition = `${x}% ${y}%`;
-        };
-        let dragging = false;
-        canvas.addEventListener('mousedown', (e) => { dragging = true; handler(e); });
-        canvas.addEventListener('mousemove', (e) => { if (dragging) handler(e); });
-        document.addEventListener('mouseup', () => { dragging = false; });
-    },
-
-    resetAdPosition() {
-        this.setVal('adEditPosX', '50');
-        this.setVal('adEditPosY', '50');
-        this._updateCrosshair(50, 50);
-        const posImg = document.getElementById('adPositionImg');
-        const preview = document.getElementById('adImagePreview');
-        if (posImg) posImg.style.objectPosition = '50% 50%';
-        if (preview) preview.style.objectPosition = '50% 50%';
-    },
-
-    async handleAdImageUpload(event) {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        if (file.size > 8 * 1024 * 1024) { this.showAlert('文件不能超过 8MB', 'warning'); return; }
-
-        const formData = new FormData();
-        formData.append('file', file);
-        try {
-            const res = await fetch(`${this.config.apiBase}/admin/upload`, {
-                method: 'POST', body: formData
-            });
-            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || res.status); }
-            const data = await res.json();
-            this.setVal('adEditImage', data.url);
-            const px = parseInt(document.getElementById('adEditPosX')?.value) || 50;
-            const py = parseInt(document.getElementById('adEditPosY')?.value) || 50;
-            this._updateAdImageUI(data.url, px, py);
-            this.showAlert('图片上传成功', 'success');
-        } catch (e) { this.showAlert('上传失败: ' + e.message, 'danger'); }
-        event.target.value = '';
-    },
-
-    saveAdItem() {
-        const item = {
-            id: (document.getElementById('adEditId')?.value || '').trim(),
-            image: (document.getElementById('adEditImage')?.value || '').trim(),
-            alt: (document.getElementById('adEditAlt')?.value || '').trim(),
-            url: (document.getElementById('adEditUrl')?.value || '').trim(),
-            position_x: parseInt(document.getElementById('adEditPosX')?.value) || 50,
-            position_y: parseInt(document.getElementById('adEditPosY')?.value) || 50
-        };
-        if (!item.id) { this.showAlert('请填写广告 ID', 'warning'); return; }
-        if (!item.image) { this.showAlert('请上传图片', 'warning'); return; }
+        const item = { id: adId, image: imageUrl, alt, url };
         if (this._adEditingIndex >= 0) {
             this._adItems[this._adEditingIndex] = item;
         } else {
@@ -2584,8 +2618,7 @@ const app = {
 
         track.innerHTML = items.map(item => {
             const url = item.image.startsWith('/') ? apiBase.replace(/\/admin.*/, '') + item.image : item.image;
-            const pos = `object-position:${item.position_x||50}% ${item.position_y||50}%`;
-            return `<div style="min-width:100%;height:100%;flex-shrink:0;"><img src="${this.escapeHtmlSafe(url)}" alt="${this.escapeHtmlSafe(item.alt||'')}" style="width:100%;height:100%;object-fit:cover;${pos};display:block;"></div>`;
+            return `<div style="min-width:100%;height:100%;flex-shrink:0;"><img src="${this.escapeHtmlSafe(url)}" alt="${this.escapeHtmlSafe(item.alt||'')}" style="width:100%;height:100%;object-fit:cover;display:block;"></div>`;
         }).join('');
         track.style.transform = 'translateX(0%)';
 

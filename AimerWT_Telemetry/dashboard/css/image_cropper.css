@@ -1,0 +1,133 @@
+/* ImageCropper 组件样式 */
+
+.img-cropper {
+    width: 100%;
+}
+
+.img-cropper-viewport {
+    position: relative;
+    width: 100%;
+    height: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid var(--border);
+    background:
+        repeating-conic-gradient(rgba(0,0,0,.04) 0% 25%, transparent 0% 50%) 50% / 12px 12px;
+    transition: border-color 0.2s;
+}
+
+.img-cropper-viewport.img-cropper-dragover {
+    border-color: var(--primary);
+    border-style: solid;
+}
+
+.img-cropper-inner {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.img-cropper-placeholder {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.2s;
+    z-index: 2;
+}
+
+.img-cropper-placeholder:hover {
+    background: rgba(0,0,0,0.02);
+}
+
+.img-cropper-image {
+    position: absolute;
+    top: 0; left: 0;
+    will-change: transform, width, height;
+    pointer-events: none;
+    image-rendering: high-quality;
+}
+
+/* 控制栏 */
+.img-cropper-controls {
+    margin-top: 10px;
+}
+
+.img-cropper-zoom-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+}
+
+.img-cropper-slider {
+    flex: 1;
+    height: 4px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+
+.img-cropper-slider::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+
+.img-cropper-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: none;
+}
+
+.img-cropper-zoom-label {
+    font-size: 11px;
+    min-width: 38px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.img-cropper-reset-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card);
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all 0.15s;
+    padding: 0;
+}
+
+.img-cropper-reset-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.img-cropper-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    opacity: 0.7;
+}

@@ -85,14 +85,25 @@
                     </div>
                     <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotUpdate"></span>
                 </div>
-                <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
-                    <div class="form-group" style="margin: 0;">
-                        <label style="margin-bottom: 6px;">状态</label>
-                        <select class="select" style="width: 100%;" id="announcementUpdateStatus">
-                            <option value="on">激活 (推送更新提示)</option>
-                            <option value="off">禁用 (停止推送)</option>
-                        </select>
+                <!-- 当前推送状态预览 -->
+                <div id="updatePushPreview" style="display: none; padding: 12px 20px; background: rgba(16, 185, 129, 0.04); border-bottom: 1px solid var(--border);">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--secondary); flex-shrink: 0;"></span>
+                            <span style="font-size: 12px; color: var(--secondary); font-weight: 600;">推送中</span>
+                            <span style="font-size: 12px; color: var(--text-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" id="updatePushPreviewText"></span>
+                        </div>
+                        <button class="btn" style="padding: 3px 10px; font-size: 11px; color: var(--danger);" onclick="app.cancelUpdatePush()">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 2px;">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="15" y1="9" x2="9" y2="15"></line>
+                                <line x1="9" y1="9" x2="15" y2="15"></line>
+                            </svg>
+                            取消推送
+                        </button>
                     </div>
+                </div>
+                <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
                     <div class="form-group" style="margin: 0;">
                         <label style="margin-bottom: 6px;">推送范围</label>
                         <select class="select" style="width: 100%;" id="announcementUpdateScope">

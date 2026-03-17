@@ -113,9 +113,8 @@
             return;
         }
 
-        const pinned = data.find((item) => item.isPinned) || data[0];
-        const others = data.filter((item) => String(item.id) !== String(pinned.id));
-        const pinnedMeta = getTypeMeta(pinned.type);
+        const pinned = data.find((item) => item.isPinned) || null;
+        const others = pinned ? data.filter((item) => String(item.id) !== String(pinned.id)) : data;
         const map = {};
         data.forEach((item) => {
             map[String(item.id)] = item;
@@ -137,14 +136,18 @@
             `;
         }).join('');
 
-        const pinnedPreview = buildPinnedPreview(pinned);
         const connected = !!(app && app.telemetryConnected);
         const seqId = (app && app.userSeqId) ? app.userSeqId : 0;
         const footerText = connected
             ? (seqId ? `已连接服务器 · 用户 #${seqId}` : '已连接服务器')
             : '未连接到服务器';
         const dotClass = connected ? 'connected' : 'disconnected';
-        container.innerHTML = `
+
+        let pinnedHtml = '';
+        if (pinned) {
+            const pinnedMeta = getTypeMeta(pinned.type);
+            const pinnedPreview = buildPinnedPreview(pinned);
+            pinnedHtml = `
             <div class="notice-hero" data-type="${escapeHtml(pinned.type)}" data-notice-id="${escapeHtml(pinned.id)}">
                 <div class="notice-hero-deco"><i class="${escapeHtml(pinnedMeta.iconClass)}"></i></div>
                 <div class="notice-hero-top">
@@ -153,7 +156,11 @@
                 </div>
                 <div class="notice-hero-title">${escapeHtml(pinned.title)}</div>
                 <div class="notice-hero-desc">${escapeHtml(pinnedPreview)}</div>
-            </div>
+            </div>`;
+        }
+
+        container.innerHTML = `
+            ${pinnedHtml}
             <div class="notice-section">
                 <span class="notice-section-text">往期动态</span>
                 <span class="notice-section-line"></span>

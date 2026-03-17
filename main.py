@@ -569,22 +569,19 @@ class AppApi:
                     )
                     self._last_notice_content = None
 
-            # 4. 更新提示
+            # 4. 更新提示（纯内存去重：激活时每次启动弹一次，会话内不重复）
             if config.get("update_active"):
                 content = config.get("update_content", "")
                 update_url = config.get("update_url", "")
 
                 update_key = f"{content}|{update_url}"
-                saved_key = self._cfg_mgr.config.get("last_update_key", "") if self._cfg_mgr else ""
-                if content and (force or update_key != saved_key):
+                if content and (force or self._last_update_content != update_key):
                     self._logger.info(f"[更新] {content}")
                     self._window.evaluate_js(safe_js_call("showAlert", "发现新版本", content, "success", update_url))
                     self._window.evaluate_js(
                         f"if(window.HeaderBannerModule) HeaderBannerModule.pushUpdate({json.dumps(content, ensure_ascii=False)}, {json.dumps(update_url, ensure_ascii=False)})"
                     )
-                    if self._cfg_mgr:
-                        self._cfg_mgr.config["last_update_key"] = update_key
-                        self._cfg_mgr.save_config()
+                    self._last_update_content = update_key
 
             # 5. 广告轮播远程覆盖
             ad_items = config.get("ad_carousel_items")

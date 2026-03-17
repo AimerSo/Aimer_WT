@@ -77,40 +77,18 @@
                         <p>点击列表中的广告项编辑，或点击「+ 添加」新建</p>
                     </div>
                     <div id="adEditForm" style="display: none;">
-                        <!-- 图片上传与定位器 -->
+                        <!-- 图片裁剪器（ImageCropper 组件挂载点） -->
                         <div class="form-group">
-                            <label style="font-size: 12px; font-weight: 600; margin-bottom: 8px; display: block;">图片</label>
-                            <div id="adImageUploadArea" style="width: 100%; aspect-ratio: 640/380; border: 2px dashed var(--border); border-radius: 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; overflow: hidden; background: var(--bg); transition: border-color 0.2s;" onclick="document.getElementById('adFileInput').click()">
-                                <div id="adImagePlaceholder" style="text-align: center; color: var(--text-muted);">
-                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 8px; opacity: 0.5;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                                    <div style="font-size: 12px;">点击上传或拖拽图片</div>
-                                    <div style="font-size: 10px; margin-top: 4px; opacity: 0.6;">JPG / PNG / WebP，推荐 640×380</div>
-                                </div>
-                                <img id="adImagePreview" src="" alt="" style="display: none; width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0;">
-                            </div>
-                            <input type="file" id="adFileInput" accept="image/jpeg,image/png,image/webp,image/gif" style="display: none;" onchange="app.handleAdImageUpload(event)">
-                        </div>
-
-                        <!-- 图片定位器 -->
-                        <div class="form-group" id="adPositionGroup" style="display: none;">
                             <label style="font-size: 12px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 9l-3 3 3 3"></path><path d="M9 5l3-3 3 3"></path><path d="M15 19l-3 3-3-3"></path><path d="M19 9l3 3-3 3"></path><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
-                                图片焦点位置
-                                <span style="font-weight: 400; font-size: 10px; color: var(--text-muted);">拖拽十字准星或点击设置焦点</span>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                    <polyline points="21 15 16 10 5 21"></polyline>
+                                </svg>
+                                图片
+                                <span style="font-weight: 400; font-size: 10px; color: var(--text-muted);">上传后拖拽/缩放选择展示区域</span>
                             </label>
-                            <div id="adPositionCanvas" style="width: 100%; aspect-ratio: 640/380; border-radius: 10px; overflow: hidden; position: relative; cursor: crosshair; border: 1px solid var(--border);">
-                                <img id="adPositionImg" src="" alt="" style="width: 100%; height: 100%; object-fit: cover; pointer-events: none;">
-                                <div id="adCrosshair" style="position: absolute; width: 24px; height: 24px; transform: translate(-50%, -50%); pointer-events: none; z-index: 3;">
-                                    <div style="position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: rgba(255,255,255,0.9); transform: translateY(-50%); box-shadow: 0 0 3px rgba(0,0,0,0.5);"></div>
-                                    <div style="position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.9); transform: translateX(-50%); box-shadow: 0 0 3px rgba(0,0,0,0.5);"></div>
-                                    <div style="position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; border: 2px solid #fff; border-radius: 50%; transform: translate(-50%,-50%); box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>
-                                </div>
-                            </div>
-                            <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--text-muted);">
-                                <span>X: <strong id="adPosXLabel">50</strong>%</span>
-                                <span>Y: <strong id="adPosYLabel">50</strong>%</span>
-                                <button style="border: none; background: none; color: var(--primary); cursor: pointer; font-size: 11px; padding: 0; text-decoration: underline;" onclick="app.resetAdPosition()">重置居中</button>
-                            </div>
+                            <div id="adCropperMount"></div>
                         </div>
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
@@ -128,8 +106,6 @@
                             <input class="input" style="width: 100%;" id="adEditUrl" placeholder="点击后打开的 URL">
                         </div>
                         <input type="hidden" id="adEditImage">
-                        <input type="hidden" id="adEditPosX" value="50">
-                        <input type="hidden" id="adEditPosY" value="50">
 
                         <div style="display: flex; gap: 10px; margin-top: 12px;">
                             <button class="btn primary" style="flex: 1; justify-content: center;" onclick="app.saveAdItem()">保存并发布</button>
