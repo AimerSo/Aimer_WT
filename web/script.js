@@ -1098,6 +1098,25 @@ const app = {
         setTimeout(finalize, 250);
     },
 
+    openRedeemCodeModal() {
+        const modal = document.getElementById('modal-redeem-code');
+        const input = document.getElementById('redeem-code-input');
+        if (!modal) return;
+
+        modal.classList.remove('hiding');
+        modal.classList.add('show');
+
+        if (input) {
+            window.setTimeout(() => {
+                try {
+                    input.focus();
+                    input.select();
+                } catch (_e) {
+                }
+            }, 50);
+        }
+    },
+
     openFeedbackModal() {
         const modal = document.getElementById('modal-feedback');
         if (!modal) return;
@@ -1201,30 +1220,49 @@ const app = {
     },
 
     _setupModalDragLock() {
+        // 缓存弹窗打开状态，避免每次 pywebview 回调都做 DOM 查询
+        let _anyModalOpen = false;
+        const WATCHED_OVERLAY_SELECTOR = '.modal-overlay, .ai-disclaimer-modal, .ai-chat-overlay, .loading-overlay, .drop-overlay, .import-result-overlay';
+        const DRAG_LOCK_OPEN_SELECTOR = '.modal-overlay.show, .ai-disclaimer-modal.show, .ai-chat-overlay.show, .loading-overlay:not(.hidden), .drop-overlay.active, .import-result-overlay';
+        const PERFORMANCE_LOCK_OPEN_SELECTOR = '.modal-overlay.show, .loading-overlay:not(.hidden), .import-result-overlay';
+
         const patchPywebviewMoveWindow = () => {
             if (this._pywebviewMoveWindowPatched) return;
             if (!window.pywebview || typeof window.pywebview._jsApiCallback !== 'function') return;
 
             const original = window.pywebview._jsApiCallback.bind(window.pywebview);
             window.pywebview._jsApiCallback = (funcName, params, id) => {
-                const anyOpen = !!document.querySelector('.modal-overlay.show');
-                if (anyOpen && funcName === 'pywebviewMoveWindow') return;
+                if (_anyModalOpen && funcName === 'pywebviewMoveWindow') return;
                 return original(funcName, params, id);
             };
             this._pywebviewMoveWindowPatched = true;
         };
 
-        const update = () => {
-            patchPywebviewMoveWindow();
+        const updateState = () => {
+            _anyModalOpen = !!document.querySelector(DRAG_LOCK_OPEN_SELECTOR);
+            document.body.classList.toggle('overlay-performance-lock', !!document.querySelector(PERFORMANCE_LOCK_OPEN_SELECTOR));
         };
 
-        update();
+        patchPywebviewMoveWindow();
 
-        const modals = Array.from(document.querySelectorAll('.modal-overlay'));
-        if (modals.length === 0) return;
+        const classObserver = new MutationObserver(updateState);
+        const watchedModals = new WeakSet();
 
-        const observer = new MutationObserver(update);
-        modals.forEach(m => observer.observe(m, { attributes: true, attributeFilter: ['class'] }));
+        const watchModal = (modal) => {
+            if (!(modal instanceof Element) || watchedModals.has(modal)) return;
+            watchedModals.add(modal);
+            classObserver.observe(modal, { attributes: true, attributeFilter: ['class'] });
+        };
+
+        const syncWatchedModals = () => {
+            document.querySelectorAll(WATCHED_OVERLAY_SELECTOR).forEach(watchModal);
+            updateState();
+        };
+
+        const treeObserver = new MutationObserver(syncWatchedModals);
+        treeObserver.observe(document.body, { childList: true, subtree: true });
+
+        syncWatchedModals();
     },
 
     _setupModalOverlayClose() {
@@ -1879,14 +1917,25 @@ const app = {
             this.showAlert('提示', '请先在主页设置游戏路径！');
             return;
         }
+        if (window.AuthorGuide?.isActive?.()) {
+            this.showAlert('引导中', '新手引导当前只做流程演示，不会真的启动游戏，请点击右侧“继续”进入下一步。', 'info');
+            return;
+        }
         if (!window.pywebview?.api?.start_game) {
             this.showAlert('错误', '后端连接未就绪，请稍候再试或重启程序', 'error');
             return;
         }
-        pywebview.api.start_game().then(success => {
+        pywebview.api.start_game().then((result) => {
+            const success = typeof result === 'object' ? Boolean(result?.success) : Boolean(result);
             if (success) {
                 this.notifyToast('SUCCESS', '游戏启动指令已发送');
+                return;
             }
+
+            const message = typeof result === 'object' && result?.message
+                ? result.message
+                : '启动失败，请查看运行日志后重试';
+            this.showAlert('错误', message, 'error');
         }).catch((e) => {
             const message = e && e.message ? e.message : String(e || '');
             this.showAlert('错误', `启动失败：${message}`, 'error');

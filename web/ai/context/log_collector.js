@@ -147,26 +147,31 @@ const LogCollector = {
         };
     },
     
-    // 拦截console方法
+    // 拦截console方法（异步化日志处理避免阻塞主线程）
     _interceptConsole() {
         const levels = ['log', 'info', 'warn', 'error', 'debug'];
         
         levels.forEach(level => {
             const original = console[level];
             console[level] = (...args) => {
-                const message = args.map(arg => {
-                    if (typeof arg === 'object') {
-                        try {
-                            return JSON.stringify(arg);
-                        } catch (e) {
-                            return String(arg);
-                        }
-                    }
-                    return String(arg);
-                }).join(' ');
-                
-                this._addLog(message, level);
+                // 先同步调用原始方法
                 original.apply(console, args);
+                // 日志收集异步处理，避免阻塞 UI 线程
+                const capturedArgs = args;
+                const capturedLevel = level;
+                queueMicrotask(() => {
+                    const message = capturedArgs.map(arg => {
+                        if (typeof arg === 'object') {
+                            try {
+                                return JSON.stringify(arg);
+                            } catch (e) {
+                                return String(arg);
+                            }
+                        }
+                        return String(arg);
+                    }).join(' ');
+                    this._addLog(message, capturedLevel);
+                });
             };
         });
     },

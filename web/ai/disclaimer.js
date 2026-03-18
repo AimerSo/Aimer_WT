@@ -18,7 +18,8 @@ const AIDisclaimer = {
         hasAgreed: false,
         isShowing: false,
         countdown: 5,
-        timer: null
+        timer: null,
+        hideTimer: null
     },
 
     // 初始化
@@ -136,15 +137,23 @@ const AIDisclaimer = {
     // 显示免责声明
     show() {
         if (this.state.hasAgreed) return true;
+        if (this.state.isShowing) return false;
         
-        const modal = document.getElementById('modal-ai-disclaimer');
+        let modal = document.getElementById('modal-ai-disclaimer');
         if (!modal) {
             this._createDOM();
             this._bindEvents();
+            modal = document.getElementById('modal-ai-disclaimer');
         }
 
         this.state.isShowing = true;
-        document.getElementById('modal-ai-disclaimer')?.classList.add('show');
+        if (this.state.hideTimer) {
+            clearTimeout(this.state.hideTimer);
+            this.state.hideTimer = null;
+        }
+        document.body.classList.add('ai-disclaimer-open');
+        modal?.classList.remove('hiding');
+        modal?.classList.add('show');
         
         // 开始倒计时
         this._startCountdown();
@@ -184,12 +193,37 @@ const AIDisclaimer = {
     // 隐藏弹窗
     hide() {
         this.state.isShowing = false;
-        document.getElementById('modal-ai-disclaimer')?.classList.remove('show');
-        
         if (this.state.timer) {
             clearInterval(this.state.timer);
             this.state.timer = null;
         }
+
+        const modal = document.getElementById('modal-ai-disclaimer');
+        if (!modal || (!modal.classList.contains('show') && !modal.classList.contains('hiding'))) {
+            document.body.classList.remove('ai-disclaimer-open');
+            return;
+        }
+        if (modal) {
+            modal.classList.remove('show');
+            modal.classList.add('hiding');
+        }
+
+        const finalize = () => {
+            this.state.hideTimer = null;
+            if (!modal) {
+                document.body.classList.remove('ai-disclaimer-open');
+                return;
+            }
+            if (!modal.classList.contains('hiding')) return;
+            modal.classList.remove('hiding');
+            document.body.classList.remove('ai-disclaimer-open');
+        };
+
+        if (this.state.hideTimer) clearTimeout(this.state.hideTimer);
+        if (modal) {
+            modal.addEventListener('animationend', finalize, { once: true });
+        }
+        this.state.hideTimer = setTimeout(finalize, 220);
     },
 
     // 同意
@@ -226,6 +260,7 @@ const AIDisclaimer = {
     // 重置同意状态（用于下次打开还弹窗）
     reset() {
         this.state.hasAgreed = false;
+        this.hide();
     }
 };
 

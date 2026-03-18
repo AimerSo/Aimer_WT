@@ -221,6 +221,27 @@ const app = {
     },
 
     /**
+     * 处理数据分析菜单点击
+     */
+    handleAnalysisMenuClick(menuItem) {
+        const isExpanded = menuItem.classList.contains('expanded');
+        const submenu = document.getElementById('analysisSubmenu');
+
+        if (isExpanded) {
+            menuItem.classList.remove('expanded');
+            submenu.classList.remove('show');
+        } else {
+            menuItem.classList.add('expanded');
+            submenu.classList.add('show');
+
+            const firstSubmenuItem = submenu.querySelector('.submenu-item');
+            if (firstSubmenuItem) {
+                this.switchView('analysis', firstSubmenuItem);
+            }
+        }
+    },
+
+    /**
      * 切换视图
      */
     async switchView(viewId, menuItem) {
@@ -289,6 +310,9 @@ const app = {
                 break;
             case 'ai_usage':
                 if (typeof this.initAIUsageView === 'function') this.initAIUsageView();
+                break;
+            case 'ad_stats':
+                this.loadAdStats();
                 break;
             default:
                 break;
@@ -5494,6 +5518,178 @@ Aimer WT涂装系统：
             lastEl.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
         }
         this.showAlert('数据已手动刷新', 'success');
+    },
+
+    // ==================== 广告统计 ====================
+
+    /**
+     * 加载广告统计数据并渲染图表
+     */
+    async loadAdStats() {
+        const days = document.getElementById('adStatsDaysFilter')?.value || '30';
+        const medium = document.getElementById('adStatsMediumFilter')?.value || '';
+        const params = new URLSearchParams({ days });
+        if (medium) params.set('medium', medium);
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/ad-stats?${params}`);
+            if (!res.ok) throw new Error('请求失败');
+            const data = await res.json();
+
+            // 统计卡片
+            this.setText('adStatsTotalClicks', this.formatNumber(data.summary?.total_clicks ?? 0));
+            this.setText('adStatsTodayClicks', this.formatNumber(data.summary?.today_clicks ?? 0));
+            this.setText('adStatsUniqueUsers', this.formatNumber(data.summary?.unique_users ?? 0));
+            this.setText('adStatsAvgDaily', data.summary?.avg_daily ?? '0');
+
+            // 渲染图表
+            this.renderAdClickTrend(data.daily_clicks || []);
+            this.renderAdMediumPie(data.medium_distribution || []);
+            this.renderAdTopAdsBar(data.top_ads || []);
+            this.renderAdRecentClicks(data.recent_clicks || []);
+        } catch (e) {
+            console.error('广告统计加载失败:', e);
+        }
+    },
+
+    /**
+     * 广告位类型中文名映射
+     */
+    adMediumLabel(medium) {
+        const map = { carousel: '轮播图', header_banner: '横幅', notice: '公告' };
+        return map[medium] || medium || '未知';
+    },
+
+    /**
+     * 点击趋势折线图
+     */
+    renderAdClickTrend(dailyClicks) {
+        const container = document.getElementById('adClickTrendChart');
+        if (!container) return;
+        const chart = echarts.init(container);
+
+        const dates = dailyClicks.map(d => d.date);
+        const counts = dailyClicks.map(d => Number(d.count));
+
+        chart.setOption({
+            grid: { top: 24, right: 20, bottom: 28, left: 50 },
+            tooltip: { trigger: 'axis', backgroundColor: 'rgba(15, 23, 42, 0.88)', borderColor: 'transparent', textStyle: { color: '#e2e8f0', fontSize: 12 } },
+            xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: 'rgba(148,163,184,0.2)' } }, axisLabel: { color: '#94a3b8', fontSize: 11 } },
+            yAxis: { type: 'value', minInterval: 1, axisLine: { show: false }, splitLine: { lineStyle: { color: 'rgba(148,163,184,0.08)' } }, axisLabel: { color: '#94a3b8', fontSize: 11 } },
+            series: [{
+                type: 'line',
+                data: counts,
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 6,
+                lineStyle: { width: 2.5, color: '#3b82f6' },
+                itemStyle: { color: '#3b82f6', borderWidth: 2, borderColor: '#fff' },
+                areaStyle: {
+                    color: {
+                        type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [{ offset: 0, color: 'rgba(59,130,246,0.18)' }, { offset: 1, color: 'rgba(59,130,246,0.01)' }]
+                    }
+                }
+            }]
+        });
+        new ResizeObserver(() => chart.resize()).observe(container);
+    },
+
+    /**
+     * 广告位分布饼图
+     */
+    renderAdMediumPie(mediumDist) {
+        const container = document.getElementById('adMediumPieChart');
+        if (!container) return;
+        const chart = echarts.init(container);
+
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
+        const data = mediumDist.map((d, i) => ({
+            name: this.adMediumLabel(d.name),
+            value: Number(d.value),
+            itemStyle: { color: colors[i % colors.length] }
+        }));
+
+        chart.setOption({
+            tooltip: { trigger: 'item', backgroundColor: 'rgba(15, 23, 42, 0.88)', borderColor: 'transparent', textStyle: { color: '#e2e8f0', fontSize: 12 }, formatter: '{b}: {c} ({d}%)' },
+            legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 11 } },
+            series: [{
+                type: 'pie',
+                radius: ['40%', '65%'],
+                center: ['50%', '45%'],
+                avoidLabelOverlap: true,
+                label: { show: true, color: '#94a3b8', fontSize: 11, formatter: '{b}\n{d}%' },
+                labelLine: { lineStyle: { color: 'rgba(148,163,184,0.3)' } },
+                data: data.length ? data : [{ name: '暂无数据', value: 1, itemStyle: { color: 'rgba(148,163,184,0.15)' }, label: { show: true, color: '#94a3b8' } }]
+            }]
+        });
+        new ResizeObserver(() => chart.resize()).observe(container);
+    },
+
+    /**
+     * Top 广告素材水平柱状图
+     */
+    renderAdTopAdsBar(topAds) {
+        const container = document.getElementById('adTopAdsChart');
+        if (!container) return;
+        const chart = echarts.init(container);
+
+        const names = topAds.map(d => d.name || '未知').reverse();
+        const values = topAds.map(d => Number(d.value)).reverse();
+        const mediums = topAds.map(d => this.adMediumLabel(d.medium)).reverse();
+
+        chart.setOption({
+            grid: { top: 10, right: 30, bottom: 20, left: 100 },
+            tooltip: {
+                trigger: 'axis', axisPointer: { type: 'shadow' },
+                backgroundColor: 'rgba(15, 23, 42, 0.88)', borderColor: 'transparent', textStyle: { color: '#e2e8f0', fontSize: 12 },
+                formatter: function (params) {
+                    const i = params[0].dataIndex;
+                    return `${names[i]}<br/>${mediums[i]}：<strong>${params[0].value}</strong> 次`;
+                }
+            },
+            xAxis: { type: 'value', minInterval: 1, axisLine: { show: false }, splitLine: { lineStyle: { color: 'rgba(148,163,184,0.08)' } }, axisLabel: { color: '#94a3b8', fontSize: 11 } },
+            yAxis: { type: 'category', data: names, axisLine: { lineStyle: { color: 'rgba(148,163,184,0.2)' } }, axisLabel: { color: '#94a3b8', fontSize: 11, width: 80, overflow: 'truncate' } },
+            series: [{
+                type: 'bar',
+                data: values,
+                barMaxWidth: 20,
+                itemStyle: {
+                    borderRadius: [0, 4, 4, 0],
+                    color: {
+                        type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
+                        colorStops: [{ offset: 0, color: 'rgba(139,92,246,0.7)' }, { offset: 1, color: 'rgba(59,130,246,0.7)' }]
+                    }
+                },
+                label: { show: true, position: 'right', color: '#94a3b8', fontSize: 11 }
+            }]
+        });
+        new ResizeObserver(() => chart.resize()).observe(container);
+    },
+
+    /**
+     * 最近点击记录表格
+     */
+    renderAdRecentClicks(recentClicks) {
+        const tbody = document.getElementById('adStatsRecentBody');
+        const countEl = document.getElementById('adStatsRecentCount');
+        if (!tbody) return;
+        if (countEl) countEl.textContent = recentClicks.length + ' 条';
+
+        if (!recentClicks.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-muted);">暂无点击记录</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = recentClicks.map(c => {
+            const userDisplay = c.alias || (c.machine_id ? c.machine_id.substring(0, 8) + '...' : '-');
+            return `<tr>
+                <td style="padding:8px 12px;white-space:nowrap;color:var(--text-muted);font-size:11px;">${c.created_at || '-'}</td>
+                <td style="padding:8px 12px;" title="${c.machine_id || ''}">${userDisplay}</td>
+                <td style="padding:8px 12px;"><span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:rgba(59,130,246,0.1);color:#3b82f6;">${this.adMediumLabel(c.ad_medium)}</span></td>
+                <td style="padding:8px 12px;font-size:11px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.ad_id || ''}">${c.ad_id || '-'}</td>
+            </tr>`;
+        }).join('');
     }
 };
 

@@ -177,7 +177,7 @@
                         <span>大模型用量</span>
                     </div>
                 </div>
-                <div class="menu-item" data-view="analysis" onclick="app.switchView('analysis', this)">
+                <div class="menu-item menu-item-with-submenu" id="analysisMenuItem" onclick="app.handleAnalysisMenuClick(this)">
                     <div class="menu-icon">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="18" y1="20" x2="18" y2="10"></line>
@@ -186,6 +186,33 @@
                         </svg>
                     </div>
                     <span>数据分析</span>
+                    <span class="submenu-arrow">
+                        <svg viewBox="0 0 24 24">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </span>
+                </div>
+                <div class="submenu" id="analysisSubmenu">
+                    <div class="submenu-item" data-view="analysis" onclick="app.switchView('analysis', this); event.stopPropagation();">
+                        <div class="submenu-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="20" x2="18" y2="10"></line>
+                                <line x1="12" y1="20" x2="12" y2="4"></line>
+                                <line x1="6" y1="20" x2="6" y2="14"></line>
+                            </svg>
+                        </div>
+                        <span>数据概览</span>
+                    </div>
+                    <div class="submenu-item" data-view="ad_stats" onclick="app.switchView('ad_stats', this); event.stopPropagation();">
+                        <div class="submenu-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="3" y1="9" x2="21" y2="9"></line>
+                                <line x1="9" y1="21" x2="9" y2="9"></line>
+                            </svg>
+                        </div>
+                        <span>广告统计</span>
+                    </div>
                 </div>
                 <div class="menu-item" data-view="app_browser" onclick="app.switchView('app_browser', this)">
                     <div class="menu-icon">

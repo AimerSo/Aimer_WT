@@ -48,8 +48,9 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.15);
-    backdrop-filter: blur(1.6px);
+    background:
+        radial-gradient(circle at top left, rgba(255, 153, 0, 0.05), transparent 36%),
+        linear-gradient(180deg, rgba(8, 12, 18, 0.14), rgba(8, 12, 18, 0.26));
     z-index: 9999;
     opacity: 0;
     visibility: hidden;
@@ -960,10 +961,21 @@
     bottom: 0;
     z-index: 10001;
     display: none;
+    opacity: 0;
+}
+
+.ai-disclaimer-modal.show,
+.ai-disclaimer-modal.hiding {
+    display: block;
 }
 
 .ai-disclaimer-modal.show {
-    display: block;
+    animation: ai-disclaimer-fade-in 0.22s ease forwards;
+}
+
+.ai-disclaimer-modal.hiding {
+    pointer-events: none;
+    animation: ai-disclaimer-fade-out 0.18s ease forwards;
 }
 
 .ai-disclaimer-overlay {
@@ -972,12 +984,22 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
+    background:
+        radial-gradient(circle at top left, rgba(255, 153, 0, 0.08), transparent 42%),
+        linear-gradient(180deg, rgba(8, 12, 18, 0.62), rgba(8, 12, 18, 0.74));
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 20px;
+    overflow: hidden;
+}
+
+.ai-disclaimer-overlay::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.03), transparent 58%);
+    pointer-events: none;
 }
 
 .ai-disclaimer-content {
@@ -990,6 +1012,51 @@
     flex-direction: column;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     border: 1px solid var(--border-color, #E2E8F0);
+    position: relative;
+    z-index: 1;
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+    will-change: transform, opacity;
+}
+
+.ai-disclaimer-modal.show .ai-disclaimer-content {
+    animation: ai-disclaimer-card-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.ai-disclaimer-modal.hiding .ai-disclaimer-content {
+    animation: ai-disclaimer-card-out 0.16s ease forwards;
+}
+
+@keyframes ai-disclaimer-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes ai-disclaimer-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+@keyframes ai-disclaimer-card-in {
+    from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes ai-disclaimer-card-out {
+    from {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(10px) scale(0.985);
+    }
 }
 
 .ai-disclaimer-header {
@@ -1209,4 +1276,71 @@
 
 [data-theme="dark"] .ai-token-count {
     color: var(--primary, #FBBF24);
+}
+
+/* ==================== 服务器总 Token 消耗样式（蓝色系区分） ==================== */
+
+.ai-server-token-display {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.02) 100%);
+    border-color: rgba(59, 130, 246, 0.15);
+}
+
+.ai-server-token-count {
+    color: #3B82F6 !important;
+}
+
+[data-theme="dark"] .ai-server-token-display {
+    background: linear-gradient(135deg, rgba(96, 165, 250, 0.1) 0%, rgba(96, 165, 250, 0.02) 100%);
+    border-color: rgba(96, 165, 250, 0.2);
+}
+
+[data-theme="dark"] .ai-server-token-count {
+    color: #60A5FA !important;
+}
+
+/* ==================== 限额显示样式 ==================== */
+
+.ai-chat-quota {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 14px;
+    background: var(--bg-card, #FFFFFF);
+    color: var(--text-sec, #7F8C8D);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--border-color, rgba(0, 0, 0, 0.06));
+    z-index: 60;
+    pointer-events: auto;
+    transition: all 0.3s ease;
+}
+
+.ai-chat-quota i {
+    font-size: 13px;
+    color: var(--primary, #FF9900);
+}
+
+.ai-chat-quota.low {
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #D97706;
+}
+
+.ai-chat-quota.low i {
+    color: #D97706;
+}
+
+.ai-chat-quota.empty {
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #DC2626;
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.ai-chat-quota.empty i {
+    color: #DC2626;
 }

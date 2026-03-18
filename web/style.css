@@ -398,6 +398,74 @@ body {
     box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
 }
 
+#app-root {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    isolation: isolate;
+}
+
+#app-root > .app-header,
+#app-root > .main-container,
+#app-root > #tooltip,
+#app-root > #btn-guide-help {
+    transition: filter 0.22s ease, transform 0.22s ease, opacity 0.22s ease;
+    transform-origin: top center;
+}
+
+body.ai-disclaimer-open #app-root > .app-header,
+body.ai-disclaimer-open #app-root > .main-container,
+body.ai-disclaimer-open #app-root > #tooltip,
+body.ai-disclaimer-open #app-root > #btn-guide-help,
+body.ai-chat-open #app-root > .app-header,
+body.ai-chat-open #app-root > .main-container,
+body.ai-chat-open #app-root > #tooltip,
+body.ai-chat-open #app-root > #btn-guide-help,
+body.overlay-performance-lock #app-root > .app-header,
+body.overlay-performance-lock #app-root > .main-container,
+body.overlay-performance-lock #app-root > #tooltip,
+body.overlay-performance-lock #app-root > #btn-guide-help {
+    filter: blur(4px) saturate(0.96);
+    transform: scale(0.995);
+    opacity: 0.9;
+    pointer-events: none;
+}
+
+body.ai-disclaimer-open #app-root > .app-header *,
+body.ai-disclaimer-open #app-root > .main-container *,
+body.ai-disclaimer-open #app-root > #tooltip *,
+body.ai-disclaimer-open #app-root > #btn-guide-help,
+body.ai-disclaimer-open #app-root > #btn-guide-help *,
+body.ai-chat-open #app-root > .app-header *,
+body.ai-chat-open #app-root > .main-container *,
+body.ai-chat-open #app-root > #tooltip *,
+body.ai-chat-open #app-root > #btn-guide-help,
+body.ai-chat-open #app-root > #btn-guide-help *,
+body.overlay-performance-lock #app-root > .app-header *,
+body.overlay-performance-lock #app-root > .main-container *,
+body.overlay-performance-lock #app-root > #tooltip *,
+body.overlay-performance-lock #app-root > #btn-guide-help,
+body.overlay-performance-lock #app-root > #btn-guide-help * {
+    animation-play-state: paused !important;
+}
+
+body.ai-disclaimer-open #app-root > .app-header *,
+body.ai-disclaimer-open #app-root > .main-container *,
+body.ai-disclaimer-open #app-root > #tooltip *,
+body.ai-disclaimer-open #app-root > #btn-guide-help *,
+body.ai-chat-open #app-root > .app-header *,
+body.ai-chat-open #app-root > .main-container *,
+body.ai-chat-open #app-root > #tooltip *,
+body.ai-chat-open #app-root > #btn-guide-help *,
+body.overlay-performance-lock #app-root > .app-header *,
+body.overlay-performance-lock #app-root > .main-container *,
+body.overlay-performance-lock #app-root > #tooltip *,
+body.overlay-performance-lock #app-root > #btn-guide-help * {
+    transition: none !important;
+}
+
 /* 图标基础样式调整 */
 i[class^="ri-"] {
     font-size: 1.2em;
@@ -501,6 +569,8 @@ i[class^="ri-"] {
     object-fit: contain;
     border-radius: 6px;
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
 }
 
 .app-brand-wrapper {
@@ -2782,8 +2852,9 @@ i[class^="ri-"] {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
+    background:
+        radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 38%),
+        var(--modal-overlay-bg, rgba(0, 0, 0, 0.56));
     display: none;
     align-items: center;
     justify-content: center;
@@ -3979,7 +4050,6 @@ i[class^="ri-"] {
     display: flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(4px);
     opacity: 0;
     animation: fadeIn 0.3s forwards;
 }
@@ -5245,9 +5315,9 @@ i[class^="ri-"] {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(255, 153, 0, 0.08);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background:
+        radial-gradient(circle at center, rgba(255, 153, 0, 0.12), transparent 58%),
+        rgba(255, 153, 0, 0.12);
     z-index: 20000;
     display: none;
     flex-direction: column;

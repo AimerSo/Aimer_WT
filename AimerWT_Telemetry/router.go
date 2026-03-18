@@ -756,6 +756,100 @@ func initRouter(r *gin.Engine) {
 		// AI 代理管理路由
 		initAIRoutes(admin)
 
+		// ==================== 广告统计 API ====================
+
+		admin.GET("/ad-stats", func(c *gin.Context) {
+			rangeDays := c.DefaultQuery("days", "30")
+			days, _ := strconv.Atoi(rangeDays)
+			if days <= 0 {
+				days = 30
+			}
+
+			mediumFilter := c.Query("medium")
+
+			baseQuery := db.Model(&AdClickEvent{}).Where("created_at > date('now', '-' || ? || ' days')", days)
+			if mediumFilter != "" {
+				baseQuery = baseQuery.Where("ad_medium = ?", mediumFilter)
+			}
+
+			// 总点击数
+			var totalClicks int64
+			baseQuery.Session(&gorm.Session{}).Count(&totalClicks)
+
+			// 今日点击
+			var todayClicks int64
+			today := time.Now().Format("2006-01-02")
+			baseQuery.Session(&gorm.Session{}).Where("date(created_at) = ?", today).Count(&todayClicks)
+
+			// 独立用户数
+			var uniqueUsers int64
+			baseQuery.Session(&gorm.Session{}).Distinct("machine_id").Count(&uniqueUsers)
+
+			// 平均日点击
+			avgDaily := float64(0)
+			if days > 0 && totalClicks > 0 {
+				avgDaily = float64(totalClicks) / float64(days)
+			}
+
+			// 每日点击趋势
+			var dailyClicks []map[string]any
+			baseQuery.Session(&gorm.Session{}).
+				Select("date(created_at) as date, count(*) as count").
+				Group("date(created_at)").Order("date ASC").
+				Scan(&dailyClicks)
+
+			// Top N 广告素材
+			var topAds []map[string]any
+			baseQuery.Session(&gorm.Session{}).
+				Select("ad_id as name, ad_medium as medium, count(*) as value").
+				Group("ad_id, ad_medium").Order("value DESC").Limit(10).
+				Scan(&topAds)
+
+			// 按广告位分布
+			var mediumDist []map[string]any
+			baseQuery.Session(&gorm.Session{}).
+				Select("ad_medium as name, count(*) as value").
+				Group("ad_medium").Order("value DESC").
+				Scan(&mediumDist)
+
+			// 最近 50 条点击记录
+			var recentClicks []AdClickEvent
+			q := db.Model(&AdClickEvent{}).Order("created_at DESC").Limit(50)
+			if mediumFilter != "" {
+				q = q.Where("ad_medium = ?", mediumFilter)
+			}
+			q.Find(&recentClicks)
+
+			recentList := make([]map[string]any, len(recentClicks))
+			for i, ev := range recentClicks {
+				// 尝试关联用户别名
+				var alias string
+				db.Model(&TelemetryRecord{}).Where("machine_id = ?", ev.MachineID).Select("alias").Scan(&alias)
+				recentList[i] = map[string]any{
+					"id":         ev.ID,
+					"machine_id": ev.MachineID,
+					"alias":      alias,
+					"ad_medium":  ev.AdMedium,
+					"ad_id":      ev.AdID,
+					"target_url": ev.TargetURL,
+					"created_at": ev.CreatedAt.Format("2006-01-02 15:04:05"),
+				}
+			}
+
+			c.JSON(200, gin.H{
+				"summary": gin.H{
+					"total_clicks":  totalClicks,
+					"today_clicks":  todayClicks,
+					"unique_users":  uniqueUsers,
+					"avg_daily":     fmt.Sprintf("%.1f", avgDaily),
+				},
+				"daily_clicks":       dailyClicks,
+				"top_ads":            topAds,
+				"medium_distribution": mediumDist,
+				"recent_clicks":      recentList,
+			})
+		})
+
 		// ==================== 标签管理 API ====================
 
 		admin.GET("/tags", func(c *gin.Context) {
@@ -904,6 +998,12 @@ func initRouter(r *gin.Engine) {
 		handleAIChat(c)
 	})
 
+	// 客户端 AI 统计端点（全服务器 Token 总消耗，脱敏数据）
+	r.GET("/api/ai/stats", handleAIStats)
+
+	// 客户端 AI 限额查询端点（返回用户剩余次数）
+	r.GET("/api/ai/quota", handleAIQuota)
+
 	// 客户端反馈提交（使用与 /telemetry 相同的 UA 校验）
 	r.POST("/feedback", func(c *gin.Context) {
 		var fb FeedbackRecord
@@ -941,6 +1041,62 @@ func initRouter(r *gin.Engine) {
 			return
 		}
 		c.JSON(200, gin.H{"status": "success", "feedback_id": fb.ID})
+	})
+
+	// 广告点击上报（客户端直接调用，不需要 admin 认证）
+	r.POST("/telemetry/ad-click", func(c *gin.Context) {
+		var req struct {
+			MachineID string `json:"machine_id"`
+			AdMedium  string `json:"ad_medium"`
+			AdID      string `json:"ad_id"`
+			TargetURL string `json:"target_url"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			return
+		}
+		if req.AdMedium == "" || req.AdID == "" {
+			c.JSON(400, gin.H{"error": "ad_medium and ad_id are required"})
+			return
+		}
+		// 字段长度限制
+		if len(req.MachineID) > 64 {
+			req.MachineID = req.MachineID[:64]
+		}
+		if len(req.AdMedium) > 32 {
+			req.AdMedium = req.AdMedium[:32]
+		}
+		if len(req.AdID) > 64 {
+			req.AdID = req.AdID[:64]
+		}
+		if len(req.TargetURL) > 2048 {
+			req.TargetURL = req.TargetURL[:2048]
+		}
+
+		// 去重：同一用户 + 同一广告 2 分钟内只记录 1 次
+		if req.MachineID != "" {
+			var recentCount int64
+			threshold := time.Now().Add(-2 * time.Minute)
+			db.Model(&AdClickEvent{}).
+				Where("machine_id = ? AND ad_id = ? AND created_at > ?", req.MachineID, req.AdID, threshold).
+				Count(&recentCount)
+			if recentCount > 0 {
+				c.JSON(200, gin.H{"status": "deduplicated"})
+				return
+			}
+		}
+
+		event := AdClickEvent{
+			MachineID: req.MachineID,
+			AdMedium:  req.AdMedium,
+			AdID:      req.AdID,
+			TargetURL: req.TargetURL,
+		}
+		if err := db.Create(&event).Error; err != nil {
+			c.JSON(500, gin.H{"error": "Save failed"})
+			return
+		}
+		c.JSON(200, gin.H{"status": "success"})
 	})
 
 	r.POST("/telemetry", func(c *gin.Context) {

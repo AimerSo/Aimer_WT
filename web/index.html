@@ -25,6 +25,7 @@
 </head>
 
 <body>
+    <div id="app-root">
     <!--
     功能定位:
     - 应用前端页面结构与交互入口，包含导航、语音包库、副功能库、设置与各类模态框容器。
@@ -1686,7 +1687,9 @@
     <button id="btn-guide-help" type="button" onclick="app.startGuide(true)" title="新手教程" aria-label="新手教程">
         <i class="ri-question-line"></i>
     </button>
+    </div>
 
+    <script src="logger.js"></script>
     <script src="loading_voice_package.js"></script>
     <script src="components/AppDropdownMenu.js"></script>
     <!-- 新功能模块脚本 -->
@@ -1706,6 +1709,7 @@
     <script src="js/pages/model_library.js"></script>
     <script src="js/pages/hangar.js"></script>
     <script src="redeem/redeem_ui.js"></script>
+    <script src="ads/utm_helper.js"></script>
     <script src="ads/ad_carousel_config.js"></script>
     <script src="ads/ad_carousel.js"></script>
 

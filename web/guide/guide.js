@@ -1,14 +1,17 @@
 (function () {
     const GUIDE_STATE_KEY = "aimerwt_main_guide_state_v1";
-    const AUTO_START_DELAY_MS = 380;
+    const AUTO_START_DELAY_MS = 1100;
     const STEP_WAIT_MAX_MS = 1400;
     const STEP_STABLE_DELTA = 0.9;
     const STEP_STABLE_FRAMES = 2;
     const STEP_RETRY_MAX = 14;
-    const CARD_FADE_OUT_MS = 220;
-    const CARD_FADE_IN_MS = 280;
-    const CARD_SWITCH_GAP_MS = 340;
+    const CARD_FADE_OUT_MS = 200;
+    const CARD_FADE_IN_MS = 300;
+    const CARD_SWITCH_GAP_MS = 320;
     const STEP_SWITCH_TOTAL_MS = CARD_FADE_OUT_MS + CARD_SWITCH_GAP_MS + CARD_FADE_IN_MS + 40;
+    const RESIZE_RELAYOUT_DEBOUNCE_MS = 120;
+    const FOCUS_PAD = 4;
+    const BACKDROP_PAD = 1;
 
     const STEPS = [
         {
@@ -42,7 +45,7 @@
             target: "#btn-auto-search",
             title: "第三步：自动搜索游戏路径",
             description: "点击自动搜索，不出意外的话，可以帮你快速定位 War Thunder 游戏目录。",
-            detail: "路径正确后，导入、安装、启动流程更稳定。",
+            detail: "路径正确后，导入、安装、启动流程更稳定。教程阶段只演示位置，不会真的执行自动搜索。",
             beforeShow(app) {
                 if (app && typeof app.switchTab === "function") app.switchTab("home");
             }
@@ -51,7 +54,7 @@
             target: "#btn-start-game",
             title: "第四步：从软件直接开始游戏",
             description: "配置完成后可在这里一键启动游戏。",
-            detail: "点击“开始游戏”会使用你选择的启动方式。",
+            detail: "点击“开始游戏”会使用你选择的启动方式。教程阶段只演示位置，不会真的启动游戏。",
             beforeShow(app) {
                 if (app && typeof app.switchTab === "function") app.switchTab("home");
             }
@@ -60,7 +63,7 @@
             target: ".game-status-bar .btn.secondary.icon-only",
             title: "第五步：启动方式可修改",
             description: "需要时可以在这里调整启动方式。",
-            detail: "修改后会记住，下次直接按“开始游戏”即可。",
+            detail: "修改后会记住，下次直接按“开始游戏”即可。教程阶段只演示入口，不会真的弹出设置。",
             beforeShow(app) {
                 if (app && typeof app.switchTab === "function") app.switchTab("home");
             }
@@ -187,8 +190,22 @@
             }
         },
         {
+            target: "#restore-card",
+            title: "第十七步：还原按钮",
+            description: "如果想把当前改动恢复到纯净状态，可以在这里执行一键还原。",
+            detail: "适合需要回退到干净环境时使用。教程阶段只演示入口，不会真的执行还原。",
+            beforeShow(app) {
+                if (app && typeof app.switchTab === "function") app.switchTab("settings");
+                window.requestAnimationFrame(() => {
+                    window.requestAnimationFrame(() => {
+                        scrollElementIntoPageView("#restore-card", { block: "center", gap: 28 });
+                    });
+                });
+            }
+        },
+        {
             target: "#btn-guide-help",
-            title: "第十七步：随时重开教程",
+            title: "第十八步：随时重开教程",
             description: "鼠标移动到左下角时会出现问号，点击问号可以随时重开引导，快速回顾流程。当鼠标移开的时候，为了美观问号会消失。",
             detail: "不会修改你的路径、配置或语音包数据。",
             beforeShow(app) {
@@ -197,7 +214,7 @@
         },
         {
             target: "#btn-auto-search",
-            title: "第十八步：开始之前，试试自动搜索",
+            title: "第十九步：开始之前，试试自动搜索",
             description: "在开始使用软件之前，先试一下自动搜索游戏路径吧，这样后续操作会更顺畅！",
             detail: "自动搜索会尝试定位你的 War Thunder 安装目录。",
             beforeShow(app) {
@@ -212,11 +229,15 @@
         index: 0,
         app: null,
         overlay: null,
+        backdrop: null,
+        backdropSvg: null,
+        backdropPath: null,
         focus: null,
         card: null,
         titleEl: null,
         descEl: null,
         stepEl: null,
+        progressBar: null,
         detailBtn: null,
         skipBtn: null,
         prevBtn: null,
@@ -234,8 +255,11 @@
         cardTransitionTimer: 0,
         lastRenderedStep: -1,
         guideStateCache: null,
-        guideStateLoadPromise: null
+        guideStateLoadPromise: null,
+        resizeTimer: 0
     };
+
+    /* ---- Guide state 持久化 ---- */
 
     function normalizeGuideState(raw) {
         return {
@@ -268,11 +292,8 @@
     }
 
     function persistGuideStateToBackend(guideState) {
-        if (!window.pywebview?.api?.save_guide_state) return;
-        try {
-            window.pywebview.api.save_guide_state(guideState).catch(() => {});
-        } catch (_e) {
-        }
+        // localStorage 作为数据源
+        void guideState;
     }
 
     async function ensureGuideStateLoaded() {
@@ -281,19 +302,7 @@
 
         state.guideStateLoadPromise = (async () => {
             const local = getLocalGuideState();
-            let merged = { ...local };
-
-            if (window.pywebview?.api?.get_guide_state) {
-                try {
-                    const remote = normalizeGuideState(await window.pywebview.api.get_guide_state());
-                    merged = {
-                        completed: remote.completed || local.completed,
-                        firstOpenHandled: remote.firstOpenHandled || local.firstOpenHandled
-                    };
-                } catch (_e) {
-                }
-            }
-
+            const merged = { ...local };
             state.guideStateCache = merged;
             setLocalGuideState(merged);
             persistGuideStateToBackend(merged);
@@ -311,6 +320,8 @@
         setLocalGuideState(merged);
         persistGuideStateToBackend(merged);
     }
+
+    /* ---- 问号按钮辅助 ---- */
 
     function getHelpButton() {
         if (state.helpBtn && document.body.contains(state.helpBtn)) return state.helpBtn;
@@ -350,15 +361,112 @@
         });
     }
 
+    /* ---- 高亮 / clip-path ---- */
+
+    function scrollElementIntoPageView(targetOrSelector, options = {}) {
+        const target = typeof targetOrSelector === "string"
+            ? document.querySelector(targetOrSelector)
+            : targetOrSelector;
+        if (!target || !document.body.contains(target)) return;
+
+        const page = target.closest(".page");
+        if (!page) {
+            try {
+                target.scrollIntoView({ block: options.block || "center", inline: "nearest", behavior: "auto" });
+            } catch (_e) {
+            }
+            return;
+        }
+
+        const pageRect = page.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const currentTop = page.scrollTop;
+        const gap = Number(options.gap || 20);
+        const block = options.block || "center";
+
+        let nextTop = currentTop;
+        if (block === "start") {
+            nextTop += targetRect.top - pageRect.top - gap;
+        } else if (block === "end") {
+            nextTop += targetRect.bottom - pageRect.bottom + gap;
+        } else {
+            nextTop += (targetRect.top - pageRect.top) - ((pageRect.height - targetRect.height) / 2);
+        }
+
+        const maxScroll = Math.max(0, page.scrollHeight - page.clientHeight);
+        page.scrollTop = Math.min(Math.max(0, nextTop), maxScroll);
+    }
+
     function clearHighlight() {
         if (state.highlighted && state.highlighted.classList) {
             state.highlighted.classList.remove("author-guide-target-active");
+            state.highlighted.style.removeProperty("--guide-target-radius");
         }
         state.highlighted = null;
         const btn = getHelpButton();
         if (btn) btn.classList.remove("guide-force-visible");
         state.forceVisibleHelpBtn = false;
     }
+
+    function getTargetHighlightMetrics(target, rect) {
+        const cs = target ? window.getComputedStyle(target) : null;
+        const radii = cs ? [
+            parseFloat(cs.borderTopLeftRadius) || 0,
+            parseFloat(cs.borderTopRightRadius) || 0,
+            parseFloat(cs.borderBottomRightRadius) || 0,
+            parseFloat(cs.borderBottomLeftRadius) || 0
+        ] : [0, 0, 0, 0];
+        const baseRadius = Math.max(...radii, 0);
+        const targetRadius = Math.min(Math.max(baseRadius, 10), Math.min(rect.width, rect.height) / 2);
+        return {
+            targetRadius,
+            backdropRadius: Math.max(0, targetRadius + BACKDROP_PAD),
+            focusRadius: Math.max(12, targetRadius + FOCUS_PAD)
+        };
+    }
+
+    function buildRoundedRectPath(x, y, width, height, radius) {
+        const w = Math.max(0, width);
+        const h = Math.max(0, height);
+        const r = Math.max(0, Math.min(radius, w / 2, h / 2));
+        return [
+            `M ${x + r} ${y}`,
+            `H ${x + w - r}`,
+            `Q ${x + w} ${y} ${x + w} ${y + r}`,
+            `V ${y + h - r}`,
+            `Q ${x + w} ${y + h} ${x + w - r} ${y + h}`,
+            `H ${x + r}`,
+            `Q ${x} ${y + h} ${x} ${y + h - r}`,
+            `V ${y + r}`,
+            `Q ${x} ${y} ${x + r} ${y}`,
+            "Z"
+        ].join(" ");
+    }
+
+    function setBackdropClip(rect, metrics = null) {
+        if (!state.backdrop || !state.backdropSvg || !state.backdropPath) return;
+        const vw = Math.max(window.innerWidth, 1);
+        const vh = Math.max(window.innerHeight, 1);
+        state.backdropSvg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
+
+        if (!rect) {
+            state.backdropPath.setAttribute("d", buildRoundedRectPath(0, 0, vw, vh, 0));
+            return;
+        }
+
+        const pad = BACKDROP_PAD;
+        const x = Math.max(0, rect.left - pad);
+        const y = Math.max(0, rect.top - pad);
+        const w = Math.min(vw - x, rect.width + pad * 2);
+        const h = Math.min(vh - y, rect.height + pad * 2);
+        const radius = Math.max(0, metrics?.backdropRadius ?? 14);
+
+        const outer = buildRoundedRectPath(0, 0, vw, vh, 0);
+        const inner = buildRoundedRectPath(x, y, w, h, radius);
+        state.backdropPath.setAttribute("d", `${outer} ${inner}`);
+    }
+
+    /* ---- 定时器清理 ---- */
 
     function clearRelayoutQueue() {
         if (state.relayoutStartTimer) {
@@ -381,39 +489,54 @@
         state.cardTransitionTimer = 0;
     }
 
+    /* ---- overlay 创建 ---- */
+
     function ensureOverlay() {
         if (state.overlay) return;
         const overlay = document.createElement("div");
         overlay.className = "author-guide-overlay";
         overlay.id = "author-guide-overlay";
         overlay.innerHTML = `
-            <div class="author-guide-backdrop"></div>
+            <div class="author-guide-backdrop" aria-hidden="true">
+                <svg class="author-guide-backdrop-svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" focusable="false">
+                    <path class="author-guide-backdrop-path" fill-rule="evenodd"></path>
+                </svg>
+            </div>
             <div class="author-guide-blocker"></div>
             <div class="author-guide-focus"></div>
             <section class="author-guide-card arrow-none" role="dialog" aria-modal="true" aria-label="新手教程">
                 <div class="author-guide-pointer"></div>
-                <div class="author-guide-head">
-                    <h3 class="author-guide-title"></h3>
-                    <div class="author-guide-step-pill"></div>
-                </div>
-                <p class="author-guide-desc"></p>
-                <div class="author-guide-foot">
-                    <button class="author-guide-detail-btn" type="button">查看提示</button>
-                    <div class="author-guide-actions">
-                        <button class="author-guide-btn skip" type="button">跳过导航</button>
-                        <button class="author-guide-btn prev" type="button">上一步</button>
-                        <button class="author-guide-btn next" type="button">继续</button>
+                <div class="author-guide-card-body">
+                    <div class="author-guide-head">
+                        <h3 class="author-guide-title"></h3>
+                        <div class="author-guide-step-pill"></div>
+                    </div>
+                    <div class="author-guide-progress">
+                        <div class="author-guide-progress-bar"></div>
+                    </div>
+                    <p class="author-guide-desc"></p>
+                    <div class="author-guide-foot">
+                        <button class="author-guide-detail-btn" type="button">查看提示</button>
+                        <div class="author-guide-actions">
+                            <button class="author-guide-btn skip" type="button">跳过导航</button>
+                            <button class="author-guide-btn prev" type="button">上一步</button>
+                            <button class="author-guide-btn next" type="button">继续</button>
+                        </div>
                     </div>
                 </div>
             </section>
         `;
         document.body.appendChild(overlay);
         state.overlay = overlay;
+        state.backdrop = overlay.querySelector(".author-guide-backdrop");
+        state.backdropSvg = overlay.querySelector(".author-guide-backdrop-svg");
+        state.backdropPath = overlay.querySelector(".author-guide-backdrop-path");
         state.focus = overlay.querySelector(".author-guide-focus");
         state.card = overlay.querySelector(".author-guide-card");
         state.titleEl = overlay.querySelector(".author-guide-title");
         state.descEl = overlay.querySelector(".author-guide-desc");
         state.stepEl = overlay.querySelector(".author-guide-step-pill");
+        state.progressBar = overlay.querySelector(".author-guide-progress-bar");
         state.detailBtn = overlay.querySelector(".author-guide-detail-btn");
         if (state.detailBtn) {
             state.detailBtn.disabled = true;
@@ -439,51 +562,59 @@
         state.overlay.style.setProperty("--guide-backdrop-top", `${getHeaderHeight()}px`);
     }
 
+    /* ---- 卡片定位 ---- */
+
+    function getCardLayoutSize() {
+        const width = state.card?.offsetWidth || state.card?.clientWidth || 0;
+        const height = state.card?.offsetHeight || state.card?.clientHeight || 0;
+        if (width > 0 && height > 0) {
+            return { width, height };
+        }
+        const rect = state.card?.getBoundingClientRect?.();
+        return {
+            width: rect?.width || 0,
+            height: rect?.height || 0
+        };
+    }
+
     function placeCard(targetRect) {
-        const cardRect = state.card.getBoundingClientRect();
+        const cardSize = getCardLayoutSize();
         const margin = 12;
         const viewW = window.innerWidth;
         const viewH = window.innerHeight;
-        const pointerWidth = 14;
+        const pointerWidth = 18;
         const pointerEdgePad = 16;
         const targetCenterX = targetRect.left + (targetRect.width / 2);
         const minLeft = margin;
-        const maxLeft = viewW - cardRect.width - margin;
-        let left = targetCenterX - (cardRect.width / 2);
-        let top = targetRect.bottom + 10;
+        const maxLeft = viewW - cardSize.width - margin;
+        let left = targetCenterX - (cardSize.width / 2);
+        let top = targetRect.bottom + 14;
         let arrow = "arrow-up";
 
-        if (top + cardRect.height > viewH - margin) {
-            top = targetRect.top - cardRect.height - 10;
+        if (top + cardSize.height > viewH - margin) {
+            top = targetRect.top - cardSize.height - 14;
             arrow = "arrow-down";
         }
         left = Math.min(Math.max(minLeft, left), maxLeft);
-        top = Math.min(Math.max(margin, top), viewH - cardRect.height - margin);
+        top = Math.min(Math.max(margin, top), viewH - cardSize.height - margin);
 
-        // Keep arrow strictly aligned to highlight center, and prefer not to sit in card middle
-        // by shifting the card itself (never by "fake" pointer offset).
         const minPointerX = pointerEdgePad;
-        const maxPointerX = cardRect.width - pointerEdgePad - pointerWidth;
-        const midBandMin = cardRect.width * 0.42;
-        const midBandMax = cardRect.width * 0.58;
+        const maxPointerX = cardSize.width - pointerEdgePad - pointerWidth;
+        const midBandMin = cardSize.width * 0.42;
+        const midBandMax = cardSize.width * 0.58;
         const pointerIfCurrent = targetCenterX - left - (pointerWidth / 2);
         if (pointerIfCurrent >= midBandMin && pointerIfCurrent <= midBandMax) {
             const preferPointerX = targetCenterX >= (viewW / 2)
-                ? (cardRect.width * 0.72)
-                : (cardRect.width * 0.28);
+                ? (cardSize.width * 0.72)
+                : (cardSize.width * 0.28);
 
-            // left needed for exact alignment at preferred pointer x:
-            // pointerX = targetCenterX - left - pointerWidth/2
-            // => left = targetCenterX - pointerWidth/2 - pointerX
-            const preferredLeft = targetCenterX - (pointerWidth / 2) - preferPointerX;
-
-            // Feasible left interval that keeps pointer in card bounds while still exact.
             const feasibleLeftMin = targetCenterX - (pointerWidth / 2) - maxPointerX;
             const feasibleLeftMax = targetCenterX - (pointerWidth / 2) - minPointerX;
 
             const leftLower = Math.max(minLeft, feasibleLeftMin);
             const leftUpper = Math.min(maxLeft, feasibleLeftMax);
             if (leftLower <= leftUpper) {
+                const preferredLeft = targetCenterX - (pointerWidth / 2) - preferPointerX;
                 left = Math.min(Math.max(preferredLeft, leftLower), leftUpper);
             }
         }
@@ -493,27 +624,29 @@
         state.card.classList.remove("arrow-up", "arrow-down", "arrow-left", "arrow-right", "arrow-none");
         state.card.classList.add(arrow);
 
-        // Final pointer position: always derived from geometry (strict alignment).
-        const pointerLeft = targetCenterX - left - (pointerWidth / 2);
+        const rawPointerLeft = targetCenterX - left - (pointerWidth / 2);
+        const pointerLeft = Math.min(Math.max(minPointerX, rawPointerLeft), maxPointerX);
         state.card.style.setProperty("--guide-pointer-left", `${pointerLeft}px`);
     }
 
     function placeCardCenter(step) {
-        const cardRect = state.card.getBoundingClientRect();
+        const cardSize = getCardLayoutSize();
         const margin = 12;
         const viewW = window.innerWidth;
         const viewH = window.innerHeight;
         const offsetY = Number(step?.position?.offsetY || 0);
-        const left = Math.min(Math.max(margin, (viewW - cardRect.width) / 2), viewW - cardRect.width - margin);
+        const left = Math.min(Math.max(margin, (viewW - cardSize.width) / 2), viewW - cardSize.width - margin);
         const top = Math.min(
-            Math.max(margin, ((viewH - cardRect.height) / 2) + offsetY),
-            viewH - cardRect.height - margin
+            Math.max(margin, ((viewH - cardSize.height) / 2) + offsetY),
+            viewH - cardSize.height - margin
         );
         state.card.style.left = `${left}px`;
         state.card.style.top = `${top}px`;
         state.card.classList.remove("arrow-up", "arrow-down", "arrow-left", "arrow-right");
         state.card.classList.add("arrow-none");
     }
+
+    /* ---- 辅助 ---- */
 
     function isRectReady(rect) {
         return Boolean(rect) && rect.width >= 6 && rect.height >= 6;
@@ -534,10 +667,16 @@
         return isRectReady(rect) ? rect : null;
     }
 
+    /* ---- 渲染 ---- */
+
     function renderCardTexts(step) {
         state.titleEl.textContent = step.title || "";
         state.descEl.textContent = step.description || "";
         state.stepEl.textContent = `${state.index + 1}/${STEPS.length}`;
+        if (state.progressBar) {
+            const pct = ((state.index + 1) / STEPS.length) * 100;
+            state.progressBar.style.width = `${pct}%`;
+        }
         state.detailBtn.onclick = () => {
             if (step.detail) alert(step.detail);
         };
@@ -556,10 +695,6 @@
             return;
         }
 
-        // Sequence:
-        // 1) card fades out
-        // 2) update position/target while card hidden
-        // 3) card fades in
         void state.card.offsetWidth;
         state.card.classList.remove("step-switch-in");
         state.card.classList.add("step-switch-out");
@@ -594,6 +729,8 @@
                 state.focus.style.display = "none";
                 state.focus.classList.remove("active");
             }
+            // 无目标时遮罩不镂空
+            setBackdropClip(null);
             state.overlay.classList.add("intro-step");
             renderCardTexts(step);
             placeCardCenter(step);
@@ -617,11 +754,20 @@
             state.highlighted.classList.add("author-guide-target-active");
             state.overlay.classList.remove("intro-step");
 
+            const metrics = getTargetHighlightMetrics(target, rect);
+            target.style.setProperty("--guide-target-radius", `${metrics.targetRadius}px`);
+
+            // 使用圆角 SVG 镂空，让高亮区域和目标完全贴合，不出现折角
+            setBackdropClip(rect, metrics);
+
+            // focus 发光边框定位
+            const pad = FOCUS_PAD;
             state.focus.style.display = "block";
-            state.focus.style.left = `${rect.left - 6}px`;
-            state.focus.style.top = `${rect.top - 6}px`;
-            state.focus.style.width = `${rect.width + 12}px`;
-            state.focus.style.height = `${rect.height + 12}px`;
+            state.focus.style.left = `${rect.left - pad}px`;
+            state.focus.style.top = `${rect.top - pad}px`;
+            state.focus.style.width = `${rect.width + pad * 2}px`;
+            state.focus.style.height = `${rect.height + pad * 2}px`;
+            state.focus.style.borderRadius = `${metrics.focusRadius}px`;
             state.focus.classList.add("active");
 
             if (target.id === "btn-guide-help") {
@@ -655,7 +801,7 @@
             relayout();
         });
 
-        [90, 180, 320, 520].forEach((delay) => {
+        [120, 320].forEach((delay) => {
             const timerId = window.setTimeout(relayout, delay);
             state.relayoutTimers.push(timerId);
         });
@@ -672,7 +818,14 @@
         const token = ++state.renderToken;
         const step = STEPS[state.index];
         if (!step) return stop({ markCompleted: true });
-        if (typeof step.beforeShow === "function") step.beforeShow(state.app);
+        console.info(`[Guide] render step ${state.index + 1}/${STEPS.length}: ${step.title || step.target || "unknown"}`);
+        if (typeof step.beforeShow === "function") {
+            try {
+                step.beforeShow(state.app);
+            } catch (e) {
+                console.error("[Guide] beforeShow failed:", e);
+            }
+        }
 
         if (!step.target) {
             state.stepRetryCount = 0;
@@ -759,26 +912,37 @@
         window.requestAnimationFrame(tick);
     }
 
+    /* ---- start / stop ---- */
+
     function stop(opts = {}) {
+        console.info(`[Guide] stop (completed=${Boolean(opts.markCompleted)})`);
         state.active = false;
         state.renderToken += 1;
         clearRelayoutQueue();
         clearCardTransitionTimer();
+        if (state.resizeTimer) {
+            window.clearTimeout(state.resizeTimer);
+            state.resizeTimer = 0;
+        }
         if (state.stepRetryTimer) {
             window.clearTimeout(state.stepRetryTimer);
             state.stepRetryTimer = 0;
         }
         state.stepRetryCount = 0;
         clearHighlight();
+        setBackdropClip(null);
         if (state.overlay) state.overlay.classList.remove("intro-step");
         if (state.focus) {
             state.focus.style.display = "none";
             state.focus.classList.remove("active");
         }
         if (state.overlay) state.overlay.classList.remove("active");
+        // 无论是否完成教程，都标记 firstOpenHandled 防止下次再自动弹出
         if (opts.markCompleted) {
             setGuideState({ completed: true, firstOpenHandled: true });
             setHelpPulse(false);
+        } else {
+            setGuideState({ firstOpenHandled: true });
         }
     }
 
@@ -788,6 +952,7 @@
         const guideState = getGuideState();
         if (!force && guideState.completed) return false;
 
+        console.info("[Guide] start");
         setGuideState({ firstOpenHandled: true });
         state.active = true;
         state.index = 0;
@@ -797,6 +962,8 @@
         renderCurrentStep();
         return true;
     }
+
+    /* ---- 事件绑定 ---- */
 
     function bindEvents() {
         if (!state.overlay) return;
@@ -816,13 +983,22 @@
         });
         window.addEventListener("resize", () => {
             syncBackdropInset();
-            if (state.active) renderCurrentStep();
+            if (!state.active) return;
+            if (state.resizeTimer) {
+                window.clearTimeout(state.resizeTimer);
+            }
+            state.resizeTimer = window.setTimeout(() => {
+                state.resizeTimer = 0;
+                if (state.active) renderCurrentStep();
+            }, RESIZE_RELAYOUT_DEBOUNCE_MS);
         });
         document.addEventListener("keydown", (e) => {
             if (!state.active) return;
             if (e.key === "Escape") stop({ markCompleted: false });
         });
     }
+
+    /* ---- 初始化 ---- */
 
     function init(app, options = {}) {
         if (state.inited) return;
@@ -838,20 +1014,28 @@
             window.setTimeout(async () => {
                 await ensureGuideStateLoaded();
                 const guideState = getGuideState();
+                // 已完成教程 → 不做任何事
                 if (guideState.completed) return;
+                // 首次打开软件（firstOpenHandled 为 false）→ 自动弹出教程
                 if (!guideState.firstOpenHandled) {
                     start({ force: true });
                     return;
                 }
+                // 非首次但未完成 → 脉冲问号提示用户可手动开启
                 setHelpPulse(true);
             }, AUTO_START_DELAY_MS);
         }
     }
 
+    /* ---- 公开 API ---- */
+
     window.AuthorGuide = {
         init,
         start,
         stop,
+        isActive() {
+            return Boolean(state.active);
+        },
         restart() {
             return start({ force: true });
         },

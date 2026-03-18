@@ -49,8 +49,9 @@ const MinimalistLoading = {
             .loading-overlay {
                 position: fixed;
                 inset: 0;
-                background-color: rgba(15, 23, 42, 0.6);
-                backdrop-filter: blur(6px);
+                background:
+                    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 36%),
+                    rgba(15, 23, 42, 0.62);
                 z-index: 30050;
                 display: flex;
                 align-items: center;

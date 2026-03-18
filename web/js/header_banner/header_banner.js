@@ -66,7 +66,7 @@
         if (item.action) {
             el.style.cursor = 'pointer';
             el.addEventListener('click', function () {
-                handleAction(item.action);
+                handleAction(item.action, item.text);
             });
         }
 
@@ -131,14 +131,21 @@
         }
     }
 
-    function handleAction(action) {
+    function handleAction(action, bannerText) {
         if (!action) return;
 
         if (action.type === 'url' && action.url) {
+            var contentId = (bannerText || '').substring(0, 32);
+            var tracked = (window.AimerUtm && window.AimerUtm.appendUtm)
+                ? window.AimerUtm.appendUtm(action.url, 'header_banner', contentId)
+                : action.url;
+            if (window.AimerUtm && window.AimerUtm.reportClick) {
+                window.AimerUtm.reportClick('header_banner', contentId, action.url);
+            }
             if (window.app && typeof window.app.openExternal === 'function') {
-                window.app.openExternal(action.url);
+                window.app.openExternal(tracked);
             } else {
-                window.open(action.url, '_blank');
+                window.open(tracked, '_blank');
             }
         } else if (action.type === 'alert') {
             if (window.app && typeof window.app.showAlert === 'function') {

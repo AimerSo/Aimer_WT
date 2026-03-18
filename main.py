@@ -249,14 +249,36 @@ def _windows_has_webview2_runtime() -> bool:
     return False
 
 
-def _open_url(url: str) -> None:
-    if sys.platform != "win32":
-        return
+def _open_url(url: str) -> bool:
     try:
-        # 使用系统预设浏览器
-        subprocess.Popen(["cmd", "/c", "start", "", url], shell=False)
+        if sys.platform == "win32":
+            # 使用系统预设浏览器 / 协议处理器
+            subprocess.Popen(["cmd", "/c", "start", "", url], shell=False)
+            return True
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", url])
+            return True
+        subprocess.Popen(["xdg-open", url])
+        return True
     except Exception:
-        pass
+        return False
+
+
+def _launch_detached(args, *, cwd: str | None = None) -> None:
+    """尽量以非阻塞、与宿主解耦的方式启动外部进程。"""
+    popen_kwargs = {
+        "cwd": cwd or None,
+        "shell": False,
+    }
+
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = (
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "DETACHED_PROCESS", 0)
+        )
+        popen_kwargs["close_fds"] = False
+
+    subprocess.Popen(args, **popen_kwargs)
 
 
 def _parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -952,55 +974,63 @@ class AppApi:
         - 依据配置启动 War Thunder。
         输入输出:
         - 参数: 无。
-        - 返回: bool，是否启动成功。
+        - 返回: dict，包含 success 与可选 message。
         """
-        game_path = self._cfg_mgr.get_game_path()
-        if not game_path or not os.path.exists(game_path):
-            self._logger.error("[ERROR] 无法启动游戏：路径无效")
-            return False
+        try:
+            game_path = self._cfg_mgr.get_game_path()
+            if not game_path or not os.path.exists(game_path):
+                self._logger.error("[ERROR] 无法启动游戏：路径无效")
+                return {"success": False, "message": "游戏路径无效，请先重新选择路径。"}
 
-        mode = self._cfg_mgr.get_launch_mode()
-        game_root = Path(game_path)
+            mode = self._cfg_mgr.get_launch_mode()
+            game_root = Path(game_path)
 
-        if mode == "steam":
-            try:
-                self._logger.info("[INFO] 正在通过 Steam 启动 War Thunder ...")
-                os.startfile("steam://rungameid/236390")
-                return True
-            except Exception as e:
-                self._logger.warning(f"[WARN] Steam 启动失败: {e}，尝试使用启动器...")
+            if mode == "steam":
+                try:
+                    self._logger.info("[INFO] 正在通过 Steam 启动 War Thunder ...")
+                    if sys.platform == "win32":
+                        _launch_detached(["cmd", "/c", "start", "", "steam://rungameid/236390"], cwd=str(game_root))
+                    else:
+                        if not _open_url("steam://rungameid/236390"):
+                            raise RuntimeError("无法调用系统协议处理器打开 Steam。")
+                    return {"success": True}
+                except Exception as e:
+                    self._logger.warning(f"[WARN] Steam 启动失败: {e}，尝试使用启动器...")
 
-        launcher_exe = game_root / "launcher.exe"
-        aces_exe_64 = game_root / "win64" / "aces.exe"
-        aces_exe_32 = game_root / "win32" / "aces.exe"
-        target_exe = None
+            launcher_exe = game_root / "launcher.exe"
+            aces_exe_64 = game_root / "win64" / "aces.exe"
+            aces_exe_32 = game_root / "win32" / "aces.exe"
+            target_exe = None
 
-        if mode == "aces":
-            if aces_exe_64.exists():
-                target_exe = aces_exe_64
-            elif aces_exe_32.exists():
-                target_exe = aces_exe_32
-            elif launcher_exe.exists():
-                target_exe = launcher_exe
-        else:
-            if launcher_exe.exists():
-                target_exe = launcher_exe
-            elif aces_exe_64.exists():
-                target_exe = aces_exe_64
-            elif aces_exe_32.exists():
-                target_exe = aces_exe_32
+            if mode == "aces":
+                if aces_exe_64.exists():
+                    target_exe = aces_exe_64
+                elif aces_exe_32.exists():
+                    target_exe = aces_exe_32
+                elif launcher_exe.exists():
+                    target_exe = launcher_exe
+            else:
+                if launcher_exe.exists():
+                    target_exe = launcher_exe
+                elif aces_exe_64.exists():
+                    target_exe = aces_exe_64
+                elif aces_exe_32.exists():
+                    target_exe = aces_exe_32
 
-        if target_exe:
-            try:
-                self._logger.info(f"[INFO] 正在启动游戏: {target_exe.name} ...")
-                os.startfile(str(target_exe), cwd=str(game_root))
-                return True
-            except Exception as e:
-                self._logger.error(f"[ERROR] 启动失败: {e}")
-                return False
+            if target_exe:
+                try:
+                    self._logger.info(f"[INFO] 正在启动游戏: {target_exe.name} ...")
+                    _launch_detached([str(target_exe)], cwd=str(game_root))
+                    return {"success": True}
+                except Exception as e:
+                    self._logger.error(f"[ERROR] 启动失败: {e}", exc_info=True)
+                    return {"success": False, "message": f"启动失败：{e}"}
 
-        self._logger.error("[ERROR] 未找到游戏可执行文件 (launcher.exe / aces.exe)")
-        return False
+            self._logger.error("[ERROR] 未找到游戏可执行文件 (launcher.exe / aces.exe)")
+            return {"success": False, "message": "未找到游戏可执行文件（launcher.exe / aces.exe）。"}
+        except Exception as e:
+            self._logger.error(f"[ERROR] start_game 发生未处理异常: {e}", exc_info=True)
+            return {"success": False, "message": f"启动游戏时发生异常：{e}"}
 
     def get_telemetry_status(self):
         """

@@ -28,7 +28,7 @@ func initDB() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 	db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{}, &FeedbackRecord{},
-		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{})
+		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{}, &AdClickEvent{})
 }
 
 func loadDashboard() {

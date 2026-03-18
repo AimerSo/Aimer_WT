@@ -1,13 +1,19 @@
 (function () {
     var activeInstance = null;
 
-    function openAdUrl(url) {
+    function openAdUrl(url, adId) {
         if (!url) return;
+        var tracked = (window.AimerUtm && window.AimerUtm.appendUtm)
+            ? window.AimerUtm.appendUtm(url, 'carousel', adId)
+            : url;
+        if (window.AimerUtm && window.AimerUtm.reportClick) {
+            window.AimerUtm.reportClick('carousel', adId || '', url);
+        }
         if (window.app && typeof window.app.openExternal === "function") {
-            window.app.openExternal(url);
+            window.app.openExternal(tracked);
             return;
         }
-        window.open(url, "_blank");
+        window.open(tracked, "_blank");
     }
 
     function createEl(tag, className) {
@@ -44,7 +50,7 @@
         }
 
         var intervalMs = Number(cfg.autoPlayIntervalMs) > 1000 ? Number(cfg.autoPlayIntervalMs) : 4500;
-        var current = 0; // real index: 0..(total-1), clone index: total
+        var current = 0;
         var timer = null;
         var transitionFallbackTimer = null;
         var hovered = false;
@@ -77,7 +83,7 @@
 
             link.addEventListener("click", function (event) {
                 event.preventDefault();
-                openAdUrl(item.url);
+                openAdUrl(item.url, item.id);
             });
 
             track.appendChild(link);
@@ -119,7 +125,6 @@
 
         function armTransitionFallback() {
             clearTransitionFallback();
-            // In some tab/page switching cases transitionend may never fire.
             transitionFallbackTimer = setTimeout(function () {
                 if (!isAnimating) return;
                 if (current === total) {
@@ -147,7 +152,6 @@
             }
 
             if (animate === false) {
-                // Commit jump immediately, then restore CSS transition.
                 void track.offsetWidth;
                 track.style.transition = "";
                 clearTransitionFallback();
@@ -165,7 +169,6 @@
             armTransitionFallback();
 
             if (current === total - 1) {
-                // last real -> tail clone (still moving right)
                 goTo(total, true);
             } else {
                 goTo(current + 1, true);
@@ -202,7 +205,6 @@
             if (total <= 1) return;
             timer = setInterval(function () {
                 if (!isHostVisible()) {
-                    // Avoid sticky pause when switching tabs while hovering.
                     hovered = false;
                     return;
                 }
@@ -243,7 +245,6 @@
         function onTransitionEnd(evt) {
             if (evt && evt.propertyName && evt.propertyName !== "transform") return;
             if (current === total) {
-                // tail clone -> first real (no animation)
                 goTo(0, false);
             }
             isAnimating = false;

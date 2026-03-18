@@ -1,0 +1,125 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="width: 36px; height: 36px; background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(139, 92, 246, 0.08)); border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="3" y1="9" x2="21" y2="9"></line>
+                        <line x1="9" y1="21" x2="9" y2="9"></line>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-weight: 700; font-size: 16px; color: var(--text);">广告效果统计</div>
+                    <div style="color: var(--text-muted); font-size: 12px;">追踪广告点击数据，分析投放效果</div>
+                </div>
+            </div>
+            <div class="top-actions" style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+                <select class="select" style="width: 130px; font-size: 12px;" id="adStatsMediumFilter" onchange="app.loadAdStats()">
+                    <option value="">全部广告位</option>
+                    <option value="carousel">轮播图</option>
+                    <option value="header_banner">横幅</option>
+                    <option value="notice">公告</option>
+                </select>
+                <select class="select" style="width: 100px; font-size: 12px;" id="adStatsDaysFilter" onchange="app.loadAdStats()">
+                    <option value="7">近 7 天</option>
+                    <option value="30" selected>近 30 天</option>
+                    <option value="90">近 90 天</option>
+                    <option value="365">近 1 年</option>
+                </select>
+                <button class="btn" onclick="app.loadAdStats()">刷新数据</button>
+            </div>
+        </div>
+
+        <!-- 统计卡片 -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px;">
+            <div class="panel" style="padding: 20px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                    <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(37, 99, 235, 0.1); display: flex; align-items: center; justify-content: center;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"></path></svg>
+                    </div>
+                    <span style="font-size: 12px; color: var(--text-muted);">总点击数</span>
+                </div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--text);" id="adStatsTotalClicks">-</div>
+            </div>
+            <div class="panel" style="padding: 20px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                    <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(16, 185, 129, 0.1); display: flex; align-items: center; justify-content: center;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    </div>
+                    <span style="font-size: 12px; color: var(--text-muted);">今日点击</span>
+                </div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--text);" id="adStatsTodayClicks">-</div>
+            </div>
+            <div class="panel" style="padding: 20px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                    <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(139, 92, 246, 0.1); display: flex; align-items: center; justify-content: center;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+                    </div>
+                    <span style="font-size: 12px; color: var(--text-muted);">独立用户</span>
+                </div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--text);" id="adStatsUniqueUsers">-</div>
+            </div>
+            <div class="panel" style="padding: 20px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                    <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(245, 158, 11, 0.1); display: flex; align-items: center; justify-content: center;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                    </div>
+                    <span style="font-size: 12px; color: var(--text-muted);">日均点击</span>
+                </div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--text);" id="adStatsAvgDaily">-</div>
+            </div>
+        </div>
+
+        <!-- 图表区域 -->
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px;">
+            <!-- 点击趋势 -->
+            <div class="panel" style="padding: 20px;">
+                <div class="panel-header" style="padding: 0 0 12px 0; border-bottom: 1px solid var(--border);">
+                    <div class="panel-title" style="font-size: 14px;">点击趋势</div>
+                </div>
+                <div id="adClickTrendChart" style="width: 100%; height: 280px;"></div>
+            </div>
+            <!-- 广告位分布 -->
+            <div class="panel" style="padding: 20px;">
+                <div class="panel-header" style="padding: 0 0 12px 0; border-bottom: 1px solid var(--border);">
+                    <div class="panel-title" style="font-size: 14px;">广告位分布</div>
+                </div>
+                <div id="adMediumPieChart" style="width: 100%; height: 280px;"></div>
+            </div>
+        </div>
+
+        <!-- Top 素材 + 最近记录 -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <!-- Top 广告素材 -->
+            <div class="panel" style="padding: 20px;">
+                <div class="panel-header" style="padding: 0 0 12px 0; border-bottom: 1px solid var(--border);">
+                    <div class="panel-title" style="font-size: 14px;">Top 广告素材</div>
+                </div>
+                <div id="adTopAdsChart" style="width: 100%; height: 300px;"></div>
+            </div>
+            <!-- 最近点击记录 -->
+            <div class="panel" style="padding: 0;">
+                <div class="panel-header" style="padding: 14px 20px; border-bottom: 1px solid var(--border);">
+                    <div class="panel-title" style="font-size: 14px;">最近点击记录</div>
+                    <span style="font-size: 11px; color: var(--text-muted);" id="adStatsRecentCount">0 条</span>
+                </div>
+                <div style="max-height: 340px; overflow-y: auto;" id="adStatsRecentContainer">
+                    <table class="data-table" style="width: 100%; font-size: 12px;">
+                        <thead>
+                            <tr>
+                                <th style="padding: 10px 12px;">时间</th>
+                                <th style="padding: 10px 12px;">用户</th>
+                                <th style="padding: 10px 12px;">广告位</th>
+                                <th style="padding: 10px 12px;">素材 ID</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adStatsRecentBody">
+                            <tr><td colspan="4" style="text-align: center; padding: 40px; color: var(--text-muted);">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

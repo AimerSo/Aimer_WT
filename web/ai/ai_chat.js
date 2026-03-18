@@ -89,6 +89,19 @@ const AIChat = {
                         <span id="ai-token-completion">输出: 0</span>
                     </div>
                 </div>
+                <div class="ai-chat-setting-item" id="ai-server-token-usage-item" style="display: none;">
+                    <div class="ai-chat-setting-label">
+                        <i class="ri-server-line" style="color: #3B82F6;"></i>
+                        服务器总消耗
+                    </div>
+                    <div class="ai-token-usage-display ai-server-token-display">
+                        <span class="ai-token-count ai-server-token-count" id="ai-server-token-count">--</span>
+                        <span class="ai-token-label">tokens</span>
+                    </div>
+                    <div class="ai-token-detail">
+                        <span id="ai-server-request-count">总请求: --</span>
+                    </div>
+                </div>
                 <div id="ai-custom-api-settings" style="display: none;">
                     <div class="ai-chat-setting-item">
                         <div class="ai-chat-setting-label">提供商</div>
@@ -198,6 +211,10 @@ const AIChat = {
             </div>
             
             <div class="ai-chat-header">
+                <div class="ai-chat-quota" id="ai-chat-quota" title="每小时使用限额" style="display: none;">
+                    <i class="ri-time-line"></i>
+                    <span id="ai-chat-quota-text">加载中...</span>
+                </div>
                 <span class="ai-chat-beta-tag">不稳定测试版</span>
             </div>
 
@@ -368,12 +385,18 @@ const AIChat = {
     
     // 打开聊天框
     open() {
+        // 防重入：弹窗动画进行中不响应
+        if (this.state._opening) return;
+
         if (typeof AIDisclaimer !== 'undefined' && !AIDisclaimer.state.hasAgreed) {
+            this.state._opening = true;
             AIDisclaimer.show();
             AIDisclaimer.onAgree(() => {
+                this.state._opening = false;
                 this._doOpen();
             });
             AIDisclaimer.onReject(() => {
+                this.state._opening = false;
                 console.log('[AI] 用户拒绝免责声明，关闭AI功能');
             });
             return;
@@ -387,10 +410,53 @@ const AIChat = {
         this.state.isOpen = true;
         this.elements.container.classList.add('open');
         this.elements.overlay.classList.add('show');
+        document.body.classList.add('ai-chat-open');
         document.body.style.overflow = 'hidden';
         
         setTimeout(() => this.elements.input.focus(), 300);
         AIChatMessages.scrollToBottom();
+
+        // Aimer 免费模式时刷新限额显示
+        if (AI_CONFIG.get('apiMode') === 'aimer_free') {
+            this._refreshQuota();
+        } else {
+            // 自定义模式下隐藏限额
+            const quotaEl = document.getElementById('ai-chat-quota');
+            if (quotaEl) quotaEl.style.display = 'none';
+        }
+    },
+
+    // 从服务器获取并刷新限额显示
+    async _refreshQuota() {
+        const quotaEl = document.getElementById('ai-chat-quota');
+        const textEl = document.getElementById('ai-chat-quota-text');
+        if (!quotaEl || !textEl) return;
+
+        const machineId = window._telemetryHWID || '';
+        if (!machineId) {
+            quotaEl.style.display = 'none';
+            return;
+        }
+
+        try {
+            const serverUrl = this._getServerUrl();
+            const resp = await fetch(`${serverUrl}/api/ai/quota?machine_id=${encodeURIComponent(machineId)}`);
+            if (!resp.ok) throw new Error('请求失败');
+            const data = await resp.json();
+            textEl.textContent = `${data.remaining}/${data.limit} 次`;
+            quotaEl.style.display = 'flex';
+
+            // 余量不足时高亮警示
+            quotaEl.classList.toggle('low', data.remaining <= 3);
+            quotaEl.classList.toggle('empty', data.remaining === 0);
+        } catch (e) {
+            textEl.textContent = '--/--';
+        }
+    },
+
+    // 获取后端服务器地址（从 pywebview 注入的全局变量获取）
+    _getServerUrl() {
+        return window._telemetryBaseUrl || 'https://telemetry.aimerelle.com';
     },
     
     // 关闭聊天框
@@ -398,6 +464,7 @@ const AIChat = {
         this.state.isOpen = false;
         this.elements.container.classList.remove('open');
         this.elements.overlay.classList.remove('show');
+        document.body.classList.remove('ai-chat-open');
         document.body.style.overflow = '';
         
         this.state.settingsOpen = false;
@@ -498,6 +565,11 @@ const AIChat = {
             const aiTokens = AIChatMessages.estimateTokens(responseContent);
             AIChatMessages.updateTokens(userTokens, aiTokens);
 
+            // 发送完成后刷新限额显示
+            if (AI_CONFIG.get('apiMode') === 'aimer_free') {
+                this._refreshQuota();
+            }
+
         } catch (error) {
             console.error('[AI] 请求失败:', error);
             AIChatMessages.hideLoading();
@@ -505,6 +577,11 @@ const AIChat = {
             setTimeout(() => {
                 AIChatMessages.addMessage('ai', `抱歉，请求失败：${error.message}`);
             }, 300);
+
+            // 失败（含被限流）后也刷新限额
+            if (AI_CONFIG.get('apiMode') === 'aimer_free') {
+                this._refreshQuota();
+            }
         }
     }
 };

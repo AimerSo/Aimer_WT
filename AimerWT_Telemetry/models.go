@@ -114,6 +114,16 @@ type AdCarouselItem struct {
 	PositionY int    `json:"position_y"` // object-position y% (0-100，默认 50)
 }
 
+// AdClickEvent 广告点击事件（客户端上报，用于流量统计与广告效果分析）
+type AdClickEvent struct {
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID string    `gorm:"index;type:varchar(64)" json:"machine_id"`
+	AdMedium  string    `gorm:"index;type:varchar(32)" json:"ad_medium"`
+	AdID      string    `gorm:"index;type:varchar(64)" json:"ad_id"`
+	TargetURL string    `gorm:"type:text" json:"target_url"`
+	CreatedAt time.Time `gorm:"autoCreateTime;index" json:"created_at"`
+}
+
 // NoticeItem 公告列表数据表（对应客户端 notice_data.js 的数据结构）
 type NoticeItem struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`

@@ -1,7 +1,8 @@
 /* 更新公告弹窗模板样式 */
 .notice-detail-overlay {
-    background: rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(4px);
+    background:
+        radial-gradient(circle at top, rgba(59, 130, 246, 0.06), transparent 32%),
+        rgba(0, 0, 0, 0.28);
 }
 
 .notice-detail-overlay.show {

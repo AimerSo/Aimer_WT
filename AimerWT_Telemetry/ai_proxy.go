@@ -634,3 +634,36 @@ func initAIRoutes(admin *gin.RouterGroup) {
 		})
 	}
 }
+
+// ─── 客户端公开 API（不需要 admin 认证） ───
+
+// handleAIStats 返回全服务器 AI Token 总消耗（脱敏数据）
+func handleAIStats(c *gin.Context) {
+	var totalTokens struct{ Total int }
+	db.Model(&AIUsageRecord{}).Select("COALESCE(SUM(total_tokens), 0) as total").Scan(&totalTokens)
+
+	var totalRequests int64
+	db.Model(&AIUsageRecord{}).Count(&totalRequests)
+
+	c.JSON(200, gin.H{
+		"total_tokens":   totalTokens.Total,
+		"total_requests": totalRequests,
+	})
+}
+
+// handleAIQuota 返回指定用户的当前剩余次数和限额信息
+func handleAIQuota(c *gin.Context) {
+	machineID := c.Query("machine_id")
+	if machineID == "" {
+		c.JSON(400, gin.H{"error": "缺少 machine_id"})
+		return
+	}
+
+	remaining := limiter.Remaining(machineID)
+	limit := limiter.getUserLimit(machineID)
+
+	c.JSON(200, gin.H{
+		"remaining": remaining,
+		"limit":     limit,
+	})
+}

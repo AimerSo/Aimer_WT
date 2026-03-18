@@ -1,3 +1,8 @@
+/* ======================================================================
+   引导系统样式
+   遮罩使用 clip-path 在目标区域镂空，高亮区域不覆盖任何半透明层。
+   ====================================================================== */
+
 .author-guide-overlay {
     position: fixed;
     inset: 0;
@@ -5,14 +10,14 @@
     pointer-events: none;
     visibility: hidden;
     opacity: 0;
-    transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+    transition: opacity 0.28s ease, visibility 0s linear 0.28s;
 }
 
 .author-guide-overlay.active {
     pointer-events: none;
     visibility: visible;
     opacity: 1;
-    transition: opacity 0.2s ease, visibility 0s linear 0s;
+    transition: opacity 0.28s ease, visibility 0s linear 0s;
 }
 
 .author-guide-overlay:not(.active) * {
@@ -22,11 +27,20 @@
 .author-guide-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(8, 12, 22, 0.08);
     opacity: 0;
-    transition: opacity 0.22s ease;
+    transition: opacity 0.28s ease;
     z-index: 0;
     pointer-events: none;
+}
+
+.author-guide-backdrop-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.author-guide-backdrop-path {
+    fill: rgba(8, 12, 22, 0.52);
 }
 
 .author-guide-blocker {
@@ -36,7 +50,7 @@
     bottom: 0;
     top: var(--guide-backdrop-top, 56px);
     z-index: 0;
-    pointer-events: none;
+    pointer-events: auto;
 }
 
 .author-guide-overlay.active .author-guide-backdrop {
@@ -44,20 +58,29 @@
 }
 
 .author-guide-overlay.active.intro-step .author-guide-backdrop {
-    background: rgba(8, 12, 22, 0.44);
     opacity: 1;
 }
 
+.author-guide-overlay.active.intro-step .author-guide-backdrop-path {
+    fill: rgba(8, 12, 22, 0.56);
+}
+
+/* 高亮发光边框：目标区域外围的装饰环 */
 .author-guide-focus {
     position: absolute;
-    border-radius: 14px;
-    border: 2px solid rgba(255, 180, 82, 1);
-    background: rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    border: 2px solid rgba(255, 180, 82, 0.9);
+    background: transparent;
     box-shadow:
-        0 0 0 9999px rgba(8, 12, 22, 0.32),
-        0 0 0 10px rgba(255, 180, 82, 0.22),
-        0 16px 36px rgba(0, 0, 0, 0.24);
-    transition: all 0.26s cubic-bezier(.2, .8, .2, 1);
+        0 0 0 4px rgba(255, 180, 82, 0.18),
+        0 0 18px 4px rgba(255, 160, 50, 0.22),
+        0 0 36px 8px rgba(255, 160, 50, 0.1);
+    transition:
+        left 0.32s cubic-bezier(.2, .8, .2, 1),
+        top 0.32s cubic-bezier(.2, .8, .2, 1),
+        width 0.32s cubic-bezier(.2, .8, .2, 1),
+        height 0.32s cubic-bezier(.2, .8, .2, 1),
+        opacity 0.22s ease;
     opacity: 0;
     z-index: 1;
     pointer-events: none;
@@ -66,22 +89,30 @@
 
 .author-guide-focus.active {
     opacity: 1;
-    animation: author-guide-focus-pulse 1.25s ease-in-out infinite;
+    animation: author-guide-focus-glow 2s ease-in-out infinite;
 }
 
+/* 卡片 */
 .author-guide-card {
     position: absolute;
-    width: min(358px, calc(100vw - 20px));
+    width: min(380px, calc(100vw - 20px));
     background: var(--bg-card, #fff);
     color: var(--text-main, #2c3e50);
-    border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 16px;
-    box-shadow: 0 18px 52px rgba(9, 16, 32, 0.35);
-    padding: 16px 16px 14px;
-    transform: translateY(8px);
+    border: 1px solid color-mix(in srgb, var(--border-color, #e2e8f0) 60%, transparent);
+    border-radius: 18px;
+    box-shadow:
+        0 20px 60px rgba(9, 16, 32, 0.28),
+        0 8px 24px rgba(9, 16, 32, 0.12),
+        0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+    padding: 0;
+    transform: translateY(10px);
     opacity: 0;
-    transition: opacity 0.28s ease, transform 0.28s ease;
+    transition: opacity 0.32s ease, transform 0.32s cubic-bezier(.2, .8, .2, 1);
     pointer-events: none;
+    overflow: visible;
+    isolation: isolate;
+    backdrop-filter: blur(12px) saturate(1.2);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
 }
 
 .author-guide-overlay.active .author-guide-card {
@@ -94,14 +125,27 @@
     z-index: 2;
 }
 
+/* 卡片内部内容区 */
+.author-guide-card-body {
+    position: relative;
+    z-index: 2;
+    padding: 18px 20px 16px;
+    border-radius: 18px;
+    overflow: hidden;
+}
+
+/* 箭头指示器 */
 .author-guide-pointer {
     position: absolute;
-    width: 14px;
-    height: 14px;
+    width: 18px;
+    height: 18px;
     background: var(--bg-card, #fff);
-    border-left: 1px solid var(--border-color, #e2e8f0);
-    border-top: 1px solid var(--border-color, #e2e8f0);
+    border-left: 1px solid color-mix(in srgb, var(--border-color, #e2e8f0) 60%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--border-color, #e2e8f0) 60%, transparent);
     transform: rotate(45deg);
+    z-index: 1;
+    box-shadow: 0 10px 24px rgba(9, 16, 32, 0.08);
+    pointer-events: none;
 }
 
 .author-guide-card.arrow-left .author-guide-pointer {
@@ -121,17 +165,18 @@
 }
 
 .author-guide-card.arrow-up .author-guide-pointer {
-    top: -8px;
+    top: -9px;
     left: var(--guide-pointer-left, 26px);
     transform: rotate(45deg);
 }
 
 .author-guide-card.arrow-down .author-guide-pointer {
-    bottom: -8px;
+    bottom: -9px;
     left: var(--guide-pointer-left, 26px);
     transform: rotate(225deg);
 }
 
+/* 头部区域 */
 .author-guide-head {
     display: flex;
     align-items: center;
@@ -145,35 +190,49 @@
     font-size: 15px;
     font-weight: 700;
     line-height: 1.35;
+    letter-spacing: 0.01em;
 }
 
+/* 步数胶囊 */
 .author-guide-step-pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--primary, #ff9900) 18%, transparent);
+    background: linear-gradient(135deg, rgba(255, 149, 0, 0.15), rgba(255, 107, 53, 0.12));
     color: var(--primary, #ff9900);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
-    min-width: 54px;
+    min-width: 52px;
     padding: 4px 10px;
+    letter-spacing: 0.02em;
 }
 
+/* 进度条 */
+.author-guide-progress {
+    width: 100%;
+    height: 3px;
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 2px;
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+.author-guide-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #ff9500, #ffb347);
+    border-radius: 2px;
+    transition: width 0.4s cubic-bezier(.2, .8, .2, 1);
+    box-shadow: 0 0 8px rgba(255, 149, 0, 0.3);
+}
+
+/* 描述段落 */
 .author-guide-desc {
     margin: 0;
     color: var(--text-sec, #6b7280);
     font-size: 13px;
-    line-height: 1.65;
-    min-height: 44px;
-}
-
-.author-guide-foot {
-    margin-top: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
+    line-height: 1.7;
+    min-height: 40px;
 }
 
 .author-guide-detail-btn {
@@ -186,25 +245,44 @@
     text-align: left;
 }
 
+/* 底部操作栏 */
+.author-guide-foot {
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
 .author-guide-actions {
     display: inline-flex;
     align-items: center;
     gap: 8px;
 }
 
+/* 按钮 */
 .author-guide-btn {
-    border: 1px solid var(--border-color, #d1d5db);
+    border: 1px solid color-mix(in srgb, var(--border-color, #d1d5db) 70%, transparent);
     background: var(--bg-card, #fff);
     color: var(--text-main, #111827);
     border-radius: 10px;
-    padding: 6px 11px;
+    padding: 7px 14px;
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.author-guide-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .author-guide-btn:active {
-    transform: translateY(1px);
+    transform: translateY(0.5px);
+    box-shadow: none;
 }
 
 .author-guide-btn.skip,
@@ -212,51 +290,59 @@
     color: var(--text-sec, #6b7280);
 }
 
+.author-guide-btn.skip:hover {
+    color: var(--text-main, #374151);
+}
+
 .author-guide-btn.prev:disabled {
-    opacity: 0.45;
+    opacity: 0.4;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
 
 .author-guide-btn.next {
     border-color: transparent;
-    background: var(--primary, #ff9900);
+    background: linear-gradient(135deg, #ff9500, #ff7b00);
     color: #fff;
+    box-shadow: 0 4px 14px rgba(255, 149, 0, 0.3);
 }
 
 .author-guide-btn.next:hover {
-    filter: brightness(1.04);
+    box-shadow: 0 6px 20px rgba(255, 149, 0, 0.4);
+    transform: translateY(-1px);
+    filter: brightness(1.06);
 }
 
+.author-guide-btn.next:active {
+    box-shadow: 0 2px 8px rgba(255, 149, 0, 0.25);
+    transform: translateY(0.5px);
+}
+
+/* 高亮目标元素装饰（添加到目标元素自身） */
 .author-guide-target-active {
-    outline: 2px solid rgba(255, 197, 115, 0.78);
-    outline-offset: 2px;
-    border-radius: 12px;
+    outline: none !important;
+    outline-offset: 0 !important;
+    border-radius: var(--guide-target-radius, 12px);
     transition: outline-color 0.2s ease, box-shadow 0.2s ease;
-    box-shadow: 0 0 0 5px rgba(255, 180, 82, 0.16);
+    box-shadow: none !important;
 }
 
-.author-guide-card.step-fade {
-    animation: author-guide-step-fade 0.24s ease both;
-}
-
+/* 卡片切换动画 */
 .author-guide-card.step-switch-out {
     opacity: 0 !important;
-    transform: translateY(3px) scale(0.995) !important;
-    transition-duration: 220ms !important;
+    transform: translateY(6px) scale(0.98) !important;
+    transition-duration: 200ms !important;
 }
 
 .author-guide-card.step-switch-in {
     opacity: 1 !important;
     transform: translateY(0) scale(1) !important;
-    transition-duration: 280ms !important;
+    transition-duration: 300ms !important;
+    transition-timing-function: cubic-bezier(.2, .8, .2, 1) !important;
 }
 
-/* First-run hint: pulse the question button until user starts guide manually. */
-#btn-guide-help.guide-help-pulse {
-    color: var(--primary, #ff9900);
-    animation: guide-help-breathe 1.6s ease-in-out infinite;
-}
-
+/* 左下角问号按钮 */
 #btn-guide-help {
     position: fixed;
     left: 18px;
@@ -266,7 +352,7 @@
     height: 42px;
     border: 1px solid color-mix(in srgb, var(--border-color, #e2e8f0) 88%, transparent);
     border-radius: 999px;
-    background: color-mix(in srgb, var(--bg-card, #fff) 88%, transparent);
+    background: color-mix(in srgb, var(--bg-card, #fff) 92%, transparent);
     color: var(--text-sec, #64748b);
     display: inline-flex;
     align-items: center;
@@ -277,6 +363,15 @@
     opacity: 0;
     transform: translateY(5px) scale(0.96);
     pointer-events: none;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+/* 弹窗/遮罩打开时保持问号隐藏，避免被全局模糊态误显出来 */
+body.ai-disclaimer-open #app-root > #btn-guide-help,
+body.ai-chat-open #app-root > #btn-guide-help,
+body.overlay-performance-lock #app-root > #btn-guide-help {
+    opacity: 0;
 }
 
 #btn-guide-help.near,
@@ -292,6 +387,45 @@
     opacity: 1;
     transform: translateY(0) scale(1);
     pointer-events: auto;
+}
+
+/* 首次运行未完成教程时问号的呼吸脉冲 */
+#btn-guide-help.guide-help-pulse {
+    color: var(--primary, #ff9900);
+    animation: guide-help-breathe 1.6s ease-in-out infinite;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+/* ====================================================================== */
+/* 关键帧动画                                                              */
+/* ====================================================================== */
+
+@keyframes author-guide-gradient-flow {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+}
+
+@keyframes author-guide-focus-glow {
+    0% {
+        box-shadow:
+            0 0 0 4px rgba(255, 180, 82, 0.14),
+            0 0 16px 3px rgba(255, 160, 50, 0.16),
+            0 0 32px 6px rgba(255, 160, 50, 0.06);
+    }
+    50% {
+        box-shadow:
+            0 0 0 6px rgba(255, 180, 82, 0.24),
+            0 0 24px 6px rgba(255, 160, 50, 0.28),
+            0 0 48px 12px rgba(255, 160, 50, 0.12);
+    }
+    100% {
+        box-shadow:
+            0 0 0 4px rgba(255, 180, 82, 0.14),
+            0 0 16px 3px rgba(255, 160, 50, 0.16),
+            0 0 32px 6px rgba(255, 160, 50, 0.06);
+    }
 }
 
 @keyframes guide-help-breathe {
@@ -320,26 +454,9 @@
     }
 }
 
-@keyframes author-guide-focus-pulse {
-    0% {
-        box-shadow:
-            0 0 0 9999px rgba(8, 12, 22, 0.32),
-            0 0 0 6px rgba(255, 180, 82, 0.12),
-            0 14px 34px rgba(0, 0, 0, 0.2);
-    }
-    50% {
-        box-shadow:
-            0 0 0 9999px rgba(8, 12, 22, 0.32),
-            0 0 0 10px rgba(255, 180, 82, 0.22),
-            0 18px 40px rgba(0, 0, 0, 0.24);
-    }
-    100% {
-        box-shadow:
-            0 0 0 9999px rgba(8, 12, 22, 0.32),
-            0 0 0 6px rgba(255, 180, 82, 0.12),
-            0 14px 34px rgba(0, 0, 0, 0.2);
-    }
-}
+/* ====================================================================== */
+/* 响应式                                                                  */
+/* ====================================================================== */
 
 @media (max-width: 720px) {
     .author-guide-title {

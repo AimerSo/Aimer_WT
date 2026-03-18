@@ -249,6 +249,7 @@ const AIChatSettings = {
     _updateApiModeUI(mode) {
         const customSettings = document.getElementById('ai-custom-api-settings');
         const tokenUsageItem = document.getElementById('ai-token-usage-item');
+        const serverTokenItem = document.getElementById('ai-server-token-usage-item');
 
         if (customSettings) {
             customSettings.style.display = mode === 'custom' ? 'block' : 'none';
@@ -258,6 +259,13 @@ const AIChatSettings = {
             tokenUsageItem.style.display = mode === 'aimer_free' ? 'block' : 'none';
             if (mode === 'aimer_free') {
                 this._updateTokenDisplay();
+            }
+        }
+
+        if (serverTokenItem) {
+            serverTokenItem.style.display = mode === 'aimer_free' ? 'block' : 'none';
+            if (mode === 'aimer_free') {
+                this._fetchServerTokenStats();
             }
         }
 
@@ -279,6 +287,29 @@ const AIChatSettings = {
         if (countEl) countEl.textContent = TokenTracker.formatTokens(stats.totalTokens);
         if (promptEl) promptEl.textContent = `输入: ${TokenTracker.formatTokens(stats.promptTokens)}`;
         if (completionEl) completionEl.textContent = `输出: ${TokenTracker.formatTokens(stats.completionTokens)}`;
+    },
+
+    // 从服务器获取全局 Token 统计
+    async _fetchServerTokenStats() {
+        const countEl = document.getElementById('ai-server-token-count');
+        const reqEl = document.getElementById('ai-server-request-count');
+
+        try {
+            const serverUrl = window._telemetryBaseUrl || 'https://telemetry.aimerelle.com';
+            const resp = await fetch(`${serverUrl}/api/ai/stats`);
+            if (!resp.ok) throw new Error('请求失败');
+            const data = await resp.json();
+
+            if (countEl && typeof TokenTracker !== 'undefined') {
+                countEl.textContent = TokenTracker.formatTokens(data.total_tokens || 0);
+            } else if (countEl) {
+                countEl.textContent = (data.total_tokens || 0).toLocaleString();
+            }
+            if (reqEl) reqEl.textContent = `总请求: ${(data.total_requests || 0).toLocaleString()}`;
+        } catch (e) {
+            if (countEl) countEl.textContent = '--';
+            if (reqEl) reqEl.textContent = '总请求: --';
+        }
     },
 
     // 根据提供商更新UI

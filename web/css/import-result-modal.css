@@ -5,8 +5,9 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
+    background:
+        radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 36%),
+        rgba(0, 0, 0, 0.62);
     display: flex;
     align-items: center;
     justify-content: center;
