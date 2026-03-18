@@ -55,6 +55,7 @@ class HangarManager:
         else:
             self.hangar_library_dir = self.root_dir / DIR_HANGAR_LIBRARY
 
+        self._items_cache = None
         self._ensure_dirs()
 
     def update_paths(self, hangar_library_dir: str | None = None) -> dict[str, bool]:
@@ -138,6 +139,9 @@ class HangarManager:
         Returns:
             列表，每项包含 name / path / size_bytes / cover_url / date 字段
         """
+        if self._items_cache is not None:
+            return self._items_cache
+
         lib_dir = self.hangar_library_dir
         if not lib_dir.exists() or not lib_dir.is_dir():
             return []
@@ -167,6 +171,7 @@ class HangarManager:
         except OSError as e:
             log.error(f"扫描机库目录失败: {e}")
 
+        self._items_cache = items
         return items
 
     # ==================== 重命名 ====================
@@ -200,6 +205,7 @@ class HangarManager:
 
         try:
             old_path.rename(new_path)
+            self._items_cache = None
             log.info(f"机库重命名成功: {old_name} -> {new_name}")
             return True
         except OSError as e:
@@ -236,6 +242,7 @@ class HangarManager:
         cover_path = item_dir / COVER_FILENAME
         try:
             cover_path.write_bytes(img_bytes)
+            self._items_cache = None
             log.info(f"机库封面已更新: {item_name}")
             return True
         except OSError as e:

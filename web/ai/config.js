@@ -90,9 +90,9 @@ const AI_CONFIG = {
         // 功能开关
         features: {
             // 是否启用日志分析
-            logAnalysis: true,
+            logAnalysis: false,
             // 是否启用教程识别
-            tutorialRecognition: true,
+            tutorialRecognition: false,
             // 是否自动建议
             autoSuggestion: true
         },

@@ -84,6 +84,7 @@ const AIChatMessages = {
     // 更新流式消息
     updateStreamingMessage(content) {
         const chat = this._chat;
+        if (!chat?.elements?.messages) return;
         this.hideLoading();
 
         let messageEl = chat.elements.messages.querySelector('.ai-message.ai:last-child');
@@ -99,7 +100,7 @@ const AIChatMessages = {
         }
 
         const bubble = messageEl.querySelector('.ai-message-bubble');
-        bubble.innerHTML = this.formatMessage(content);
+        if (bubble) bubble.innerHTML = this.formatMessage(content);
 
         requestAnimationFrame(() => {
             this.scrollToBottom();
@@ -109,11 +110,12 @@ const AIChatMessages = {
     // 完成消息
     finalizeMessage(content) {
         const chat = this._chat;
+        if (!chat?.elements?.messages) return;
         const messageEl = chat.elements.messages.querySelector('.ai-message.ai:last-child');
         if (messageEl) {
             messageEl.dataset.finalized = 'true';
             const bubble = messageEl.querySelector('.ai-message-bubble');
-            bubble.innerHTML = this.formatMessage(content);
+            if (bubble) bubble.innerHTML = this.formatMessage(content);
         }
 
         const lastMsg = chat.state.messages[chat.state.messages.length - 1];
@@ -154,6 +156,7 @@ const AIChatMessages = {
     // 隐藏加载动画
     hideLoading() {
         const chat = this._chat;
+        if (!chat?.elements?.messages) return;
         const loadingEl = chat.elements.messages.querySelector('.ai-message-loading-container');
         if (loadingEl) {
             loadingEl.remove();
@@ -228,6 +231,9 @@ const AIChatMessages = {
         if (typeof AIVocabularyMappings !== 'undefined') {
             text = this._convertEmotionTagsWithCache(text);
         }
+
+        // 移除前导空行
+        text = text.replace(/^[\r\n]+/, '');
 
         text = this.escapeHtml(text);
 

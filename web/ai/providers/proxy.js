@@ -31,23 +31,22 @@ class ProxyProvider extends BaseAIProvider {
 
     async chat(messages, options = {}) {
         try {
-            const response = await fetch(`${this.serverUrl}/api/chat`, {
+            const response = await fetch(`${this.serverUrl}/api/ai/chat`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-AimerWT-Client': '1'
                 },
                 body: JSON.stringify({
+                    machine_id: window._telemetryHWID || '',
                     messages: messages,
-                    system_prompt: options.systemPrompt,
-                    temperature: options.temperature ?? 0.7,
-                    max_tokens: options.maxTokens ?? 2048,
-                    stream: false
+                    context: options.context || {}
                 })
             });
 
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || `HTTP ${response.status}`);
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.error || error.detail || `HTTP ${response.status}`);
             }
 
             const result = await response.json();
@@ -63,23 +62,22 @@ class ProxyProvider extends BaseAIProvider {
 
     async chatStream(messages, onChunk, options = {}) {
         try {
-            const response = await fetch(`${this.serverUrl}/api/chat/stream`, {
+            const response = await fetch(`${this.serverUrl}/api/ai/chat`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-AimerWT-Client': '1'
                 },
                 body: JSON.stringify({
+                    machine_id: window._telemetryHWID || '',
                     messages: messages,
-                    system_prompt: options.systemPrompt,
-                    temperature: options.temperature ?? 0.7,
-                    max_tokens: options.maxTokens ?? 2048,
-                    stream: true
+                    context: options.context || {}
                 })
             });
 
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || `HTTP ${response.status}`);
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.error || error.detail || `HTTP ${response.status}`);
             }
 
             const reader = response.body.getReader();

@@ -3463,6 +3463,9 @@ app.init = async function () {
             installed_mods: [],
         };
         this.telemetryConnected = !!state.telemetry_connected;
+        // AI 代理模式使用的遥测服务器基地址
+        if (state.telemetry_base_url) window._telemetryBaseUrl = state.telemetry_base_url;
+        if (state.hwid) window._telemetryHWID = state.hwid;
         this.userSeqId = state.user_seq_id || 0;
         this.currentLaunchMode = state.launch_mode || 'launcher';
         this.updatePathUI(state.game_path, state.path_valid);

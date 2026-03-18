@@ -79,6 +79,18 @@ func intValue(raw any) (int, bool) {
 }
 
 func initRouter(r *gin.Engine) {
+	// CORS 中间件：允许 pywebview 前端跨域访问 AI 端点
+	r.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-AimerWT-Client")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
+
 	// 静态文件服务：上传的广告图片
 	uploadsDir := "uploads"
 	if _, err := os.Stat(uploadsDir); os.IsNotExist(err) {
@@ -879,10 +891,13 @@ func initRouter(r *gin.Engine) {
 		})
 	}
 
-	// 客户端 AI 聊天端点（UA 校验，不需要 Basic Auth）
+	// 客户端 AI 聊天端点（支持 UA 或自定义 header 校验，不需要 Basic Auth）
 	r.POST("/api/ai/chat", func(c *gin.Context) {
 		ua := c.GetHeader("User-Agent")
-		if len(ua) < 14 || ua[:14] != "AimerWT-Client" {
+		clientHeader := c.GetHeader("X-AimerWT-Client")
+		uaOk := len(ua) >= 14 && ua[:14] == "AimerWT-Client"
+		headerOk := clientHeader != ""
+		if !uaOk && !headerOk {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Access Denied"})
 			return
 		}

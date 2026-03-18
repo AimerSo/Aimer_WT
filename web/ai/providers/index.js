@@ -64,7 +64,8 @@ const AIProviderManager = {
         
         // Aimer免费模式使用后端代理
         if (apiMode === 'aimer_free') {
-            return this.getProvider('proxy', {});
+            const serverUrl = window._telemetryBaseUrl || '';
+            return this.getProvider('proxy', { serverUrl });
         }
         
         // 自定义API模式

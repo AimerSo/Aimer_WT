@@ -456,8 +456,28 @@ const AIChat = {
             if (!validation.valid) {
                 throw new Error(validation.error);
             }
-            
-            const messages = AIContextManager.buildMessages(message, history, options);
+
+            let messages;
+            const streamOptions = {};
+
+            if (provider.name === 'proxy') {
+                // proxy 模式：后端管理 system prompt，客户端只发对话消息和上下文
+                messages = [...history, { role: 'user', content: message }];
+                const context = {};
+                if (options.includeTutorial) {
+                    const pageCtx = typeof TutorialDetector !== 'undefined' ? TutorialDetector.getContextForAI() : '';
+                    if (pageCtx) context.page = pageCtx;
+                }
+                if (options.includeLogs) {
+                    const logLines = AI_CONFIG.getNested('context.logContextLines') || 30;
+                    const logs = typeof LogCollector !== 'undefined' ? LogCollector.getFormattedLogs(logLines) : '';
+                    if (logs && logs !== '暂无日志记录。') context.logs = logs;
+                }
+                streamOptions.context = context;
+            } else {
+                // 其他提供商：客户端构建完整消息（含本地 system prompt）
+                messages = AIContextManager.buildMessages(message, history, options);
+            }
             
             let responseContent = '';
             await provider.chatStream(messages, (chunk) => {
@@ -471,7 +491,7 @@ const AIChat = {
                     responseContent += chunk.content;
                     AIChatMessages.updateStreamingMessage(responseContent);
                 }
-            });
+            }, streamOptions);
             
             AIChatMessages.finalizeMessage(responseContent);
 

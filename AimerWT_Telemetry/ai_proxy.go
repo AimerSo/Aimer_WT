@@ -18,19 +18,28 @@ import (
 // ─── AI 配置（持久化到 ContentConfig 表） ───
 
 type AIProxyConfig struct {
-	Enabled      bool   `json:"enabled"`
-	Provider     string `json:"provider"`       // zhipu
-	ApiUrl       string `json:"api_url"`         // https://open.bigmodel.cn/api/paas/v4/chat/completions
-	Model        string `json:"model"`           // glm-4.6v
-	SystemPrompt string `json:"system_prompt"`
-	MaxTokens    int    `json:"max_tokens"`
+	Enabled      bool    `json:"enabled"`
+	Provider     string  `json:"provider"`      // 标记用途（zhipu / deepseek / openai / relay 等）
+	ApiUrl       string  `json:"api_url"`        // OpenAI 兼容的 chat/completions 端点
+	ApiKey       string  `json:"api_key"`        // 持久化到数据库的 API Key（优先级高于环境变量）
+	Model        string  `json:"model"`          // 模型名称，自由填写
+	SystemPrompt string  `json:"system_prompt"`
+	MaxTokens    int     `json:"max_tokens"`
 	Temperature  float64 `json:"temperature"`
-	HourlyLimit  int    `json:"hourly_limit"`    // 全局默认每小时限额
-	MaxHistory   int    `json:"max_history"`     // 最大历史对话条数
+	HourlyLimit  int     `json:"hourly_limit"` // 全局默认每小时限额
+	MaxHistory   int     `json:"max_history"`  // 最大历史对话条数
 }
 
 var aiConfig AIProxyConfig
-var aiApiKey string // 从环境变量读取，不持久化
+var aiEnvKey string // 环境变量 AI_API_KEY，作为回退
+
+// getEffectiveApiKey 获取当前生效的 API Key（数据库配置 > 环境变量）
+func getEffectiveApiKey() string {
+	if aiConfig.ApiKey != "" {
+		return aiConfig.ApiKey
+	}
+	return aiEnvKey
+}
 
 // 默认AI配置
 func defaultAIConfig() AIProxyConfig {
@@ -38,12 +47,12 @@ func defaultAIConfig() AIProxyConfig {
 		Enabled:      true,
 		Provider:     "zhipu",
 		ApiUrl:       "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-		Model:        "glm-4.6v",
+		Model:        "glm-4.7-flash",
 		SystemPrompt: "你是小艾米，AimerWT 软件的专属 AI 助手。AimerWT 是一款战争雷霆游戏辅助工具，提供语音包管理、涂装管理、炮镜管理等功能。\n\n回复要求：\n- 使用中文回复\n- 语气亲切可爱，适当使用颜文字\n- 技术问题给出具体解决步骤\n- 不确定时诚实告知\n- 拒绝回答政治敏感话题",
 		MaxTokens:    2048,
 		Temperature:  0.7,
 		HourlyLimit:  20,
-		MaxHistory:   30, // 15轮对话 = 30条消息
+		MaxHistory:   30,
 	}
 }
 
@@ -163,7 +172,7 @@ func handleAIChat(c *gin.Context) {
 		return
 	}
 
-	if aiApiKey == "" {
+	if getEffectiveApiKey() == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI 服务未配置"})
 		return
 	}
@@ -260,7 +269,7 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 	}
 
 	upstreamReq.Header.Set("Content-Type", "application/json")
-	upstreamReq.Header.Set("Authorization", "Bearer "+aiApiKey)
+	upstreamReq.Header.Set("Authorization", "Bearer "+getEffectiveApiKey())
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(upstreamReq)
@@ -328,6 +337,8 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 
 	// 记录用量
 	if totalPromptTokens > 0 || totalCompletionTokens > 0 {
+		log.Printf("[AI] 用量统计 - 用户: %s, 输入: %d, 输出: %d, 总计: %d",
+			machineID, totalPromptTokens, totalCompletionTokens, totalPromptTokens+totalCompletionTokens)
 		usage := AIUsageRecord{
 			MachineID:        machineID,
 			Model:            aiConfig.Model,
@@ -336,6 +347,8 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 			TotalTokens:      totalPromptTokens + totalCompletionTokens,
 		}
 		db.Create(&usage)
+	} else {
+		log.Printf("[AI] 警告: 流式响应未包含 usage 数据 (用户: %s)", machineID)
 	}
 }
 
@@ -346,20 +359,33 @@ func initAIRoutes(admin *gin.RouterGroup) {
 	{
 		// 获取 AI 配置
 		ai.GET("/config", func(c *gin.Context) {
-			// 返回配置（API Key 只返回掩码）
+			// 返回配置（API Key 只返回掩码，不返回明文）
 			configCopy := aiConfig
+			configCopy.ApiKey = "" // 不在 GET 响应中泄露明文 Key
+
+			effectiveKey := getEffectiveApiKey()
 			maskedKey := ""
-			if aiApiKey != "" {
-				if len(aiApiKey) > 8 {
-					maskedKey = aiApiKey[:4] + "****" + aiApiKey[len(aiApiKey)-4:]
+			if effectiveKey != "" {
+				if len(effectiveKey) > 8 {
+					maskedKey = effectiveKey[:4] + "****" + effectiveKey[len(effectiveKey)-4:]
 				} else {
 					maskedKey = "****"
 				}
 			}
+
+			// Key 来源标记：dashboard（仪表盘配置）/ env（环境变量）/ none
+			keySource := "none"
+			if aiConfig.ApiKey != "" {
+				keySource = "dashboard"
+			} else if aiEnvKey != "" {
+				keySource = "env"
+			}
+
 			c.JSON(200, gin.H{
-				"config":     configCopy,
-				"api_key":    maskedKey,
-				"has_api_key": aiApiKey != "",
+				"config":      configCopy,
+				"api_key":     maskedKey,
+				"has_api_key": effectiveKey != "",
+				"key_source":  keySource,
 			})
 		})
 
@@ -367,18 +393,49 @@ func initAIRoutes(admin *gin.RouterGroup) {
 		ai.POST("/config", func(c *gin.Context) {
 			var req AIProxyConfig
 			if err := c.ShouldBindJSON(&req); err != nil {
+				log.Printf("[AI] 配置解析失败: %v", err)
 				c.JSON(400, gin.H{"error": "Invalid JSON"})
 				return
 			}
+
+			// API Key 处理：客户端传了新 Key 则用新的，未传（空字符串）则保留旧值
+			// 清空 Key 使用独立的 /config/clear-key 接口
+			oldKey := aiConfig.ApiKey
 			aiConfig = req
+			if aiConfig.ApiKey == "" {
+				aiConfig.ApiKey = oldKey
+			}
+
 			SaveAIConfig()
+			keySource := "none"
+			if aiConfig.ApiKey != "" {
+				keySource = "dashboard"
+			} else if aiEnvKey != "" {
+				keySource = "env"
+			}
+			log.Printf("[AI] 配置已更新 (提供商: %s, 模型: %s, Key来源: %s)", aiConfig.Provider, aiConfig.Model, keySource)
+			c.JSON(200, gin.H{"status": "success"})
+		})
+
+		// 清空仪表盘配置的 API Key（回退到环境变量）
+		ai.POST("/config/clear-key", func(c *gin.Context) {
+			aiConfig.ApiKey = ""
+			SaveAIConfig()
+			log.Printf("[AI] 已清空仪表盘 API Key，当前使用: %s",
+				func() string {
+					if aiEnvKey != "" {
+						return "环境变量"
+					}
+					return "无"
+				}())
 			c.JSON(200, gin.H{"status": "success"})
 		})
 
 		// 测试 API 连通性（管理后台专用）
 		ai.POST("/test-connection", func(c *gin.Context) {
-			if aiApiKey == "" {
-				c.JSON(200, gin.H{"status": "no_key", "message": "未配置 API Key"})
+			effKey := getEffectiveApiKey()
+			if effKey == "" {
+				c.JSON(200, gin.H{"status": "no_key", "message": "未配置 API Key（仪表盘和环境变量均未设置）"})
 				return
 			}
 
@@ -393,7 +450,7 @@ func initAIRoutes(admin *gin.RouterGroup) {
 
 			req, _ := http.NewRequest("POST", aiConfig.ApiUrl, bytes.NewReader(bodyBytes))
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", "Bearer "+aiApiKey)
+			req.Header.Set("Authorization", "Bearer "+effKey)
 
 			client := &http.Client{Timeout: 15 * time.Second}
 			resp, err := client.Do(req)
@@ -404,7 +461,7 @@ func initAIRoutes(admin *gin.RouterGroup) {
 			defer resp.Body.Close()
 
 			if resp.StatusCode == 200 {
-				c.JSON(200, gin.H{"status": "ok", "message": "连接正常"})
+				c.JSON(200, gin.H{"status": "ok", "message": fmt.Sprintf("连接正常 (模型: %s)", aiConfig.Model)})
 			} else {
 				body, _ := io.ReadAll(resp.Body)
 				c.JSON(200, gin.H{"status": "error", "message": fmt.Sprintf("上游返回 %d", resp.StatusCode), "detail": string(body)})
@@ -450,6 +507,14 @@ func initAIRoutes(admin *gin.RouterGroup) {
 				Limit(50).
 				Scan(&userRanking)
 
+			// 模型使用分布
+			var modelDistribution []map[string]interface{}
+			db.Model(&AIUsageRecord{}).
+				Select("model, count(*) as requests, COALESCE(SUM(total_tokens), 0) as tokens").
+				Group("model").
+				Order("requests DESC").
+				Scan(&modelDistribution)
+
 			// 关联别名和封禁状态
 			for i, u := range userRanking {
 				var mid string
@@ -474,13 +539,14 @@ func initAIRoutes(admin *gin.RouterGroup) {
 			}
 
 			c.JSON(200, gin.H{
-				"total_requests": totalRequests,
-				"total_tokens":   totalTokens.Total,
-				"today_requests": todayRequests,
-				"today_tokens":   todayTokens.Total,
-				"active_users":   activeUsers,
-				"trend":          trend,
-				"user_ranking":   userRanking,
+				"total_requests":     totalRequests,
+				"total_tokens":       totalTokens.Total,
+				"today_requests":     todayRequests,
+				"today_tokens":       todayTokens.Total,
+				"active_users":       activeUsers,
+				"trend":              trend,
+				"user_ranking":       userRanking,
+				"model_distribution": modelDistribution,
 			})
 		})
 

@@ -49,12 +49,17 @@ func main() {
 	loadDashboard()
 
 	// 初始化 AI 代理
-	aiApiKey = os.Getenv("AI_API_KEY")
+	aiEnvKey = os.Getenv("AI_API_KEY")
 	LoadAIConfig()
-	if aiApiKey != "" {
-		log.Printf("[AI] AI 代理已启用 (提供商: %s, 模型: %s)", aiConfig.Provider, aiConfig.Model)
+	effKey := getEffectiveApiKey()
+	if effKey != "" {
+		source := "环境变量"
+		if aiConfig.ApiKey != "" {
+			source = "仪表盘配置"
+		}
+		log.Printf("[AI] AI 代理已启用 (提供商: %s, 模型: %s, Key来源: %s)", aiConfig.Provider, aiConfig.Model, source)
 	} else {
-		log.Printf("[AI] 未设置 AI_API_KEY，AI 代理功能不可用")
+		log.Printf("[AI] 未配置 API Key（环境变量和仪表盘均未设置），AI 代理功能不可用")
 	}
 
 	// 初始化 WebSocket Hub

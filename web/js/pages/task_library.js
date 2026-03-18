@@ -32,7 +32,7 @@ const TaskLibrary = {
     show() {
         const view = document.getElementById(this.view_id);
         if (view) view.classList.add('active');
-        this.refresh_list();
+        if (!this._loaded) this.refresh_list();
     },
 
     hide() {

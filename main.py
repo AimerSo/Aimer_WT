@@ -903,6 +903,12 @@ class AppApi:
         if active_theme != self._cfg_mgr.get_active_theme():
             self._cfg_mgr.set_active_theme(active_theme)
 
+        # 从遥测地址提取基地址（如 http://localhost:8082/telemetry → http://localhost:8082）
+        telemetry_base_url = ""
+        tm = get_telemetry_manager()
+        if tm and tm.report_url:
+            telemetry_base_url = tm.report_url.rsplit("/telemetry", 1)[0]
+
         return {
             "game_path": path,
             "path_valid": is_valid,
@@ -914,6 +920,7 @@ class AppApi:
             "hwid": get_hwid(),
             "telemetry_enabled": self._cfg_mgr.get_telemetry_enabled(),
             "telemetry_connected": get_telemetry_connection_status(),
+            "telemetry_base_url": telemetry_base_url,
             "user_seq_id": get_user_seq_id(),
             "autostart_enabled": self._cfg_mgr.get_autostart_enabled(),
             "tray_mode": self._cfg_mgr.get_tray_mode(),

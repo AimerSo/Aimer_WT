@@ -16,7 +16,7 @@ const AIContextManager = {
     config: {
         maxContextTokens: 30000,  // 最大上下文Token数（2.8-3万）
         warningThreshold: 28000,  // 警告阈值
-        approxTokensPerChar: 0.6  // 中文约0.6 token/字
+        approxTokensPerChar: 2.2  // 中文约2.2 token/字
     },
 
     // 初始化
@@ -27,27 +27,22 @@ const AIContextManager = {
 
     /**
      * 估算文本的Token数
-     * 简单估算：中文字符 ≈ 0.6 token，英文 ≈ 0.3 token
+     * 中文字符 ≈ 2.2 token，英文字母 ≈ 1 token，标点/数字 ≈ 1 token
      * @param {string} text - 要估算的文本
-     * @returns {number} - 估算的token数
+     * @returns {number} - 估算的token数（整数）
      */
     estimateTokens(text) {
         if (!text || typeof text !== 'string') return 0;
 
         let tokens = 0;
         for (const char of text) {
-            // 中文字符范围
             if (/[\u4e00-\u9fa5]/.test(char)) {
-                tokens += 0.6;
-            } else if (/[a-zA-Z]/.test(char)) {
-                tokens += 0.3;
-            } else if (/\d/.test(char)) {
-                tokens += 0.25;
+                tokens += 2.2;
             } else {
-                tokens += 0.2;  // 标点符号等
+                tokens += 1;
             }
         }
-        return Math.ceil(tokens);
+        return Math.round(tokens);
     },
 
     /**

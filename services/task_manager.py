@@ -55,6 +55,7 @@ class TaskManager:
         else:
             self.task_library_dir = self.root_dir / DIR_TASK_LIBRARY
 
+        self._items_cache = None
         self._ensure_dirs()
 
     def update_paths(self, task_library_dir: str | None = None) -> dict[str, bool]:
@@ -138,6 +139,9 @@ class TaskManager:
         Returns:
             列表，每项包含 name / path / size_bytes / cover_url / date 字段
         """
+        if self._items_cache is not None:
+            return self._items_cache
+
         lib_dir = self.task_library_dir
         if not lib_dir.exists() or not lib_dir.is_dir():
             return []
@@ -168,6 +172,7 @@ class TaskManager:
         except OSError as e:
             log.error(f"扫描任务库目录失败: {e}")
 
+        self._items_cache = items
         return items
 
     # ==================== 重命名 ====================
@@ -205,6 +210,7 @@ class TaskManager:
 
         try:
             old_path.rename(new_path)
+            self._items_cache = None
             log.info(f"任务重命名成功: {old_name} -> {new_name}")
             return True
         except OSError as e:
@@ -242,6 +248,7 @@ class TaskManager:
         cover_path = item_dir / COVER_FILENAME
         try:
             cover_path.write_bytes(img_bytes)
+            self._items_cache = None
             log.info(f"任务封面已更新: {item_name}")
             return True
         except OSError as e:

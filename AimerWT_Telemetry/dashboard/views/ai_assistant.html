@@ -34,49 +34,58 @@
                 </div>
                 <div class="panel-body">
                     <div class="form-group">
-                        <label>API 提供商</label>
-                        <select class="select" style="width: 100%;" id="aiProvider">
-                            <option value="zhipu">智谱 AI (GLM)</option>
-                        </select>
+                        <label>提供商标记 <span style="font-size: 11px; color: var(--text-muted); font-weight: 400;">（仅标记用途，不影响实际调用）</span></label>
+                        <input class="input" style="width: 100%;" id="aiProvider" placeholder="例如: zhipu / deepseek / openai / relay">
                     </div>
                     <div class="form-group">
-                        <label>API 地址</label>
-                        <input class="input" style="width: 100%;" id="aiApiUrl" placeholder="https://open.bigmodel.cn/api/paas/v4/chat/completions">
+                        <label>API 地址 <span style="font-size: 11px; color: var(--text-muted); font-weight: 400;">（OpenAI 兼容格式的 chat/completions 端点）</span></label>
+                        <input class="input" style="width: 100%;" id="aiApiUrl" placeholder="https://api.example.com/v1/chat/completions">
                     </div>
                     <div class="form-group">
-                        <label>API Key</label>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <div id="aiApiKeyStatus" style="flex: 1; padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 13px; color: var(--text-muted);">
-                                点击检测按钮查看连接状态
-                            </div>
-                            <button class="btn" onclick="app.testAIConnection()" id="aiTestBtn" style="white-space: nowrap;">检测连接</button>
+                        <label>模型名称 <span style="font-size: 11px; color: var(--text-muted); font-weight: 400;">（自由填写，取决于提供商支持）</span></label>
+                        <input class="input" style="width: 100%;" id="aiModel" placeholder="例如: glm-4-flash / deepseek-chat / gpt-4o-mini">
+                    </div>
+                    <!-- 预设模板快捷按钮 -->
+                    <div class="form-group">
+                        <label>快捷预设 <span style="font-size: 11px; color: var(--text-muted); font-weight: 400;">（点击自动填充提供商/地址/模型）</span></label>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                            <button class="btn" style="padding: 4px 10px; font-size: 12px;" onclick="app.applyAIPreset('zhipu')">智谱 GLM</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 12px;" onclick="app.applyAIPreset('deepseek')">DeepSeek</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 12px;" onclick="app.applyAIPreset('siliconflow')">硅基流动</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 12px;" onclick="app.applyAIPreset('qwen')">阿里通义</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 12px;" onclick="app.applyAIPreset('doubao')">豆包</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 12px;" onclick="app.applyAIPreset('openai')">OpenAI 官方</button>
                         </div>
-                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-                            通过环境变量 <code>AI_API_KEY</code> 配置
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>模型选择</label>
-                        <select class="select" style="width: 100%;" id="aiModel">
-                            <option value="glm-4.6v">GLM-4.6V</option>
-                            <option value="glm-4.7">GLM-4.7</option>
-                            <option value="glm-4-flash">GLM-4-Flash</option>
-                            <option value="glm-4-plus">GLM-4-Plus</option>
-                        </select>
                     </div>
                 </div>
             </div>
 
-            <!-- 模型参数 -->
+            <!-- API Key + 模型参数 -->
             <div class="panel">
                 <div class="panel-header">
-                    <div class="panel-title">模型参数</div>
+                    <div class="panel-title">API Key & 参数</div>
                 </div>
                 <div class="panel-body">
                     <div class="form-group">
+                        <label>API Key</label>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="password" class="input" style="flex: 1;" id="aiApiKeyInput" placeholder="输入 API Key（留空则使用环境变量）">
+                            <button class="btn" onclick="app.toggleAIKeyVisibility()" id="aiKeyToggleBtn" style="white-space: nowrap; padding: 6px 10px;" title="显示/隐藏">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            </button>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                            <div id="aiApiKeyStatus" style="flex: 1; padding: 6px 10px; background: var(--bg-secondary); border-radius: 6px; font-size: 12px; color: var(--text-muted);">
+                                加载中...
+                            </div>
+                            <button class="btn" onclick="app.testAIConnection()" id="aiTestBtn" style="white-space: nowrap; padding: 4px 10px; font-size: 12px;">检测连接</button>
+                            <button class="btn" onclick="app.clearAIKey()" style="white-space: nowrap; padding: 4px 10px; font-size: 12px; color: var(--danger);" title="清空仪表盘配置的 Key，回退到环境变量">清空 Key</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
                         <label>最大输出 Tokens</label>
                         <div style="display: flex; align-items: center; gap: 12px;">
-                            <input type="range" style="flex: 1;" id="maxTokensSlider" min="256" max="8192" value="2048"
+                            <input type="range" style="flex: 1;" id="maxTokensSlider" min="0" max="8192" value="2048"
                                 oninput="document.getElementById('aiMaxTokens').value = this.value">
                             <input class="input" style="width: 80px; text-align: center;" id="aiMaxTokens" value="2048"
                                 oninput="document.getElementById('maxTokensSlider').value = this.value">
@@ -126,7 +135,10 @@
         <div class="panel" style="margin-top: 24px;">
             <div class="panel-header">
                 <div class="panel-title">系统提示词</div>
-                <div style="font-size: 12px; color: var(--text-muted);">修改后保存即时生效，所有用户统一使用此提示词</div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="font-size: 12px; color: var(--text-muted);">修改后保存即时生效，所有用户统一使用此提示词。</div>
+                    <button class="btn" style="white-space: nowrap; padding: 4px 10px; font-size: 12px;" onclick="app.useDefaultPrompt()">使用原始提示词</button>
+                </div>
             </div>
             <div class="panel-body">
                 <div class="form-group" style="margin-bottom: 0;">
