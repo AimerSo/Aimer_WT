@@ -34,8 +34,8 @@
             </div>
         </div>
 
-        <!-- 三栏布局：列表 + 编辑 + 预览 -->
-        <div style="display: grid; grid-template-columns: 300px 1fr 320px; gap: 20px; min-height: 500px;">
+        <!-- 两栏布局：列表 + 编辑 -->
+        <div style="display: grid; grid-template-columns: 300px 1fr; gap: 20px; min-height: 400px;">
 
             <!-- 左栏：公告列表 -->
             <div class="panel" style="display: flex; flex-direction: column;">
@@ -133,9 +133,16 @@
                         </div>
                         <div class="form-group" style="margin: 0 0 12px;">
                             <label style="font-size: 11px; margin-bottom: 4px;">详细内容（支持 Markdown）</label>
+                            <div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap;">
+                                <button class="btn" style="font-size:10px;padding:2px 8px;height:22px;" onclick="app._insertTemplate('update')" title="插入更新日志模板">📋 更新日志</button>
+                                <button class="btn" style="font-size:10px;padding:2px 8px;height:22px;" onclick="app._insertTemplate('general')" title="插入通用公告模板">📝 通用公告</button>
+                                <button class="btn" style="font-size:10px;padding:2px 8px;height:22px;" onclick="app._insertTemplate('image')" title="插入图片语法">🖼️ 图片</button>
+                                <button class="btn" style="font-size:10px;padding:2px 8px;height:22px;" onclick="app._insertTemplate('spoiler')" title="插入剧透语法">🔒 剧透</button>
+                            </div>
                             <textarea class="input"
                                 style="width: 100%; height: 140px; font-family: 'Consolas', monospace; padding: 10px; resize: vertical; font-size: 12px; line-height: 1.6;"
-                                id="noticeEditContent" placeholder="# 标题&#10;&#10;- 列表项 1&#10;- 列表项 2"></textarea>
+                                id="noticeEditContent" placeholder="# 标题&#10;&#10;- 列表项 1&#10;- 列表项 2"
+                                oninput="app._refreshContentPreview()"></textarea>
                         </div>
                         <div
                             style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding: 8px 12px; background: rgba(245, 158, 11, 0.05); border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.1);">
@@ -151,38 +158,66 @@
                             <button class="btn" style="justify-content: center;"
                                 onclick="app.cancelNoticeEdit()">取消</button>
                         </div>
-                        <!-- 格式说明 -->
-                        <div
-                            style="margin-top: 14px; padding: 10px 12px; background: var(--bg); border-radius: 8px; border: 1px solid var(--border);">
-                            <div
-                                style="font-size: 11px; font-weight: 600; color: var(--text); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="12" y1="16" x2="12" y2="12"></line>
-                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                                </svg>
-                                标签类型说明
+                        <!-- 语法参考 -->
+                        <div style="margin-top: 14px; padding: 10px 12px; background: var(--bg); border-radius: 8px; border: 1px solid var(--border);">
+                            <div style="font-size: 11px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 4px;">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                语法参考
                             </div>
-                            <div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 10px;">
-                                <span
-                                    style="padding: 2px 8px; border-radius: 5px; background: rgba(239,68,68,0.08); color: #dc2626; font-weight: 600;">紧急</span>
-                                <span
-                                    style="padding: 2px 8px; border-radius: 5px; background: rgba(255,153,0,0.08); color: #d97706; font-weight: 600;">更新</span>
-                                <span
-                                    style="padding: 2px 8px; border-radius: 5px; background: rgba(139,92,246,0.08); color: #7c3aed; font-weight: 600;">活动</span>
-                                <span
-                                    style="padding: 2px 8px; border-radius: 5px; background: rgba(16,185,129,0.08); color: #059669; font-weight: 600;">福利</span>
-                                <span
-                                    style="padding: 2px 8px; border-radius: 5px; background: rgba(107,114,128,0.08); color: #6b7280; font-weight: 600;">日常</span>
+                            <!-- 标签类型 -->
+                            <div style="margin-bottom: 8px;">
+                                <div style="font-size: 10px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">标签类型</div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 4px; font-size: 10px;">
+                                    <span style="padding: 2px 8px; border-radius: 5px; background: rgba(239,68,68,0.08); color: #dc2626; font-weight: 600;">紧急</span>
+                                    <span style="padding: 2px 8px; border-radius: 5px; background: rgba(255,153,0,0.08); color: #d97706; font-weight: 600;">更新</span>
+                                    <span style="padding: 2px 8px; border-radius: 5px; background: rgba(139,92,246,0.08); color: #7c3aed; font-weight: 600;">活动</span>
+                                    <span style="padding: 2px 8px; border-radius: 5px; background: rgba(16,185,129,0.08); color: #059669; font-weight: 600;">福利</span>
+                                    <span style="padding: 2px 8px; border-radius: 5px; background: rgba(107,114,128,0.08); color: #6b7280; font-weight: 600;">日常</span>
+                                </div>
+                            </div>
+                            <!-- Markdown 基础语法 -->
+                            <div style="margin-bottom: 8px;">
+                                <div style="font-size: 10px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">Markdown 基础（marked.js）</div>
+                                <div style="font-size: 10px; color: var(--text); line-height: 1.8; font-family: Consolas, monospace;">
+                                    <code style="background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px;"># 标题</code>
+                                    <code style="background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px;">**加粗**</code>
+                                    <code style="background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px;">*斜体*</code>
+                                    <code style="background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px;">~~删除线~~</code>
+                                    <code style="background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px;">`代码`</code>
+                                    <code style="background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px;">> 引用</code><br>
+                                    <code style="background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px;">- 列表</code>
+                                    <code style="background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px;">[文字](URL)</code>
+                                    <code style="background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px;">![描述](图片URL)</code>
+                                    <code style="background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px;">| 表格 |</code>
+                                </div>
+                            </div>
+                            <!-- 自定义扩展 -->
+                            <div style="margin-bottom: 8px;">
+                                <div style="font-size: 10px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">自定义扩展</div>
+                                <div style="font-size: 10px; color: var(--text); line-height: 1.8; font-family: Consolas, monospace;">
+                                    <code style="background:rgba(59,130,246,0.08);padding:1px 4px;border-radius:3px;color:#3b82f6;">@用户名</code> 用户提及
+                                    <code style="background:rgba(22,163,106,0.08);padding:1px 4px;border-radius:3px;color:#16a34a;">#123</code> Issue 引用
+                                    <code style="background:rgba(0,0,0,0.06);padding:1px 4px;border-radius:3px;">||剧透内容||</code> 遮盖文字
+                                </div>
+                            </div>
+                            <!-- 更新日志节名规则 -->
+                            <div>
+                                <div style="font-size: 10px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">更新日志节名 → 自动图标</div>
+                                <div style="font-size: 10px; color: var(--text); line-height: 1.8;">
+                                    <code style="background:rgba(37,99,235,0.08);padding:1px 4px;border-radius:3px;color:#2563eb;">## 优化xxx</code> → 🔧 蓝色
+                                    <code style="background:rgba(22,163,106,0.08);padding:1px 4px;border-radius:3px;color:#16a34a;">## 新增xxx</code> → ➕ 绿色
+                                    <code style="background:rgba(239,68,68,0.08);padding:1px 4px;border-radius:3px;color:#dc2626;">## 修复xxx</code> → 🐛 红色
+                                    其他 → 🚀 灰色
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- 右栏：实时预览 -->
-            <div class="panel" style="display: flex; flex-direction: column;">
+        <!-- 下方全宽预览面板 -->
+        <div class="panel" style="display: flex; flex-direction: column; margin-top: 20px;">
                 <div class="panel-header" style="padding: 14px 16px; border-bottom: 1px solid var(--border);">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <div
@@ -194,14 +229,37 @@
                                 <line x1="12" y1="17" x2="12" y2="21"></line>
                             </svg>
                         </div>
-                        <div>
-                            <div style="font-size: 13px; font-weight: 600; color: var(--text);">客户端预览</div>
-                            <div style="font-size: 10px; color: var(--text-muted);">模拟主软件公告卡片效果</div>
+                        <div style="flex:1;">
+                            <div style="font-size: 13px; font-weight: 600; color: var(--text);">实时预览</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">左侧为卡片样式，右侧为内容渲染</div>
                         </div>
+                    </div>
+                    <!-- 预览 Tab 切换 -->
+                    <div style="display: flex; gap: 4px; margin-top: 10px;">
+                        <button class="btn" style="flex:1; font-size:10px; padding:4px 6px; justify-content:center;"
+                            id="nmPreviewTabCard" onclick="app._switchPreviewTab('card')"
+                            >卡片</button>
+                        <button class="btn" style="flex:1; font-size:10px; padding:4px 6px; justify-content:center; opacity:0.5;"
+                            id="nmPreviewTabContent" onclick="app._switchPreviewTab('content')"
+                            >Markdown</button>
+                        <button class="btn" style="flex:1; font-size:10px; padding:4px 6px; justify-content:center; opacity:0.5;"
+                            id="nmPreviewTabClient" onclick="app._switchPreviewTab('client')"
+                            >客户端效果</button>
                     </div>
                 </div>
                 <div class="panel-body" style="padding: 16px; flex: 1; overflow-y: auto; background: var(--bg);">
-                    <div id="noticePreviewContainer"></div>
+                    <!-- Tab: 卡片预览 -->
+                    <div id="noticePreviewTabCard">
+                        <div id="noticePreviewContainer"></div>
+                    </div>
+                    <!-- Tab: Markdown 预览 -->
+                    <div id="noticePreviewTabContent" style="display:none;">
+                        <div id="noticeContentPreview"></div>
+                    </div>
+                    <!-- Tab: 客户端效果预览 -->
+                    <div id="noticePreviewTabClient" style="display:none;">
+                        <div id="noticeClientPreview"></div>
+                    </div>
                 </div>
             </div>
         </div>

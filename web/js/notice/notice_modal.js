@@ -20,6 +20,7 @@
     }
 
     function renderInlineBasic(text) {
+        if (window.MarkdownRenderer) return window.MarkdownRenderer.renderInline(text);
         let html = escapeHtml(text);
         html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
         html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -33,6 +34,7 @@
     }
 
     function parseLogTextHtml(text) {
+        if (window.MarkdownRenderer) return window.MarkdownRenderer.parseLogTextHtml(text);
         const safeText = escapeHtml(String(text || ''));
         const parts = safeText.split(/(（.*?）)/g);
         return parts.map((part) => {
@@ -53,6 +55,7 @@
     }
 
     function parseMarkdown(md) {
+        if (window.MarkdownRenderer) return window.MarkdownRenderer.parseChangelog(md);
         const lines = String(md || '').split('\n');
         const data = { title: '更新日志', version: 'Latest', sections: [] };
         let currentSection = null;
@@ -83,6 +86,7 @@
     }
 
     function parseArticleMarkdown(md, fallbackTitle) {
+        if (window.MarkdownRenderer) return window.MarkdownRenderer.parseArticleMarkdown(md, fallbackTitle);
         const blocks = String(md || '').split(/\n{2,}/);
         const data = {
             title: fallbackTitle || '日常公告',
@@ -128,6 +132,7 @@
     }
 
     function renderMarkdownSafe(markdownText) {
+        if (window.MarkdownRenderer) return window.MarkdownRenderer.render(markdownText);
         const src = String(markdownText == null ? '' : markdownText).replace(/\r\n?/g, '\n');
         const lines = src.split('\n');
         const out = [];

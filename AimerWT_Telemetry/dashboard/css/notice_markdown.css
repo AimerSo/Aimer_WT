@@ -1,0 +1,367 @@
+/*
+ * Markdown 文章排版样式
+ * 作用于 .md-content 容器内的所有 Markdown 产出 HTML
+ * 用于公告详情弹窗和仪表盘 Markdown 预览
+ */
+
+/* ── 基础排版 ─────────────────────────────────────────── */
+
+.md-content {
+    font-size: 14px;
+    line-height: 1.8;
+    color: #374151;
+    word-break: break-word;
+}
+
+.md-content > *:first-child {
+    margin-top: 0;
+}
+
+.md-content > *:last-child {
+    margin-bottom: 0;
+}
+
+/* ── 标题 ─────────────────────────────────────────────── */
+
+.md-content h1,
+.md-content h2,
+.md-content h3,
+.md-content h4,
+.md-content h5,
+.md-content h6 {
+    color: #111827;
+    font-weight: 700;
+    line-height: 1.4;
+    margin-top: 24px;
+    margin-bottom: 12px;
+}
+
+.md-content h1 { font-size: 22px; border-bottom: 2px solid #f3f4f6; padding-bottom: 10px; }
+.md-content h2 { font-size: 18px; border-bottom: 1px solid #f3f4f6; padding-bottom: 8px; }
+.md-content h3 { font-size: 16px; }
+.md-content h4 { font-size: 14px; }
+.md-content h5 { font-size: 13px; color: #4b5563; }
+.md-content h6 { font-size: 12px; color: #6b7280; }
+
+/* ── 段落与文本 ───────────────────────────────────────── */
+
+.md-content p {
+    margin: 0 0 14px;
+}
+
+.md-content strong {
+    font-weight: 700;
+    color: #111827;
+}
+
+.md-content em {
+    font-style: italic;
+}
+
+.md-content del {
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+/* ── 链接 ─────────────────────────────────────────────── */
+
+.md-content a {
+    color: #3b82f6;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.md-content a:hover {
+    color: #2563eb;
+    border-bottom-color: #2563eb;
+}
+
+/* ── 图片 ─────────────────────────────────────────────── */
+
+.md-content .md-img,
+.md-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    margin: 12px 0;
+    display: block;
+}
+
+/* ── 引用 ─────────────────────────────────────────────── */
+
+.md-content blockquote {
+    margin: 16px 0;
+    padding: 12px 16px;
+    border-left: 4px solid #3b82f6;
+    background: #eff6ff;
+    border-radius: 0 10px 10px 0;
+    color: #1e40af;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.md-content blockquote p {
+    margin: 0;
+}
+
+.md-content blockquote blockquote {
+    margin: 8px 0 0;
+    border-left-color: #93c5fd;
+    background: rgba(59, 130, 246, 0.06);
+}
+
+/* ── 列表 ─────────────────────────────────────────────── */
+
+.md-content ul,
+.md-content ol {
+    margin: 0 0 14px 0;
+    padding-left: 24px;
+}
+
+.md-content li {
+    margin-bottom: 6px;
+}
+
+.md-content li > ul,
+.md-content li > ol {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+/* 任务列表 */
+.md-content ul.contains-task-list,
+.md-content .task-list-item {
+    list-style: none;
+}
+
+.md-content .contains-task-list {
+    padding-left: 4px;
+}
+
+.md-content .task-list-item input[type="checkbox"] {
+    margin-right: 6px;
+    pointer-events: none;
+}
+
+/* ── 代码 ─────────────────────────────────────────────── */
+
+.md-content code {
+    font-family: 'Consolas', 'Monaco', 'Menlo', monospace;
+    font-size: 0.88em;
+    padding: 2px 6px;
+    border-radius: 5px;
+    background: #f3f4f6;
+    color: #e11d48;
+}
+
+.md-content pre {
+    margin: 14px 0;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.md-content pre code {
+    display: block;
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.6;
+    background: #1e293b;
+    color: #e2e8f0;
+    overflow-x: auto;
+    border-radius: 10px;
+}
+
+.md-content pre code.hljs {
+    background: #0d1117;
+    padding: 14px 18px;
+}
+
+/* ── 表格 ─────────────────────────────────────────────── */
+
+.md-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 13px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.md-content thead th {
+    background: #f9fafb;
+    font-weight: 700;
+    color: #374151;
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.md-content tbody td {
+    padding: 8px 14px;
+    border-bottom: 1px solid #f3f4f6;
+    color: #4b5563;
+}
+
+.md-content tbody tr:nth-child(even) {
+    background: #fafbfc;
+}
+
+.md-content tbody tr:hover {
+    background: #f0f5ff;
+}
+
+/* ── 水平线 ───────────────────────────────────────────── */
+
+.md-content hr {
+    margin: 24px 0;
+    border: none;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #d1d5db, transparent);
+}
+
+/* ── @用户 / #issue 高亮 ──────────────────────────────── */
+
+.md-content .md-mention,
+.md-content .md-issue {
+    display: inline-flex;
+    align-items: center;
+    margin: 0 2px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 0.88em;
+    font-weight: 500;
+}
+
+.md-content .md-mention {
+    background: #eff6ff;
+    color: #3b82f6;
+}
+
+.md-content .md-issue {
+    background: #f0fdf4;
+    color: #16a34a;
+}
+
+/* ── 剧透遮盖 ─────────────────────────────────────────── */
+
+.md-content .md-spoiler,
+.md-spoiler {
+    background: #1f2937;
+    color: transparent;
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 1px 6px;
+    transition: color 0.2s ease, background 0.2s ease;
+    user-select: none;
+}
+
+.md-content .md-spoiler:hover,
+.md-spoiler:hover {
+    color: inherit;
+    background: rgba(0, 0, 0, 0.08);
+}
+
+/* ── 暗色主题适配 ─────────────────────────────────────── */
+
+[data-theme="dark"] .md-content {
+    color: #d1d5db;
+}
+
+[data-theme="dark"] .md-content h1,
+[data-theme="dark"] .md-content h2,
+[data-theme="dark"] .md-content h3,
+[data-theme="dark"] .md-content h4,
+[data-theme="dark"] .md-content h5,
+[data-theme="dark"] .md-content h6 {
+    color: #f3f4f6;
+}
+
+[data-theme="dark"] .md-content h1,
+[data-theme="dark"] .md-content h2 {
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .md-content strong {
+    color: #f9fafb;
+}
+
+[data-theme="dark"] .md-content a {
+    color: #60a5fa;
+}
+
+[data-theme="dark"] .md-content a:hover {
+    color: #93bbfd;
+    border-bottom-color: #93bbfd;
+}
+
+[data-theme="dark"] .md-content blockquote {
+    background: rgba(59, 130, 246, 0.12);
+    border-left-color: #3b82f6;
+    color: #93c5fd;
+}
+
+[data-theme="dark"] .md-content code {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fb7185;
+}
+
+[data-theme="dark"] .md-content pre code {
+    background: #0d1117;
+    color: #e2e8f0;
+}
+
+[data-theme="dark"] .md-content table {
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .md-content thead th {
+    background: rgba(255, 255, 255, 0.04);
+    color: #e5e7eb;
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .md-content tbody td {
+    border-bottom-color: rgba(255, 255, 255, 0.04);
+    color: #d1d5db;
+}
+
+[data-theme="dark"] .md-content tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="dark"] .md-content tbody tr:hover {
+    background: rgba(59, 130, 246, 0.08);
+}
+
+[data-theme="dark"] .md-content hr {
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.12), transparent);
+}
+
+[data-theme="dark"] .md-content .md-mention {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+}
+
+[data-theme="dark"] .md-content .md-issue {
+    background: rgba(22, 163, 106, 0.15);
+    color: #34d399;
+}
+
+[data-theme="dark"] .md-content .md-spoiler,
+[data-theme="dark"] .md-spoiler {
+    background: #e5e7eb;
+}
+
+[data-theme="dark"] .md-content .md-spoiler:hover,
+[data-theme="dark"] .md-spoiler:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .md-content img {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}

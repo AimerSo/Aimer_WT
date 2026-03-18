@@ -482,51 +482,73 @@ const app = {
         const dates = growthData.map(d => d.date);
 
         const option = {
-            grid: { left: 30, right: 20, top: 50, bottom: 30 },
-            tooltip: { trigger: 'axis' },
+            grid: { left: 48, right: 24, top: 48, bottom: 36, containLabel: false },
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: 'rgba(15, 23, 42, 0.88)',
+                borderColor: 'transparent',
+                borderRadius: 12,
+                padding: [12, 16],
+                textStyle: { color: '#f1f5f9', fontSize: 12, fontFamily: "'Inter', sans-serif" },
+                axisPointer: {
+                    type: 'cross',
+                    crossStyle: { color: '#e2e8f0', width: 1, type: 'dashed' },
+                    lineStyle: { color: 'rgba(37, 99, 235, 0.15)', width: 1, type: 'dashed' }
+                },
+                formatter: function (params) {
+                    var header = '<div style="font-weight:600;margin-bottom:6px;font-size:13px;">' + params[0].axisValue + '</div>';
+                    var body = params.map(function (p) {
+                        var dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' +
+                            (typeof p.color === 'string' ? p.color : '#3b82f6') + ';margin-right:6px;"></span>';
+                        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;">' +
+                            '<span>' + dot + p.seriesName + '</span>' +
+                            '<span style="font-weight:700;">' + (p.value || 0) + '</span></div>';
+                    }).join('');
+                    return header + body;
+                }
+            },
             xAxis: {
                 type: 'category',
                 data: dates.map(d => d.slice(5)),
                 axisLine: { lineStyle: { color: '#e2e8f0' } },
-                axisLabel: { color: '#64748b', fontSize: 11 }
+                axisTick: { show: false },
+                axisLabel: { color: '#94a3b8', fontSize: 11, margin: 12 },
+                boundaryGap: false
             },
             yAxis: {
                 type: 'value',
-                min: 1,
+                min: 0,
                 minInterval: 1,
-                axisLabel: { color: '#94a3b8', fontSize: 11 },
-                splitLine: { lineStyle: { color: '#f1f5f9' } }
+                axisLabel: { color: '#94a3b8', fontSize: 11, margin: 12, formatter: (v) => v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v },
+                splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
+                axisLine: { show: false },
+                axisTick: { show: false }
             },
             series: [
                 {
                     name: '用户增长',
                     type: 'line',
                     data: growthData.map(d => d.count),
-                    smooth: true,
+                    smooth: 0.4,
                     symbol: 'circle',
-                    symbolSize: 6,
-                    lineStyle: { color: this.colors.primary, width: 3 },
-                    itemStyle: { color: this.colors.primary },
+                    symbolSize: 4,
+                    showSymbol: false,
+                    emphasis: { focus: 'series', itemStyle: { borderWidth: 3, borderColor: '#fff', shadowBlur: 8, shadowColor: 'rgba(37, 99, 235, 0.35)' } },
+                    lineStyle: { color: '#3b82f6', width: 2.5, shadowBlur: 6, shadowColor: 'rgba(37, 99, 235, 0.2)', shadowOffsetY: 4 },
+                    itemStyle: { color: '#3b82f6' },
                     areaStyle: {
                         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: 'rgba(37, 99, 235, 0.3)' },
-                            { offset: 1, color: 'rgba(37, 99, 235, 0)' }
+                            { offset: 0, color: 'rgba(59, 130, 246, 0.25)' },
+                            { offset: 0.6, color: 'rgba(59, 130, 246, 0.06)' },
+                            { offset: 1, color: 'rgba(59, 130, 246, 0)' }
                         ])
                     },
                     markPoint: {
-                        symbol: 'pin',
-                        symbolSize: 48,
-                        itemStyle: { color: this.colors.warning },
-                        label: {
-                            color: '#fff',
-                            fontSize: 11,
-                            formatter: (params) => this.formatNumber(params.value)
-                        },
-                        data: [{
-                            name: '峰值',
-                            coord: [peak.index, peak.value],
-                            value: peak.value
-                        }]
+                        symbol: 'circle',
+                        symbolSize: 10,
+                        itemStyle: { color: '#f59e0b', borderColor: '#fff', borderWidth: 2, shadowBlur: 6, shadowColor: 'rgba(245, 158, 11, 0.4)' },
+                        label: { show: true, position: 'top', color: '#f59e0b', fontWeight: 700, fontSize: 12, formatter: (params) => this.formatNumber(params.value) },
+                        data: [{ name: '峰值', coord: [peak.index, peak.value], value: peak.value }]
                     },
                     sampling: 'lttb',
                     large: true,
@@ -540,9 +562,15 @@ const app = {
                 name: '对比周期',
                 type: 'line',
                 data: compareData.map(d => d.count),
-                smooth: true,
+                smooth: 0.4,
                 symbol: 'none',
-                lineStyle: { color: this.colors.muted, width: 2, type: 'dashed' }
+                lineStyle: { color: '#cbd5e1', width: 1.5, type: [6, 4] },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(203, 213, 225, 0.12)' },
+                        { offset: 1, color: 'rgba(203, 213, 225, 0)' }
+                    ])
+                }
             });
         }
 
@@ -550,9 +578,10 @@ const app = {
             const releaseIndex = dates.findIndex(d => d === releaseDate);
             if (releaseIndex >= 0) {
                 option.series[0].markLine = {
-                    symbol: ['none', 'none'],
-                    label: { formatter: '视频发布', color: this.colors.warning },
-                    lineStyle: { color: this.colors.warning, type: 'dashed' },
+                    symbol: ['none', 'diamond'],
+                    symbolSize: 6,
+                    label: { formatter: '视频发布', color: '#f59e0b', fontSize: 11, fontWeight: 600, padding: [4, 8], backgroundColor: 'rgba(245, 158, 11, 0.08)', borderRadius: 4 },
+                    lineStyle: { color: '#f59e0b', type: [4, 4], width: 1.5 },
                     data: [{ xAxis: releaseIndex }]
                 };
                 this.setText('growthPeakInfo', `峰值 ${peak.date} · 视频发布 ${releaseDate}`);
@@ -582,42 +611,81 @@ const app = {
     },
 
     /**
-     * 渲染新增与 DAU 对比图
+     * 渲染新增与 DAU 对比图（柱状+折线叠加）
      */
     renderNewVsDauChart(growthData, compareData) {
         if (!growthData.length || !this.state.charts.newVsDauChart) return;
 
         const option = {
-            grid: { left: 35, right: 20, top: 20, bottom: 30 },
-            tooltip: { trigger: 'axis' },
+            grid: { left: 44, right: 16, top: 36, bottom: 32 },
+            legend: {
+                top: 4,
+                right: 0,
+                icon: 'roundRect',
+                itemWidth: 12,
+                itemHeight: 4,
+                textStyle: { color: '#94a3b8', fontSize: 11 },
+                itemGap: 16
+            },
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: 'rgba(15, 23, 42, 0.88)',
+                borderColor: 'transparent',
+                borderRadius: 12,
+                padding: [10, 14],
+                textStyle: { color: '#f1f5f9', fontSize: 12 },
+                axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(37, 99, 235, 0.04)' } }
+            },
             xAxis: {
                 type: 'category',
                 data: growthData.map(d => d.date.slice(5)),
-                axisLabel: { color: '#64748b', fontSize: 11 }
+                axisLabel: { color: '#94a3b8', fontSize: 10 },
+                axisLine: { lineStyle: { color: '#e2e8f0' } },
+                axisTick: { show: false }
             },
             yAxis: {
                 type: 'value',
-                min: 1,
+                min: 0,
                 minInterval: 1,
-                axisLabel: { color: '#94a3b8', fontSize: 11 },
-                splitLine: { lineStyle: { color: '#f1f5f9' } }
+                axisLabel: { color: '#94a3b8', fontSize: 10 },
+                splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
+                axisLine: { show: false },
+                axisTick: { show: false }
             },
             series: [
                 {
                     name: '新增用户',
-                    type: 'line',
+                    type: 'bar',
                     data: growthData.map(d => d.new_count ?? d.count),
-                    smooth: true,
-                    symbol: 'none',
-                    lineStyle: { color: this.colors.secondary, width: 2 }
+                    barWidth: '40%',
+                    barMaxWidth: 16,
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(16, 185, 129, 0.7)' },
+                            { offset: 1, color: 'rgba(16, 185, 129, 0.15)' }
+                        ]),
+                        borderRadius: [4, 4, 0, 0]
+                    },
+                    emphasis: {
+                        itemStyle: { color: 'rgba(16, 185, 129, 0.85)' }
+                    }
                 },
                 {
                     name: 'DAU',
                     type: 'line',
                     data: growthData.map(d => d.dau ?? 0),
-                    smooth: true,
-                    symbol: 'none',
-                    lineStyle: { color: this.colors.primary, width: 2 }
+                    smooth: 0.4,
+                    symbol: 'circle',
+                    symbolSize: 4,
+                    showSymbol: false,
+                    lineStyle: { color: '#8b5cf6', width: 2, shadowBlur: 4, shadowColor: 'rgba(139, 92, 246, 0.2)' },
+                    itemStyle: { color: '#8b5cf6' },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(139, 92, 246, 0.15)' },
+                            { offset: 1, color: 'rgba(139, 92, 246, 0)' }
+                        ])
+                    }
                 }
             ]
         };
@@ -627,9 +695,9 @@ const app = {
                 name: '新增对比',
                 type: 'line',
                 data: compareData.map(d => d.new_count ?? d.count),
-                smooth: true,
+                smooth: 0.4,
                 symbol: 'none',
-                lineStyle: { color: this.colors.muted, width: 1, type: 'dashed' }
+                lineStyle: { color: '#cbd5e1', width: 1, type: [4, 3] }
             });
         }
 
@@ -637,7 +705,7 @@ const app = {
     },
 
     /**
-     * 渲染饼图
+     * 渲染精致环形分布图
      */
     renderPieChart(chartId, rawData) {
         const chart = this.state.charts[chartId];
@@ -652,32 +720,66 @@ const app = {
             }))
             : normalized;
 
+        const palette = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#14b8a6'];
+        var total = data.reduce(function (sum, d) { return sum + d.value; }, 0);
+
         const option = {
             tooltip: {
                 trigger: 'item',
+                backgroundColor: 'rgba(15, 23, 42, 0.88)',
+                borderColor: 'transparent',
+                borderRadius: 12,
+                padding: [10, 14],
+                textStyle: { color: '#f1f5f9', fontSize: 12 },
                 formatter: (params) => {
                     const fullName = params.data && params.data.fullName ? params.data.fullName : params.name;
-                    return `${fullName}: ${params.value} (${params.percent}%)`;
+                    return '<div style="font-weight:600;margin-bottom:4px;">' + fullName + '</div>' +
+                        '<div style="display:flex;justify-content:space-between;gap:20px;">' +
+                        '<span style="color:#94a3b8;">数量</span><span style="font-weight:700;">' + params.value + '</span></div>' +
+                        '<div style="display:flex;justify-content:space-between;gap:20px;">' +
+                        '<span style="color:#94a3b8;">占比</span><span style="font-weight:700;">' + params.percent + '%</span></div>';
                 }
             },
             legend: {
-                bottom: 0,
-                icon: 'rect',
-                itemWidth: 10,
-                itemHeight: 10,
-                textStyle: { color: '#64748b', fontSize: 11 }
+                bottom: 4,
+                icon: 'circle',
+                itemWidth: 8,
+                itemHeight: 8,
+                itemGap: 12,
+                textStyle: { color: '#64748b', fontSize: 11, padding: [0, 0, 0, 2] }
             },
             series: [{
                 type: 'pie',
-                radius: ['45%', '72%'],
-                center: ['50%', '45%'],
-                label: { color: '#64748b', fontSize: 10 },
+                radius: ['52%', '76%'],
+                center: ['50%', '44%'],
+                avoidLabelOverlap: true,
+                padAngle: 2,
+                itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+                label: {
+                    show: true,
+                    position: 'outside',
+                    color: '#64748b',
+                    fontSize: 10,
+                    formatter: '{b}\n{d}%',
+                    lineHeight: 14,
+                    distanceToLabelLine: 4
+                },
+                labelLine: {
+                    length: 10,
+                    length2: 8,
+                    smooth: 0.3,
+                    lineStyle: { color: '#cbd5e1', width: 1 }
+                },
+                emphasis: {
+                    scaleSize: 6,
+                    itemStyle: { shadowBlur: 12, shadowColor: 'rgba(0, 0, 0, 0.12)' },
+                    label: { fontWeight: 700, fontSize: 12 }
+                },
                 data: data.map((item, idx) => ({
                     name: item.name,
                     value: item.value,
-                    itemStyle: {
-                        color: [this.colors.primary, this.colors.secondary, this.colors.warning, this.colors.danger, '#7c3aed', '#0ea5e9'][idx % 6]
-                    }
+                    fullName: item.fullName || item.name,
+                    itemStyle: { color: palette[idx % palette.length] }
                 }))
             }]
         };
@@ -2162,6 +2264,92 @@ const app = {
         }
         var countEl = document.getElementById('nmNoticeCountNum');
         if (countEl) countEl.textContent = String(this._noticeItems.length);
+        this._refreshContentPreview();
+    },
+
+    /* 预览区 Tab 切换：卡片 / Markdown / 客户端效果 */
+    _switchPreviewTab(tab) {
+        var cardPane = document.getElementById('noticePreviewTabCard');
+        var contentPane = document.getElementById('noticePreviewTabContent');
+        var clientPane = document.getElementById('noticePreviewTabClient');
+        var tabCard = document.getElementById('nmPreviewTabCard');
+        var tabContent = document.getElementById('nmPreviewTabContent');
+        var tabClient = document.getElementById('nmPreviewTabClient');
+
+        if (cardPane) cardPane.style.display = 'none';
+        if (contentPane) contentPane.style.display = 'none';
+        if (clientPane) clientPane.style.display = 'none';
+        if (tabCard) tabCard.style.opacity = '0.5';
+        if (tabContent) tabContent.style.opacity = '0.5';
+        if (tabClient) tabClient.style.opacity = '0.5';
+
+        if (tab === 'content') {
+            if (contentPane) contentPane.style.display = '';
+            if (tabContent) tabContent.style.opacity = '1';
+            this._refreshContentPreview();
+        } else if (tab === 'client') {
+            if (clientPane) clientPane.style.display = '';
+            if (tabClient) tabClient.style.opacity = '1';
+            this._refreshClientPreview();
+        } else {
+            if (cardPane) cardPane.style.display = '';
+            if (tabCard) tabCard.style.opacity = '1';
+        }
+    },
+
+    /* 实时刷新 Markdown 内容预览 */
+    _refreshContentPreview() {
+        var previewContainer = document.getElementById('noticeContentPreview');
+        if (!previewContainer) return;
+        var contentEl = document.getElementById('noticeEditContent');
+        var content = contentEl ? contentEl.value : '';
+        if (window.NoticePreviewModule && typeof window.NoticePreviewModule.renderContentPreview === 'function') {
+            window.NoticePreviewModule.renderContentPreview(previewContainer, { content: content });
+        }
+    },
+
+    /* 实时刷新客户端效果预览 */
+    _refreshClientPreview() {
+        var previewContainer = document.getElementById('noticeClientPreview');
+        if (!previewContainer) return;
+        var typeEl = document.getElementById('noticeEditType');
+        var titleEl = document.getElementById('noticeEditItemTitle');
+        var contentEl = document.getElementById('noticeEditContent');
+        var summaryEl = document.getElementById('noticeEditSummary');
+        var dateEl = document.getElementById('noticeEditDate');
+        var item = {
+            type: typeEl ? typeEl.value : 'normal',
+            title: titleEl ? titleEl.value : '',
+            content: contentEl ? contentEl.value : '',
+            summary: summaryEl ? summaryEl.value : '',
+            date: dateEl ? dateEl.value : ''
+        };
+        if (window.NoticePreviewModule && typeof window.NoticePreviewModule.renderClientPreview === 'function') {
+            window.NoticePreviewModule.renderClientPreview(previewContainer, item);
+        }
+    },
+
+    /* 模板快捷插入：在 textarea 光标处插入预设文本 */
+    _insertTemplate(type) {
+        var el = document.getElementById('noticeEditContent');
+        if (!el) return;
+        var templates = {
+            update: '# V3.x.x 更新日志\n\n## 优化改进\n- 优化了某功能的性能（@开发者 #123）\n- 调整了界面布局\n\n## 新增功能\n- 新增了某功能\n- 新增了某设置项\n\n## 修复问题\n- 修复了某个已知问题\n',
+            general: '# 公告标题\n\n## 内容概要\n\n这是一段公告正文，支持 **加粗**、*斜体*、[链接](https://example.com) 等。\n\n> 引用：提示信息\n\n- 列表项 1\n- 列表项 2\n',
+            image: '![图片描述](https://图片URL地址)',
+            spoiler: '||这里是剧透内容||'
+        };
+        var text = templates[type] || '';
+        if (!text) return;
+        var start = el.selectionStart || 0;
+        var end = el.selectionEnd || 0;
+        var before = el.value.substring(0, start);
+        var after = el.value.substring(end);
+        el.value = before + text + after;
+        el.selectionStart = el.selectionEnd = start + text.length;
+        el.focus();
+        this._refreshContentPreview();
+        this._refreshClientPreview();
     },
 
     /* 类型切换时自动填充标签文字 */

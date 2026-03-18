@@ -552,13 +552,20 @@ body {
 .kpi-card {
     background: var(--card);
     border-radius: 16px;
-    padding: 18px;
+    padding: 20px;
     border: 1px solid var(--border);
     box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
     gap: 10px;
-    transition: opacity 0.25s ease, transform 0.25s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: default;
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    border-color: rgba(37, 99, 235, 0.15);
 }
 
 .kpi-header {
