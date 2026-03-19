@@ -1,0 +1,77 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <h2 style="margin: 0; font-size: 18px; font-weight: 700;">兑换码统计</h2>
+            <div class="top-actions" style="margin-left: auto;">
+                <button class="btn" onclick="redeemModule.exportCodes()" style="font-size: 12px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    导出
+                </button>
+            </div>
+        </div>
+
+        <!-- 统计概览卡片 -->
+        <div class="redeem-stats-grid" id="redeemStatsCards"></div>
+
+        <!-- 分类标签栏 -->
+        <div class="redeem-category-tabs" id="redeemCategoryTabs"></div>
+
+        <!-- 内容标签页切换 -->
+        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+            <button class="btn" id="statsTabCodes" onclick="redeemModule.switchStatsTab('codes')" style="font-weight: 600;">兑换码列表</button>
+            <button class="btn" id="statsTabRecords" onclick="redeemModule.switchStatsTab('records')">使用记录</button>
+        </div>
+
+        <!-- 兑换码列表面板 -->
+        <div id="statsCodesPanel">
+            <div class="table-container">
+                <table class="table redeem-codes-table" id="statsCodesTable">
+                    <thead>
+                        <tr>
+                            <th>兑换码</th>
+                            <th>类型</th>
+                            <th>奖励内容</th>
+                            <th>使用次数</th>
+                            <th>状态</th>
+                            <th>备注</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsCodesBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 使用记录面板 -->
+        <div id="statsRecordsPanel" style="display: none;">
+            <div class="table-container">
+                <table class="table" id="statsRecordsTable">
+                    <thead>
+                        <tr>
+                            <th>兑换码</th>
+                            <th>用户</th>
+                            <th>HWID</th>
+                            <th>使用时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsRecordsBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 码详情弹窗 -->
+<div class="modal-mask" id="redeemDetailMask" onclick="redeemModule.closeDetail()" style="display:none;"></div>
+<div class="modal" id="redeemDetailModal" style="max-width: 560px;">
+    <div class="modal-header">
+        <h3 id="redeemDetailTitle">兑换码详情</h3>
+        <button class="btn-icon" onclick="redeemModule.closeDetail()">×</button>
+    </div>
+    <div class="modal-body" id="redeemDetailBody"></div>
+    <div class="modal-footer">
+        <button class="btn" onclick="redeemModule.closeDetail()">关闭</button>
+        <button class="btn primary" id="redeemDetailSaveBtn" onclick="redeemModule.saveDetail()" style="display:none;">保存修改</button>
+    </div>
+</div>

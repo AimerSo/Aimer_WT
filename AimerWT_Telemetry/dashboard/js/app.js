@@ -242,6 +242,27 @@ const app = {
     },
 
     /**
+     * 处理兑换码菜单点击
+     */
+    handleRedeemMenuClick(menuItem) {
+        const isExpanded = menuItem.classList.contains('expanded');
+        const submenu = document.getElementById('redeemSubmenu');
+
+        if (isExpanded) {
+            menuItem.classList.remove('expanded');
+            submenu.classList.remove('show');
+        } else {
+            menuItem.classList.add('expanded');
+            submenu.classList.add('show');
+
+            const firstSubmenuItem = submenu.querySelector('.submenu-item');
+            if (firstSubmenuItem) {
+                this.switchView('redeem_generate', firstSubmenuItem);
+            }
+        }
+    },
+
+    /**
      * 切换视图
      */
     async switchView(viewId, menuItem) {
@@ -255,7 +276,8 @@ const app = {
         const mainContent = document.getElementById('mainContent');
         try {
             const cacheBuster = `?t=${Date.now()}`;
-            const response = await fetch(`views/${viewId}.html${cacheBuster}`);
+            const viewPath = viewId.startsWith('redeem_') ? `redeem/${viewId}.html` : `views/${viewId}.html`;
+            const response = await fetch(`${viewPath}${cacheBuster}`);
             if (!response.ok) throw new Error(`Failed to load view: ${viewId}`);
             const html = await response.text();
             mainContent.innerHTML = html;
@@ -286,6 +308,15 @@ const app = {
                 break;
             case 'settings':
                 this.initSettings();
+                break;
+            case 'redeem':
+                this.initRedeem();
+                break;
+            case 'redeem_generate':
+                if (typeof redeemModule !== 'undefined') redeemModule.initGenerate();
+                break;
+            case 'redeem_stats':
+                if (typeof redeemModule !== 'undefined') redeemModule.initStats();
                 break;
             case 'announcement':
                 this.initAnnouncement();
@@ -3362,7 +3393,7 @@ const app = {
                 const def = all_tag_defs.find(t => t.name === tn);
                 if (def) {
                     const icon_cls = def.icon || 'ri-price-tag-3-line';
-                    const label = this._stripEmoji(def.display_name);
+                    const label = this._getTagLabel(def);
                     tag_badges_html += `<span style="margin-left:4px;padding:1px 6px;border-radius:8px;font-size:10px;background:var(--bg);border:1px solid var(--border);color:#64748b;font-weight:600;display:inline-flex;align-items:center;gap:3px;" title="${def.display_name}"><i class="${icon_cls}" style="font-size:11px;"></i>${label}</span>`;
                 }
             });
@@ -3576,11 +3607,11 @@ const app = {
                 <div style="display: flex; flex-direction: column; gap: 8px;">
                     <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">用户标记</div>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn" onclick="app.toggleMarkUser('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: ${markColor}; color: ${markColor};">
+                        <button class="btn" onclick="app.toggleMarkUser('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: ${markColor}; color: ${markColor}; min-width: 160px; justify-content: center;">
                             ${starIcon}
                             ${markText}
                         </button>
-                        <button class="btn" onclick="app.toggleAdminUser('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: ${adminColor}; color: ${adminColor};">
+                        <button class="btn" onclick="app.toggleAdminUser('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: ${adminColor}; color: ${adminColor}; min-width: 160px; justify-content: center;">
                             ${adminIcon}
                             ${adminText}
                         </button>
@@ -3618,6 +3649,15 @@ const app = {
                         <button class="btn" onclick="app.addBonusCredits('${hwid}', '${alias || originalName}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: #10b981; color: #10b981;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                             增加永久额度
+                        </button>
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">主题赠送</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn" onclick="app.grantSupporterTheme('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: #e879f9; color: #e879f9;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                            赠送 Supporter 主题
                         </button>
                     </div>
                 </div>
@@ -3678,6 +3718,22 @@ const app = {
         this._renderUserTagBadges(hwid, user);
     },
 
+    // 标签内部名 → 中文显示名映射
+    _tagDisplayNames: {
+        'sponsor_1': '一级赞助者',
+        'sponsor_2': '二级赞助者',
+        'sponsor_3': '三级赞助者',
+        'sponsor_4': '四级赞助者',
+    },
+
+    /**
+     * 获取标签的中文显示名称，优先后端 display_name，回退前端映射
+     */
+    _getTagLabel(tag) {
+        if (this._tagDisplayNames[tag.name]) return this._tagDisplayNames[tag.name];
+        return this._stripEmoji(tag.display_name);
+    },
+
     /**
      * 渲染用户标签 badge 选择器（可点击切换）
      */
@@ -3705,12 +3761,13 @@ const app = {
             const border = active ? '#94a3b8' : 'var(--border)';
             const txt_color = active ? '#1e293b' : 'var(--text-muted)';
             const icon_cls = tag.icon || 'ri-price-tag-3-line';
-            const label = this._stripEmoji(tag.display_name);
+            const label = this._getTagLabel(tag);
             const check = active ? '<i class="ri-check-line" style="font-size:12px;margin-right:2px;"></i>' : '';
             return `<button onclick="app.toggleUserTag('${hwid}','${tag.name}')" style="
                 padding: 4px 12px; border-radius: 16px; font-size: 12px; font-weight: 600;
                 border: 1.5px solid ${border}; background: ${bg}; color: ${txt_color};
                 cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 4px;
+                min-width: 110px; justify-content: center;
             ">${check}<i class="${icon_cls}" style="font-size:13px;color:#64748b;"></i>${label}</button>`;
         }).join('');
     },
@@ -3928,6 +3985,56 @@ const app = {
             else throw new Error();
         } catch (e) {
             this.showAlert('发送失败', 'danger');
+        }
+    },
+
+    /**
+     * 赠送 Supporter 主题给指定用户
+     */
+    async grantSupporterTheme(hwid) {
+        if (!confirm('确定要赠送 Supporter 主题给该用户吗？\n主题将在用户下次心跳上报时自动解锁。')) return;
+
+        try {
+            // 发送支持者一级弹窗样式的兑换结果指令
+            const cmd = {
+                type: 'redeem_result',
+                success: true,
+                title: '兑换成功',
+                message: '🎉 兑换成功！\n解锁支持者专属主题\n获得「一级赞助者」称号\n每日对话额度增加',
+                popup_style: 'style_sponsor_1',
+                theme_unlocked: true,
+                theme_file: 'supporter.json'
+            };
+            const res = await fetch(`${this.config.apiBase}/admin/user-command`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    machine_id: hwid,
+                    command: JSON.stringify(cmd)
+                })
+            });
+            if (!res.ok) throw new Error();
+
+            // 自动添加一级赞助者标签
+            const user = this.state.selectedUser;
+            if (user) {
+                let current_tags = [];
+                try { current_tags = typeof user.tags === 'string' ? JSON.parse(user.tags || '[]') : (user.tags || []); } catch {}
+                if (!current_tags.includes('sponsor_1')) {
+                    current_tags.push('sponsor_1');
+                    await fetch(`${this.config.apiBase}/admin/user-tags`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ machine_id: hwid, tags: current_tags })
+                    });
+                    user.tags = JSON.stringify(current_tags);
+                    this._renderUserTagBadges(hwid, user);
+                }
+            }
+
+            this.showAlert('Supporter 主题赠送指令已下发，已标记为一级赞助者', 'success');
+        } catch (e) {
+            this.showAlert('赠送失败', 'danger');
         }
     },
 
@@ -5800,6 +5907,313 @@ Aimer WT涂装系统：
         }).join('');
     }
 };
+
+// ─── 兑换码管理 ───
+Object.assign(app, {
+    _redeemPresets: [],
+    _redeemTab: 'codes',
+
+    async initRedeem() {
+        this._redeemTab = 'codes';
+        this.switchRedeemTab('codes');
+        await this._loadRedeemPresets();
+        await this._loadRedeemStats();
+        await this._loadRedeemCodes();
+    },
+
+    async _loadRedeemPresets() {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/redeem/presets`);
+            if (res.ok) {
+                const data = await res.json();
+                this._redeemPresets = data.presets || [];
+            }
+        } catch {}
+    },
+
+    async _loadRedeemStats() {
+        const container = document.getElementById('redeemStatsRow');
+        if (!container) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/redeem`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const codes = data.codes || [];
+            const total = codes.length;
+            const active = codes.filter(c => c.status === 'active').length;
+            const used = codes.filter(c => c.status === 'used').length;
+            const expired = codes.filter(c => c.status === 'expired').length;
+
+            const stats = [
+                { label: '总数', value: total, color: 'var(--primary)' },
+                { label: '可用', value: active, color: 'var(--secondary)' },
+                { label: '已用完', value: used, color: 'var(--warning)' },
+                { label: '已过期', value: expired, color: 'var(--danger)' },
+            ];
+            container.innerHTML = stats.map(s => `
+                <div style="background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px;">
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">${s.label}</div>
+                    <div style="font-size: 24px; font-weight: 700; color: ${s.color};">${s.value}</div>
+                </div>
+            `).join('');
+        } catch {}
+    },
+
+    async _loadRedeemCodes() {
+        const tbody = document.getElementById('redeemCodesBody');
+        if (!tbody) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/redeem`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const codes = data.codes || [];
+
+            if (codes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 40px;">暂无兑换码，点击上方按钮生成</td></tr>';
+                return;
+            }
+
+            const typeLabels = {};
+            this._redeemPresets.forEach(p => { typeLabels[p.type] = p.label; });
+
+            tbody.innerHTML = codes.map(code => {
+                const statusMap = {
+                    'active': '<span style="color: var(--secondary);">可用</span>',
+                    'used': '<span style="color: var(--warning);">已用完</span>',
+                    'expired': '<span style="color: var(--danger);">已过期</span>',
+                    'disabled': '<span style="color: var(--text-muted);">已停用</span>',
+                };
+                const statusHtml = statusMap[code.status] || code.status;
+                const typeLabel = typeLabels[code.type] || code.type;
+                const usageText = code.max_uses > 0 ? `${code.used_count} / ${code.max_uses}` : `${code.used_count} / ∞`;
+                const activeBtn = code.is_active
+                    ? `<button class="btn" onclick="app.toggleRedeemActive(${code.id}, false)" style="font-size: 11px; padding: 2px 8px;">停用</button>`
+                    : `<button class="btn" onclick="app.toggleRedeemActive(${code.id}, true)" style="font-size: 11px; padding: 2px 8px;">启用</button>`;
+
+                return `<tr>
+                    <td style="font-family: monospace; font-size: 13px; font-weight: 600; letter-spacing: 1px; cursor: pointer;" onclick="navigator.clipboard.writeText('${code.code}'); app.showAlert('已复制', 'success');" title="点击复制">${code.code}</td>
+                    <td><span style="padding: 2px 8px; border-radius: 8px; font-size: 11px; background: var(--bg); border: 1px solid var(--border);">${typeLabel}</span></td>
+                    <td>${usageText}</td>
+                    <td>${statusHtml}</td>
+                    <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${code.note || ''}">${code.note || '-'}</td>
+                    <td style="font-size: 12px; color: var(--text-muted);">${(code.created_at || '').replace('T', ' ').substring(0, 19)}</td>
+                    <td style="display: flex; gap: 4px;">
+                        ${activeBtn}
+                        <button class="btn" onclick="app.deleteRedeemCode(${code.id})" style="font-size: 11px; padding: 2px 8px; color: var(--danger); border-color: var(--danger);">删除</button>
+                    </td>
+                </tr>`;
+            }).join('');
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--danger);">加载失败</td></tr>';
+        }
+    },
+
+    async _loadRedeemRecords() {
+        const tbody = document.getElementById('redeemRecordsBody');
+        if (!tbody) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/redeem/records`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const records = data.records || [];
+
+            if (records.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 40px;">暂无使用记录</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = records.map(r => {
+                const hwid = r.machine_id || '-';
+                const displayHwid = hwid.length > 12 ? hwid.substring(0, 6) + '...' + hwid.substring(hwid.length - 4) : hwid;
+                const userDisplay = r.alias || displayHwid;
+                return `<tr>
+                    <td style="font-family: monospace; font-size: 13px; font-weight: 600;">${r.code}</td>
+                    <td>${userDisplay}</td>
+                    <td style="font-family: monospace; font-size: 12px;" title="${hwid}">${displayHwid}</td>
+                    <td style="font-size: 12px; color: var(--text-muted);">${r.created_at || '-'}</td>
+                </tr>`;
+            }).join('');
+        } catch {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--danger);">加载失败</td></tr>';
+        }
+    },
+
+    switchRedeemTab(tab) {
+        this._redeemTab = tab;
+        const codesPanel = document.getElementById('redeemCodesPanel');
+        const recordsPanel = document.getElementById('redeemRecordsPanel');
+        const codesBtn = document.getElementById('redeemTabCodes');
+        const recordsBtn = document.getElementById('redeemTabRecords');
+        if (!codesPanel || !recordsPanel) return;
+
+        if (tab === 'codes') {
+            codesPanel.style.display = '';
+            recordsPanel.style.display = 'none';
+            if (codesBtn) codesBtn.style.fontWeight = '600';
+            if (recordsBtn) recordsBtn.style.fontWeight = '';
+            this._loadRedeemCodes();
+        } else {
+            codesPanel.style.display = 'none';
+            recordsPanel.style.display = '';
+            if (codesBtn) codesBtn.style.fontWeight = '';
+            if (recordsBtn) recordsBtn.style.fontWeight = '600';
+            this._loadRedeemRecords();
+        }
+    },
+
+    showGenerateRedeemModal() {
+        const presetOptions = this._redeemPresets.map(p =>
+            `<option value="${p.name}" data-payload='${p.payload}' data-max-uses="${p.max_uses}">${p.label}</option>`
+        ).join('');
+
+        const content = `
+            <div class="form-group">
+                <label>预设类型</label>
+                <select class="select" style="width: 100%;" id="redeemPresetType" onchange="app._onRedeemPresetChange()">
+                    ${presetOptions}
+                    <option value="custom">自定义...</option>
+                </select>
+            </div>
+            <div id="redeemCustomPayload" style="display: none;">
+                <div class="form-group">
+                    <label>功能类型名称</label>
+                    <input type="text" class="input" style="width: 100%;" id="redeemCustomType" placeholder="如 custom_gift">
+                </div>
+                <div class="form-group">
+                    <label>Payload (JSON)</label>
+                    <textarea class="input" style="width: 100%; height: 80px; font-family: monospace; font-size: 12px; resize: vertical;" id="redeemCustomPayloadText" placeholder='{"theme":"supporter.json","bonus":10,"tag":""}'></textarea>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>生成数量</label>
+                <input type="number" class="input" style="width: 100%;" id="redeemCount" value="1" min="1" max="100">
+            </div>
+            <div class="form-group">
+                <label>单码最大使用次数</label>
+                <input type="number" class="input" style="width: 100%;" id="redeemMaxUses" value="1" min="0">
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">0 = 无限次</div>
+            </div>
+            <div class="form-group">
+                <label>有效期（天）</label>
+                <input type="number" class="input" style="width: 100%;" id="redeemExpireIn" value="0" min="0">
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">0 = 永不过期</div>
+            </div>
+            <div class="form-group">
+                <label>备注（可选）</label>
+                <input type="text" class="input" style="width: 100%;" id="redeemNote" placeholder="备注说明...">
+            </div>
+        `;
+
+        document.getElementById('controlModalTitle').textContent = '生成兑换码';
+        document.getElementById('controlModalBody').innerHTML = content;
+
+        const submitBtn = document.getElementById('controlModalSubmit');
+        submitBtn.textContent = '生成';
+        submitBtn.setAttribute('onclick', 'app.submitGenerateRedeem()');
+
+        document.getElementById('controlModalMask').classList.add('show');
+        document.getElementById('controlModal').classList.add('show');
+
+        // 初始化预设默认值
+        this._onRedeemPresetChange();
+    },
+
+    _onRedeemPresetChange() {
+        const sel = document.getElementById('redeemPresetType');
+        const customDiv = document.getElementById('redeemCustomPayload');
+        const maxUsesInput = document.getElementById('redeemMaxUses');
+        if (!sel) return;
+
+        if (sel.value === 'custom') {
+            if (customDiv) customDiv.style.display = '';
+        } else {
+            if (customDiv) customDiv.style.display = 'none';
+            const opt = sel.selectedOptions[0];
+            if (opt && maxUsesInput) {
+                maxUsesInput.value = opt.dataset.maxUses || '1';
+            }
+        }
+    },
+
+    async submitGenerateRedeem() {
+        const presetType = document.getElementById('redeemPresetType')?.value;
+        const count = parseInt(document.getElementById('redeemCount')?.value) || 1;
+        const maxUses = parseInt(document.getElementById('redeemMaxUses')?.value) || 1;
+        const expireIn = parseInt(document.getElementById('redeemExpireIn')?.value) || 0;
+        const note = document.getElementById('redeemNote')?.value?.trim() || '';
+
+        let type, payload;
+        if (presetType === 'custom') {
+            type = document.getElementById('redeemCustomType')?.value?.trim();
+            payload = document.getElementById('redeemCustomPayloadText')?.value?.trim();
+            if (!type || !payload) {
+                this.showAlert('请填写类型名称和 Payload', 'warning');
+                return;
+            }
+            try { JSON.parse(payload); } catch {
+                this.showAlert('Payload 不是有效的 JSON', 'warning');
+                return;
+            }
+        } else {
+            const preset = this._redeemPresets.find(p => p.name === presetType);
+            if (!preset) {
+                this.showAlert('预设类型不存在', 'warning');
+                return;
+            }
+            type = preset.type;
+            payload = preset.payload;
+        }
+
+        this.closeControlModal();
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/redeem`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, payload, max_uses: maxUses, count, expire_in: expireIn, note })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                this.showAlert(`已生成 ${data.count || count} 个兑换码`, 'success');
+                this._loadRedeemStats();
+                this._loadRedeemCodes();
+            } else throw new Error();
+        } catch {
+            this.showAlert('生成失败', 'danger');
+        }
+    },
+
+    async toggleRedeemActive(id, active) {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/redeem/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: active })
+            });
+            if (res.ok) {
+                this.showAlert(active ? '已启用' : '已停用', 'success');
+                this._loadRedeemCodes();
+                this._loadRedeemStats();
+            }
+        } catch {
+            this.showAlert('操作失败', 'danger');
+        }
+    },
+
+    async deleteRedeemCode(id) {
+        if (!confirm('确定要删除此兑换码？相关使用记录不会被删除。')) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/redeem/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                this.showAlert('已删除', 'success');
+                this._loadRedeemCodes();
+                this._loadRedeemStats();
+            }
+        } catch {
+            this.showAlert('删除失败', 'danger');
+        }
+    }
+});
 
 // 启动应用
 document.addEventListener('DOMContentLoaded', () => {

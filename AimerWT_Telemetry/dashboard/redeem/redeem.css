@@ -1,0 +1,400 @@
+/* =========================================
+   兑换码模块样式
+   redeem_generate / redeem_stats 视图
+   ========================================= */
+
+/* 预设类型卡片网格 */
+.redeem-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+}
+
+.redeem-preset-card {
+    background: var(--bg-card, #fff);
+    border: 2px solid var(--border, #e2e8f0);
+    border-radius: 14px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.redeem-preset-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: var(--card-accent, var(--primary, #3b82f6));
+    opacity: 0;
+    transition: opacity 0.25s;
+}
+
+.redeem-preset-card:hover {
+    border-color: var(--primary, #3b82f6);
+    box-shadow: 0 4px 20px rgba(59, 130, 246, 0.12);
+    transform: translateY(-2px);
+}
+
+.redeem-preset-card:hover::before { opacity: 1; }
+
+.redeem-preset-card.selected {
+    border-color: var(--primary, #3b82f6);
+    background: rgba(59, 130, 246, 0.04);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.redeem-preset-card.selected::before { opacity: 1; }
+
+.redeem-preset-card .preset-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text, #1e293b);
+    margin-bottom: 8px;
+}
+
+.redeem-preset-card .preset-type {
+    font-size: 11px;
+    color: var(--text-muted, #94a3b8);
+    margin-bottom: 12px;
+    font-family: monospace;
+    background: var(--bg, #f8fafc);
+    padding: 2px 8px;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+.redeem-preset-card .preset-rewards {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.redeem-preset-card .preset-reward-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary, #475569);
+}
+
+.redeem-preset-card .preset-reward-item .reward-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.reward-icon.theme { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
+.reward-icon.bonus { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.reward-icon.tag   { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+
+/* 生成表单面板 */
+.redeem-gen-panel {
+    background: var(--bg-card, #fff);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 14px;
+    padding: 28px;
+    margin-top: 20px;
+}
+
+.redeem-gen-panel .panel-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text, #1e293b);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.redeem-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.redeem-form-grid .form-group {
+    margin-bottom: 0;
+}
+
+.redeem-form-grid .form-group.full-width {
+    grid-column: 1 / -1;
+}
+
+/* Payload 可视化编辑器 */
+.payload-editor {
+    background: var(--bg, #f8fafc);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.payload-editor .payload-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.payload-editor .payload-row:last-child {
+    margin-bottom: 0;
+}
+
+.payload-editor .payload-label {
+    min-width: 100px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text, #1e293b);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.payload-editor .payload-label .label-icon {
+    font-size: 14px;
+}
+
+/* 弹窗预览区 */
+.popup-preview-container {
+    margin-top: 24px;
+}
+
+.popup-preview-container .preview-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text, #1e293b);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.popup-preview-frame {
+    background: #0f172a;
+    border-radius: 14px;
+    padding: 40px 32px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 200px;
+}
+
+.popup-preview-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 32px 28px;
+    text-align: center;
+    width: 340px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: popupBounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.popup-preview-card.style-celebration {
+    background: linear-gradient(135deg, #fef3c7 0%, #fff 30%, #fff 70%, #dbeafe 100%);
+}
+
+.popup-preview-card.style-premium {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+    color: #e0e7ff;
+}
+
+.popup-preview-card.style-premium .popup-preview-title {
+    color: #c7d2fe;
+}
+
+.popup-preview-card.style-premium .popup-preview-msg {
+    color: #a5b4fc;
+}
+
+.popup-preview-card .popup-preview-emoji {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.popup-preview-card .popup-preview-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 8px;
+}
+
+.popup-preview-card .popup-preview-msg {
+    font-size: 14px;
+    color: #64748b;
+    line-height: 1.6;
+    white-space: pre-line;
+}
+
+@keyframes popupBounce {
+    0% { transform: scale(0.9); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* 统计页分类标签栏 */
+.redeem-category-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.redeem-category-tab {
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid var(--border, #e2e8f0);
+    background: var(--bg-card, #fff);
+    color: var(--text-secondary, #475569);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.redeem-category-tab:hover {
+    border-color: var(--primary, #3b82f6);
+    color: var(--primary, #3b82f6);
+}
+
+.redeem-category-tab.active {
+    background: var(--primary, #3b82f6);
+    color: #fff;
+    border-color: var(--primary, #3b82f6);
+}
+
+.redeem-category-tab .tab-count {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.redeem-category-tab.active .tab-count {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+/* 统计概览卡片 */
+.redeem-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.redeem-stat-card {
+    background: var(--bg-card, #fff);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 12px;
+    padding: 16px 20px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.redeem-stat-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+}
+
+.redeem-stat-card .stat-label {
+    font-size: 12px;
+    color: var(--text-muted, #94a3b8);
+    margin-bottom: 4px;
+}
+
+.redeem-stat-card .stat-value {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+/* 码详情弹窗 */
+.redeem-detail-grid {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 8px 16px;
+    font-size: 13px;
+}
+
+.redeem-detail-grid .detail-label {
+    color: var(--text-muted, #94a3b8);
+    font-weight: 500;
+}
+
+.redeem-detail-grid .detail-value {
+    color: var(--text, #1e293b);
+    word-break: break-all;
+}
+
+.redeem-detail-grid .detail-value.mono {
+    font-family: monospace;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+/* 兑换码列表悬停效果 */
+.redeem-codes-table tbody tr {
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.redeem-codes-table tbody tr:hover {
+    background: rgba(59, 130, 246, 0.04);
+}
+
+/* 已生成码列表 */
+.generated-codes-list {
+    background: var(--bg, #f8fafc);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 16px;
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.generated-codes-list .code-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: background 0.15s;
+}
+
+.generated-codes-list .code-item:hover {
+    background: rgba(59, 130, 246, 0.06);
+}
+
+.generated-codes-list .code-item .code-text {
+    font-family: monospace;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    color: var(--text, #1e293b);
+}
+
+.generated-codes-list .code-item .copy-btn {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    border: 1px solid var(--border, #e2e8f0);
+    background: #fff;
+    color: var(--text-secondary, #475569);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.generated-codes-list .code-item .copy-btn:hover {
+    border-color: var(--primary, #3b82f6);
+    color: var(--primary, #3b82f6);
+}

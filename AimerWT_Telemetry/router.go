@@ -116,7 +116,7 @@ func initRouter(r *gin.Engine) {
 			return
 		}
 
-		if path == "/telemetry" || path == "/feedback" {
+		if path == "/telemetry" || path == "/feedback" || path == "/redeem" {
 			ua := c.GetHeader("User-Agent")
 			if len(ua) < 14 || ua[:14] != "AimerWT-Client" {
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Access Denied"})
@@ -132,6 +132,7 @@ func initRouter(r *gin.Engine) {
 	r.Static("/css", "./dashboard/css")
 	r.Static("/js", "./dashboard/js")
 	r.Static("/views", "./dashboard/views")
+	r.Static("/redeem", "./dashboard/redeem")
 
 	// 主软件前端文件（供 dashboard 内嵌浏览）
 	r.Static("/app", "../web")
@@ -753,8 +754,10 @@ func initRouter(r *gin.Engine) {
 			})
 		}
 
-		// AI 代理管理路由
 		initAIRoutes(admin)
+
+		// 兑换码管理路由
+		initRedeemRoutes(admin)
 
 		// ==================== 广告统计 API ====================
 
@@ -1003,6 +1006,9 @@ func initRouter(r *gin.Engine) {
 
 	// 客户端 AI 限额查询端点（返回用户剩余次数）
 	r.GET("/api/ai/quota", handleAIQuota)
+
+	// 客户端兑换码提交（使用与 /telemetry 相同的 UA 校验）
+	r.POST("/redeem", handleRedeem)
 
 	// 客户端反馈提交（使用与 /telemetry 相同的 UA 校验）
 	r.POST("/feedback", func(c *gin.Context) {

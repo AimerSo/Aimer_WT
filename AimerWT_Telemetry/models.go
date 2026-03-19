@@ -195,3 +195,28 @@ type UserTag struct {
 	SortOrder   int       `json:"sort_order"`
 	CreatedAt   time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
+
+// RedeemCode 兑换码定义表
+type RedeemCode struct {
+	ID        uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	Code      string     `gorm:"uniqueIndex;type:varchar(32)" json:"code"`
+	Type      string     `gorm:"type:varchar(32)" json:"type"`
+	Payload   string     `gorm:"type:text" json:"payload"`
+	MaxUses   int        `json:"max_uses" gorm:"default:1"`
+	UsedCount int        `json:"used_count" gorm:"default:0"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	IsActive  bool       `json:"is_active" gorm:"default:true"`
+	Note         string     `gorm:"type:text" json:"note"`
+	PopupTitle   string     `gorm:"type:varchar(128)" json:"popup_title"`
+	PopupMessage string     `gorm:"type:text" json:"popup_message"`
+	PopupStyle   string     `gorm:"type:varchar(32);default:'default'" json:"popup_style"`
+	CreatedAt    time.Time  `gorm:"autoCreateTime" json:"created_at"`
+}
+
+// RedeemRecord 兑换码使用记录表
+type RedeemRecord struct {
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Code      string    `gorm:"index;type:varchar(32)" json:"code"`
+	MachineID string    `gorm:"index;type:varchar(64)" json:"machine_id"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+}

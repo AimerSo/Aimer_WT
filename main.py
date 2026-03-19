@@ -715,6 +715,29 @@ class AppApi:
             elif cmd_type == "toast":
                 self._logger.info(f"[CMD] 收到管理员信息: {msg}")
                 self._window.evaluate_js(safe_js_call("showWarnToast", "管理员消息", msg, 5000))
+            elif cmd_type == "unlock_theme":
+                theme_file = cmd.get("theme_file", "")
+                if theme_file and self._theme_unlock:
+                    result = self._theme_unlock.unlock_theme_by_name(theme_file)
+                    if result.get("success"):
+                        self._logger.info(f"[CMD] 主题已解锁: {theme_file}")
+                        self._window.evaluate_js("if(window.app && app.loadThemeList) app.loadThemeList()")
+                        self._window.evaluate_js(safe_js_call("showAlert", "🎉 感谢支持", "开发者已赠送您支持者专属主题，您可在设置中切换使用，感谢您的支持！", "success"))
+            elif cmd_type == "redeem_result":
+                success = cmd.get("success", False)
+                title = cmd.get("title", "兑换结果")
+                message = cmd.get("message", "")
+                if success:
+                    self._logger.info(f"[CMD] 兑换成功: {message}")
+                    # 如果包含主题解锁，刷新主题列表
+                    if cmd.get("theme_unlocked"):
+                        theme_file = cmd.get("theme_file", "")
+                        if theme_file and self._theme_unlock:
+                            self._theme_unlock.unlock_theme_by_name(theme_file)
+                        self._window.evaluate_js("if(window.app && app.loadThemeList) app.loadThemeList()")
+                    self._window.evaluate_js(safe_js_call("showAlert", title, message, "success"))
+                else:
+                    self._window.evaluate_js(safe_js_call("showAlert", title, message, "error"))
 
         except Exception as e:
             print(f"专用指令解析异常: {e}")
@@ -4216,6 +4239,37 @@ class AppApi:
     def redeem_theme_code(self, code):
         # 校验兑换口令并解锁对应的隐藏主题。
         return self._theme_unlock.redeem_theme_code(code)
+
+    def redeem_code(self, code):
+        """向服务器提交兑换码验证，成功后执行对应功能"""
+        import requests
+        tm = get_telemetry_manager()
+        if not tm or not tm.report_url:
+            return {"success": False, "message": "遥测服务未配置"}
+
+        redeem_url = tm.report_url.replace("/telemetry", "/redeem")
+        try:
+            resp = requests.post(
+                redeem_url,
+                json={
+                    "code": str(code or "").strip(),
+                    "machine_id": tm.machine_id,
+                },
+                headers={"User-Agent": f"AimerWT-Client/{tm.app_version}"},
+                timeout=10,
+            )
+            data = resp.json()
+            if resp.status_code == 200 and data.get("status") == "success":
+                # 处理服务端返回的指令
+                cmd = data.get("command")
+                if cmd:
+                    self.on_user_command(json.dumps(cmd) if isinstance(cmd, dict) else str(cmd))
+                return {"success": True, "message": data.get("message", "兑换成功！")}
+            else:
+                return {"success": False, "message": data.get("error", "兑换失败")}
+        except Exception as e:
+            log.error(f"兑换码请求失败: {e}")
+            return {"success": False, "message": "网络请求失败，请稍后重试"}
 
     def reset_unlocked_themes(self):
         # 清空已解锁的隐藏主题，并回退到默认主题。

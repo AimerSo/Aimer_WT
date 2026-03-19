@@ -1,0 +1,170 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <h2 style="margin: 0; font-size: 18px; font-weight: 700;">生成兑换码</h2>
+        </div>
+
+        <!-- 预设类型卡片区 -->
+        <div style="margin-bottom: 8px;">
+            <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">选择预设类型或自定义</div>
+        </div>
+        <div class="redeem-preset-grid" id="redeemPresetGrid"></div>
+
+        <!-- 生成配置面板（选中预设后展开） -->
+        <div class="redeem-gen-panel" id="redeemGenPanel" style="display: none;">
+            <div class="panel-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                配置参数
+            </div>
+
+            <!-- Payload 可视化编辑 -->
+            <div class="payload-editor" id="payloadEditor">
+                <div class="payload-row">
+                    <div class="payload-label"><span class="label-icon">🎨</span> 主题文件</div>
+                    <select class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadTheme" onchange="redeemModule.updatePreview()">
+                        <option value="">不解锁主题</option>
+                        <option value="supporter.json">支持者主题</option>
+                        <option value="bi_an.json">彼岸主题</option>
+                        <option value="beiku.json">beiku 主题</option>
+                        <option value="lianying.json">爱樱主题</option>
+                        <option value="chifeng.json">赤峰主题</option>
+                    </select>
+                </div>
+                <div class="payload-row">
+                    <div class="payload-label"><span class="label-icon">💬</span> AI额度</div>
+                    <input type="number" class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadBonus" value="0" min="0" oninput="redeemModule.updatePreview()">
+                    <span style="font-size: 12px; color: var(--text-muted);">次永久对话额度</span>
+                </div>
+                <div class="payload-row">
+                    <div class="payload-label"><span class="label-icon">📈</span> 每日额度增加</div>
+                    <input type="number" class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadDailyBonus" value="0" min="0" oninput="redeemModule.updatePreview()">
+                    <span style="font-size: 12px; color: var(--text-muted);">次/天（0点刷新的每日上限增量）</span>
+                </div>
+                <div class="payload-row">
+                    <div class="payload-label"><span class="label-icon">🏷️</span> 用户标签</div>
+                    <select class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadTag" onchange="redeemModule.onTagChange()">
+                        <option value="">不添加标签</option>
+                        <option value="sponsor_1">一级支持者</option>
+                        <option value="sponsor_2">二级支持者</option>
+                        <option value="sponsor_3">三级支持者</option>
+                        <option value="sponsor_4">四级支持者</option>
+                        <option value="streamer">主播</option>
+                    </select>
+                </div>
+                <div class="payload-row" id="redeemNoteTagRow" style="display: none;">
+                    <div class="payload-label"><span class="label-icon">📝</span> 备注标签</div>
+                    <input type="text" class="input" style="flex: 1; max-width: 160px;" id="redeemNoteTag" placeholder="主播ID或用户名" oninput="redeemModule.updatePreview()">
+                    <span style="font-size: 12px; color: var(--text-muted);">用于标识此主播</span>
+                </div>
+                <div class="payload-row" id="redeemStreamerIdRow" style="display: none;">
+                    <div class="payload-label"><span class="label-icon">🎙️</span> 主播ID</div>
+                    <input type="text" class="input" style="flex: 1; max-width: 160px;" id="redeemStreamerId" placeholder="弹窗中显示的主播名称" oninput="redeemModule.updatePreview()">
+                    <span style="font-size: 12px; color: var(--text-muted);">显示为“来自xxx的分享”</span>
+                </div>
+            </div>
+
+            <!-- 基础参数 -->
+            <div class="redeem-form-grid" style="margin-top: 20px;">
+                <div class="form-group">
+                    <label>生成数量</label>
+                    <input type="number" class="input" style="width: 100%;" id="redeemGenCount" value="1" min="1" max="100">
+                </div>
+                <div class="form-group">
+                    <label>单码最大使用次数</label>
+                    <input type="number" class="input" style="width: 100%;" id="redeemGenMaxUses" value="1" min="0">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">0 = 无限次</div>
+                </div>
+                <div class="form-group">
+                    <label>有效期（天）</label>
+                    <input type="number" class="input" style="width: 100%;" id="redeemGenExpireIn" value="0" min="0">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">0 = 永不过期</div>
+                </div>
+                <div class="form-group">
+                    <label>备注（可选）</label>
+                    <input type="text" class="input" style="width: 100%;" id="redeemGenNote" placeholder="备注说明...">
+                </div>
+            </div>
+
+            <!-- 自定义弹窗设置 -->
+            <div style="margin-top: 24px; border-top: 1px solid var(--border); padding-top: 20px;">
+                <div style="font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+                    兑换成功弹窗（可选自定义）
+                </div>
+                <div class="redeem-form-grid">
+                    <div class="form-group">
+                        <label>自定义弹窗标题</label>
+                        <input type="text" class="input" style="width: 100%;" id="redeemPopupTitle" placeholder="留空则用默标题" oninput="redeemModule.updatePreview()">
+                    </div>
+                    <div class="form-group">
+                        <label>弹窗样式</label>
+                        <select class="input" style="width: 100%;" id="redeemPopupStyleSelect" onchange="redeemModule.updatePreview()">
+                            <option value="default">跟随预设类型</option>
+                            <option value="style_sponsor_1">支持者一级</option>
+                            <option value="style_sponsor_2">支持者二级</option>
+                            <option value="style_sponsor_3">支持者三级</option>
+                            <option value="style_sponsor_4">支持者四级</option>
+                            <option value="style_streamer">主播专属</option>
+                            <option value="style_streamer_share">主播分享</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>弹窗Logo</label>
+                        <select class="input" style="width: 100%;" id="redeemPopupLogo" onchange="redeemModule.updatePreview()">
+                            <option value="default">跟随弹窗样式</option>
+                            <option value="gift">🎁 礼物</option>
+                            <option value="star">⭐ 星星</option>
+                            <option value="crown">👑 皇冠</option>
+                            <option value="trophy">🏆 奖杯</option>
+                            <option value="mic">🎙️ 麦克风</option>
+                            <option value="users">👥 用户组</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>确认按钮文字</label>
+                        <input type="text" class="input" style="width: 100%;" id="redeemPopupButton" placeholder="留空则用默认文字" oninput="redeemModule.updatePreview()">
+                    </div>
+                    <div class="form-group full-width">
+                        <label>自定义弹窗内容</label>
+                        <textarea class="input" style="width: 100%; height: 60px; resize: vertical;" id="redeemPopupMessage" placeholder="留空则自动列出奖励内容" oninput="redeemModule.updatePreview()"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 弹窗预览 -->
+            <div class="popup-preview-container">
+                <div class="preview-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    弹窗预览
+                </div>
+                <div class="popup-preview-frame" id="popupPreviewFrame">
+                    <div style="color:#94a3b8; font-size:13px;">选择预设类型后显示预览</div>
+                </div>
+            </div>
+
+            <!-- 生成按钮 -->
+            <div style="margin-top: 24px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn" onclick="redeemModule.savePresetDefaults()" title="将当前配置保存为该预设的默认值">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                        保存为默认预设
+                    </button>
+                    <button class="btn" onclick="redeemModule.restorePresetDefaults()" title="恢复该预设的出厂默认配置">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                        恢复默认
+                    </button>
+                </div>
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn" onclick="redeemModule.resetForm()">重置</button>
+                    <button class="btn primary" onclick="redeemModule.submitGenerate()" style="min-width: 120px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        生成兑换码
+                    </button>
+                </div>
+            </div>
+
+            <!-- 生成结果展示 -->
+            <div id="redeemGenResult" style="display: none;"></div>
+        </div>
+    </div>
+</div>

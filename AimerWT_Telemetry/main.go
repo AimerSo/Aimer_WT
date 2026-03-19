@@ -28,7 +28,8 @@ func initDB() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 	db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{}, &FeedbackRecord{},
-		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{}, &AdClickEvent{})
+		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{}, &AdClickEvent{},
+		&RedeemCode{}, &RedeemRecord{})
 }
 
 func loadDashboard() {
@@ -108,6 +109,10 @@ func seedSystemTags() {
 		{Name: "risk", DisplayName: "风险用户", Color: "#64748b", Icon: "ri-alert-line", IsSystem: true, SortOrder: 3, CreatedAt: time.Now()},
 		{Name: "vip", DisplayName: "VIP", Color: "#64748b", Icon: "ri-vip-diamond-line", IsSystem: true, SortOrder: 4, CreatedAt: time.Now()},
 		{Name: "internal", DisplayName: "内测组", Color: "#64748b", Icon: "ri-tools-line", IsSystem: true, SortOrder: 5, CreatedAt: time.Now()},
+		{Name: "sponsor_1", DisplayName: "一级赞助者", Color: "#64748b", Icon: "ri-heart-line", IsSystem: true, SortOrder: 10, CreatedAt: time.Now()},
+		{Name: "sponsor_2", DisplayName: "二级赞助者", Color: "#64748b", Icon: "ri-heart-2-line", IsSystem: true, SortOrder: 11, CreatedAt: time.Now()},
+		{Name: "sponsor_3", DisplayName: "三级赞助者", Color: "#64748b", Icon: "ri-heart-3-line", IsSystem: true, SortOrder: 12, CreatedAt: time.Now()},
+		{Name: "sponsor_4", DisplayName: "四级赞助者", Color: "#64748b", Icon: "ri-vip-crown-line", IsSystem: true, SortOrder: 13, CreatedAt: time.Now()},
 	}
 	for _, tag := range presets {
 		var count int64
