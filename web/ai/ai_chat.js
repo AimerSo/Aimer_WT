@@ -443,19 +443,32 @@ const AIChat = {
             const resp = await fetch(`${serverUrl}/api/ai/quota?machine_id=${encodeURIComponent(machineId)}`);
             if (!resp.ok) throw new Error('请求失败');
             const data = await resp.json();
-            textEl.textContent = `剩余 ${data.remaining} 次`;
-            quotaEl.style.display = 'flex';
-
-            // 余量不足时高亮警示
-            quotaEl.classList.toggle('low', data.remaining <= 3 && data.remaining > 0);
-            quotaEl.classList.toggle('empty', data.remaining === 0);
+            this._setQuotaDisplay(data.remaining);
         } catch (e) {
             textEl.textContent = '--';
         }
     },
 
+    _setQuotaDisplay(remaining) {
+        const quotaEl = document.getElementById('ai-chat-quota');
+        const textEl = document.getElementById('ai-chat-quota-text');
+        if (!quotaEl || !textEl) return;
+
+        const value = Math.max(0, Number(remaining) || 0);
+        textEl.textContent = `剩余 ${value} 次`;
+        quotaEl.style.display = 'flex';
+        quotaEl.classList.toggle('low', value <= 3 && value > 0);
+        quotaEl.classList.toggle('empty', value === 0);
+    },
+
     // 获取后端服务器地址（从 pywebview 注入的全局变量获取）
     _getServerUrl() {
+        const provider = typeof AIProviderManager !== 'undefined'
+            ? AIProviderManager.getCurrentProvider()
+            : null;
+        if (provider?.name === 'proxy' && provider.serverUrl) {
+            return provider.serverUrl;
+        }
         return window._telemetryBaseUrl || 'https://telemetry.aimerelle.com';
     },
     
@@ -553,10 +566,17 @@ const AIChat = {
             }
             
             let responseContent = '';
+            let streamError = null;
+            let finalUsage = null;
             await provider.chatStream(messages, (chunk) => {
                 if (chunk.error) {
-                    throw new Error(chunk.error);
+                    streamError = new Error(chunk.error);
+                    return;
                 }
+                if (typeof chunk.quotaRemaining === 'number') {
+                    this._setQuotaDisplay(chunk.quotaRemaining);
+                }
+                if (chunk.usage) finalUsage = chunk.usage;
                 if (chunk.done) {
                     return;
                 }
@@ -565,11 +585,21 @@ const AIChat = {
                     AIChatMessages.updateStreamingMessage(responseContent);
                 }
             }, streamOptions);
+
+            if (streamError) {
+                throw streamError;
+            }
+
+            if (!responseContent.trim()) {
+                responseContent = 'AI 暂时没有返回可显示的内容，请稍后再试。';
+            }
             
             AIChatMessages.finalizeMessage(responseContent);
 
             const aiTokens = AIChatMessages.estimateTokens(responseContent);
-            AIChatMessages.updateTokens(userTokens, aiTokens);
+            const promptTokens = Number(finalUsage?.prompt ?? 0) || userTokens;
+            const completionTokens = Number(finalUsage?.completion ?? 0) || aiTokens;
+            AIChatMessages.updateTokens(promptTokens, completionTokens);
 
             // 发送完成后刷新限额显示
             if (AI_CONFIG.get('apiMode') === 'aimer_free') {
@@ -578,11 +608,16 @@ const AIChat = {
 
         } catch (error) {
             console.error('[AI] 请求失败:', error);
+            const partialContent = String(this.state.currentStream?.content || '').trim();
             AIChatMessages.hideLoading();
             this.state.isLoading = false;
-            setTimeout(() => {
-                AIChatMessages.addMessage('ai', `抱歉，请求失败：${error.message}`);
-            }, 300);
+            if (partialContent) {
+                AIChatMessages.finalizeMessage(`${partialContent}\n\n回复中断：${error.message}`);
+            } else {
+                setTimeout(() => {
+                    AIChatMessages.addMessage('ai', `抱歉，请求失败：${error.message}`);
+                }, 300);
+            }
 
             // 失败（含被限流）后也刷新限额
             if (AI_CONFIG.get('apiMode') === 'aimer_free') {

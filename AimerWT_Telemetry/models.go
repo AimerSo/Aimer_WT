@@ -178,9 +178,10 @@ type AIUserBan struct {
 
 // AIUserLimit 单用户每日限额覆盖（未设置则使用全局默认值）
 type AIUserLimit struct {
-	ID         uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	MachineID  string `gorm:"uniqueIndex;type:varchar(64)" json:"machine_id"`
-	DailyLimit int    `json:"daily_limit"`
+	ID           uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID    string `gorm:"uniqueIndex;type:varchar(64)" json:"machine_id"`
+	DailyLimit   int    `json:"daily_limit"`
+	BonusCredits int    `json:"bonus_credits"` // 永久固定额度（不随每日重置清零，用完为止）
 }
 
 // UserTag 用户标签元数据（管理标签名称/颜色/图标）

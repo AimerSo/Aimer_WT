@@ -534,6 +534,75 @@
 }
 
 /* 消息中的链接样式 */
+/* Markdown 渲染内容样式 */
+.ai-message-bubble h1,
+.ai-message-bubble h2,
+.ai-message-bubble h3,
+.ai-message-bubble h4 {
+    margin: 8px 0 4px 0;
+    font-weight: 600;
+    line-height: 1.3;
+}
+.ai-message-bubble h1 { font-size: 1.2em; }
+.ai-message-bubble h2 { font-size: 1.1em; }
+.ai-message-bubble h3 { font-size: 1.05em; }
+.ai-message-bubble h4 { font-size: 1em; }
+.ai-message-bubble p {
+    margin: 4px 0;
+    line-height: 1.6;
+}
+.ai-message-bubble ul,
+.ai-message-bubble ol {
+    margin: 4px 0;
+    padding-left: 20px;
+}
+.ai-message-bubble li {
+    margin: 2px 0;
+    line-height: 1.5;
+}
+.ai-message-bubble blockquote {
+    margin: 6px 0;
+    padding: 4px 10px;
+    border-left: 3px solid var(--primary, #FF9900);
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 4px;
+}
+.ai-message-bubble pre {
+    margin: 6px 0;
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 12px;
+    line-height: 1.4;
+}
+.ai-message-bubble code {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9em;
+    padding: 1px 4px;
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 3px;
+}
+.ai-message-bubble pre code {
+    padding: 0;
+    background: transparent;
+}
+.ai-message-bubble table {
+    border-collapse: collapse;
+    margin: 6px 0;
+    font-size: 13px;
+}
+.ai-message-bubble th,
+.ai-message-bubble td {
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    padding: 4px 8px;
+}
+.ai-message-bubble th {
+    background: rgba(0, 0, 0, 0.04);
+    font-weight: 600;
+}
+.ai-message-bubble > *:first-child { margin-top: 0; }
+.ai-message-bubble > *:last-child { margin-bottom: 0; }
 .ai-message-bubble a {
     color: var(--primary, #FF9900);
     text-decoration: none;

@@ -295,7 +295,9 @@ const AIChatSettings = {
         const reqEl = document.getElementById('ai-server-request-count');
 
         try {
-            const serverUrl = window._telemetryBaseUrl || 'https://telemetry.aimerelle.com';
+            const serverUrl = (window.AIChat && typeof AIChat._getServerUrl === 'function')
+                ? AIChat._getServerUrl()
+                : (window._telemetryBaseUrl || 'https://telemetry.aimerelle.com');
             const resp = await fetch(`${serverUrl}/api/ai/stats`);
             if (!resp.ok) throw new Error('请求失败');
             const data = await resp.json();

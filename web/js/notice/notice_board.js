@@ -139,7 +139,7 @@
         const connected = !!(app && app.telemetryConnected);
         const seqId = (app && app.userSeqId) ? app.userSeqId : 0;
         const footerText = connected
-            ? (seqId ? `已连接服务器 · 用户 #${seqId}` : '已连接服务器')
+            ? (seqId ? `已连接服务器 · 用户UID: ${seqId}` : '已连接服务器')
             : '未连接到服务器';
         const dotClass = connected ? 'connected' : 'disconnected';
 
@@ -198,7 +198,7 @@
         }
         if (text) {
             text.textContent = isConnected
-                ? (seqId ? `已连接服务器 · 用户 #${seqId}` : '已连接服务器')
+                ? (seqId ? `已连接服务器 · 用户UID: ${seqId}` : '已连接服务器')
                 : '未连接到服务器';
         }
     }

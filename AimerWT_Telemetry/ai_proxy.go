@@ -8,11 +8,13 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ─── AI 配置（持久化到 ContentConfig 表） ───
@@ -58,15 +60,19 @@ func defaultAIConfig() AIProxyConfig {
 
 // 加载AI配置
 func LoadAIConfig() {
+	aiConfig = defaultAIConfig()
 	raw := LoadConfig("ai_proxy_config")
 	if raw == "" {
-		aiConfig = defaultAIConfig()
 		SaveAIConfig()
 		return
 	}
 	if err := json.Unmarshal([]byte(raw), &aiConfig); err != nil {
 		log.Printf("[AI] 解析配置失败，使用默认值: %v", err)
 		aiConfig = defaultAIConfig()
+	}
+	// 兼容旧配置：如果 daily_limit 缺失（旧版存的是 hourly_limit），回退到默认值
+	if aiConfig.DailyLimit <= 0 {
+		aiConfig.DailyLimit = defaultAIConfig().DailyLimit
 	}
 }
 
@@ -92,34 +98,112 @@ func (dl *dailyLimiter) todayUsed(machineID string) int {
 	return int(count)
 }
 
-// Allow 检查用户是否还有今日剩余次数
+// Allow 检查用户是否还有今日剩余次数或 bonus 额度
 func (dl *dailyLimiter) Allow(machineID string) bool {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
 
 	used := dl.todayUsed(machineID)
 	limit := dl.getUserLimit(machineID)
-	return used < limit
+
+	// 每日限额未耗尽
+	if used < limit {
+		return true
+	}
+
+	// 每日限额已用完，检查 bonus
+	bonus := dl.getBonusCredits(machineID)
+	if bonus > 0 {
+		// 扣减 1 点 bonus
+		db.Model(&AIUserLimit{}).Where("machine_id = ?", machineID).
+			Update("bonus_credits", gorm.Expr("bonus_credits - 1"))
+		return true
+	}
+
+	return false
 }
 
-// Remaining 返回用户今日剩余次数
-func (dl *dailyLimiter) Remaining(machineID string) int {
+// Reserve 在同一把锁内完成「限额校验 + 预留一次使用记录」。
+// 这样可以避免并发请求同时通过校验，导致次数少扣/漏扣。
+func (dl *dailyLimiter) Reserve(machineID string) (uint, int, bool, error) {
+	dl.mu.Lock()
+	defer dl.mu.Unlock()
+
 	used := dl.todayUsed(machineID)
 	limit := dl.getUserLimit(machineID)
-	remaining := limit - used
+	bonus := dl.getBonusCredits(machineID)
+	useBonus := false
+
+	if used >= limit {
+		if bonus <= 0 {
+			return 0, 0, false, nil
+		}
+		useBonus = true
+		if err := db.Model(&AIUserLimit{}).Where("machine_id = ?", machineID).
+			Update("bonus_credits", gorm.Expr("bonus_credits - 1")).Error; err != nil {
+			return 0, 0, false, err
+		}
+		bonus -= 1
+	}
+
+	usage := AIUsageRecord{
+		MachineID:        machineID,
+		Model:            aiConfig.Model,
+		PromptTokens:     0,
+		CompletionTokens: 0,
+		TotalTokens:      0,
+	}
+	if err := db.Create(&usage).Error; err != nil {
+		if useBonus {
+			db.Model(&AIUserLimit{}).Where("machine_id = ?", machineID).
+				Update("bonus_credits", gorm.Expr("bonus_credits + 1"))
+		}
+		return 0, 0, false, err
+	}
+
+	remaining := 0
+	if !useBonus {
+		remaining = (limit - (used + 1)) + bonus
+	} else {
+		remaining = bonus
+	}
 	if remaining < 0 {
 		remaining = 0
 	}
-	return remaining
+
+	return usage.ID, remaining, true, nil
+}
+
+// Remaining 返回用户总可用剩余次数（每日剩余 + bonus）
+func (dl *dailyLimiter) Remaining(machineID string) int {
+	used := dl.todayUsed(machineID)
+	limit := dl.getUserLimit(machineID)
+	dailyRemaining := limit - used
+	if dailyRemaining < 0 {
+		dailyRemaining = 0
+	}
+	bonus := dl.getBonusCredits(machineID)
+	return dailyRemaining + bonus
 }
 
 // getUserLimit 获取用户的每日限额（优先个人设置，否则全局默认）
 func (dl *dailyLimiter) getUserLimit(machineID string) int {
 	var userLimit AIUserLimit
 	if err := db.Where("machine_id = ?", machineID).First(&userLimit).Error; err == nil {
-		return userLimit.DailyLimit
+		if userLimit.DailyLimit > 0 {
+			return userLimit.DailyLimit
+		}
 	}
 	return aiConfig.DailyLimit
+}
+
+// getBonusCredits 获取用户的永久固定额度
+func (dl *dailyLimiter) getBonusCredits(machineID string) int {
+	var userLimit AIUserLimit
+	if err := db.Where("machine_id = ?", machineID).First(&userLimit).Error; err == nil {
+		return userLimit.BonusCredits
+	}
+	return 0
 }
 
 // ─── 封禁检查 ───
@@ -168,8 +252,14 @@ func handleAIChat(c *gin.Context) {
 		return
 	}
 
-	// 速率检查
-	if !limiter.Allow(req.MachineID) {
+	// 速率检查 + 预留次数
+	usageID, remainingAfter, allowed, reserveErr := limiter.Reserve(req.MachineID)
+	if reserveErr != nil {
+		log.Printf("[AI] 预留用量失败: %v", reserveErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI 服务暂时不可用"})
+		return
+	}
+	if !allowed {
 		remaining := limiter.Remaining(req.MachineID)
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error":     "请求过于频繁，请稍后再试",
@@ -182,7 +272,7 @@ func handleAIChat(c *gin.Context) {
 	messages := buildProxyMessages(req)
 
 	// 调用上游 AI API（SSE 转发）
-	streamToClient(c, messages, req.MachineID)
+	streamToClient(c, messages, req.MachineID, usageID, remainingAfter)
 }
 
 // 构建完整的消息数组
@@ -224,7 +314,7 @@ func buildProxyMessages(req AIChatRequest) []map[string]interface{} {
 }
 
 // SSE 流式转发
-func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID string) {
+func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID string, usageID uint, remainingAfter int) {
 	// 构建上游请求体
 	reqBody := map[string]interface{}{
 		"model":       aiConfig.Model,
@@ -248,6 +338,7 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
+		db.Delete(&AIUsageRecord{}, usageID)
 		log.Printf("[AI] 上游请求失败: %v", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "AI 服务暂时不可用"})
 		return
@@ -255,6 +346,7 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
+		db.Delete(&AIUsageRecord{}, usageID)
 		body, _ := io.ReadAll(resp.Body)
 		log.Printf("[AI] 上游返回错误 %d: %s", resp.StatusCode, string(body))
 		c.JSON(resp.StatusCode, gin.H{"error": "AI 服务返回错误", "detail": string(body)})
@@ -266,9 +358,11 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
+	c.Header("X-AI-Remaining", strconv.Itoa(remainingAfter))
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
+		db.Delete(&AIUsageRecord{}, usageID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "不支持流式输出"})
 		return
 	}
@@ -309,21 +403,18 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 		}
 	}
 
-	// 记录用量
-	if totalPromptTokens > 0 || totalCompletionTokens > 0 {
-		log.Printf("[AI] 用量统计 - 用户: %s, 输入: %d, 输出: %d, 总计: %d",
-			machineID, totalPromptTokens, totalCompletionTokens, totalPromptTokens+totalCompletionTokens)
-		usage := AIUsageRecord{
-			MachineID:        machineID,
-			Model:            aiConfig.Model,
-			PromptTokens:     totalPromptTokens,
-			CompletionTokens: totalCompletionTokens,
-			TotalTokens:      totalPromptTokens + totalCompletionTokens,
-		}
-		db.Create(&usage)
-	} else {
+	// 记录用量（无论 token 是否返回都必须记录，否则每日次数统计不准）
+	if totalPromptTokens == 0 && totalCompletionTokens == 0 {
 		log.Printf("[AI] 警告: 流式响应未包含 usage 数据 (用户: %s)", machineID)
 	}
+	db.Model(&AIUsageRecord{}).Where("id = ?", usageID).Updates(map[string]interface{}{
+		"model":             aiConfig.Model,
+		"prompt_tokens":     totalPromptTokens,
+		"completion_tokens": totalCompletionTokens,
+		"total_tokens":      totalPromptTokens + totalCompletionTokens,
+	})
+	log.Printf("[AI] 用量统计 - 用户: %s, 输入: %d, 输出: %d, 总计: %d",
+		machineID, totalPromptTokens, totalCompletionTokens, totalPromptTokens+totalCompletionTokens)
 }
 
 // ─── 仪表盘管理 API ───
@@ -514,6 +605,7 @@ func initAIRoutes(admin *gin.RouterGroup) {
 				// 今日已用次数
 				userRanking[i]["today_used"] = limiter.todayUsed(mid)
 				userRanking[i]["effective_limit"] = limiter.getUserLimit(mid)
+				userRanking[i]["bonus_credits"] = limiter.getBonusCredits(mid)
 			}
 
 			c.JSON(200, gin.H{
@@ -610,6 +702,43 @@ func initAIRoutes(admin *gin.RouterGroup) {
 			db.Where("machine_id = ?", mid).Delete(&AIUserLimit{})
 			c.JSON(200, gin.H{"status": "success"})
 		})
+
+		// 设置单用户永久固定额度（可增加或重置）
+		ai.POST("/bonus-credits", func(c *gin.Context) {
+			var req struct {
+				MachineID string `json:"machine_id"`
+				Amount    int    `json:"amount"` // 正数=增加，0=重置，负数=扣减
+				Mode      string `json:"mode"`   // "add"=累加, "set"=设为固定值
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				return
+			}
+
+			var existing AIUserLimit
+			if err := db.Where("machine_id = ?", req.MachineID).First(&existing).Error; err != nil {
+				existing = AIUserLimit{MachineID: req.MachineID, DailyLimit: 0}
+				db.Create(&existing)
+			}
+
+			if req.Mode == "set" {
+				if req.Amount < 0 {
+					req.Amount = 0
+				}
+				db.Model(&existing).Update("bonus_credits", req.Amount)
+			} else {
+				// 默认累加模式
+				newVal := existing.BonusCredits + req.Amount
+				if newVal < 0 {
+					newVal = 0
+				}
+				db.Model(&existing).Update("bonus_credits", newVal)
+			}
+
+			// 查询更新后的值
+			db.Where("machine_id = ?", req.MachineID).First(&existing)
+			c.JSON(200, gin.H{"status": "success", "bonus_credits": existing.BonusCredits})
+		})
 	}
 }
 
@@ -639,14 +768,16 @@ func handleAIQuota(c *gin.Context) {
 
 	remaining := limiter.Remaining(machineID)
 	limit := limiter.getUserLimit(machineID)
+	bonus := limiter.getBonusCredits(machineID)
 
 	// 计算今天午夜（下次刷新时间）
 	now := time.Now()
 	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
 
 	c.JSON(200, gin.H{
-		"remaining": remaining,
-		"limit":     limit,
-		"reset_at":  midnight.Format(time.RFC3339),
+		"remaining":     remaining,
+		"limit":         limit,
+		"bonus_credits": bonus,
+		"reset_at":      midnight.Format(time.RFC3339),
 	})
 }

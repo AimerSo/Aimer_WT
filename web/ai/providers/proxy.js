@@ -15,8 +15,7 @@ class ProxyProvider extends BaseAIProvider {
         super(config);
         this.name = 'proxy';
         this.label = 'Aimer AI服务';
-        // 服务器地址，部署后修改为实际域名
-        this.serverUrl = config.serverUrl || 'https://ai.aimerelle.com';
+        this.serverUrl = config.serverUrl || 'https://telemetry.aimerelle.com';
     }
 
     validateConfig() {
@@ -37,11 +36,7 @@ class ProxyProvider extends BaseAIProvider {
                     'Content-Type': 'application/json',
                     'X-AimerWT-Client': '1'
                 },
-                body: JSON.stringify({
-                    machine_id: window._telemetryHWID || '',
-                    messages: messages,
-                    context: options.context || {}
-                })
+                body: JSON.stringify(this._buildRequestBody(messages, options))
             });
 
             if (!response.ok) {
@@ -51,8 +46,8 @@ class ProxyProvider extends BaseAIProvider {
 
             const result = await response.json();
             return {
-                content: result.content,
-                usage: result.usage || { prompt: 0, completion: 0, total: 0 }
+                content: this._extractContent(result),
+                usage: this._normalizeUsage(result.usage)
             };
         } catch (error) {
             console.error('[Proxy] 请求失败:', error);
@@ -68,16 +63,31 @@ class ProxyProvider extends BaseAIProvider {
                     'Content-Type': 'application/json',
                     'X-AimerWT-Client': '1'
                 },
-                body: JSON.stringify({
-                    machine_id: window._telemetryHWID || '',
-                    messages: messages,
-                    context: options.context || {}
-                })
+                body: JSON.stringify(this._buildRequestBody(messages, options))
             });
 
             if (!response.ok) {
                 const error = await response.json().catch(() => ({}));
                 throw new Error(error.error || error.detail || `HTTP ${response.status}`);
+            }
+
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            const remainingHeader = response.headers.get('X-AI-Remaining');
+            if (remainingHeader !== null) {
+                const remaining = Number(remainingHeader);
+                if (Number.isFinite(remaining)) {
+                    onChunk({ quotaRemaining: remaining });
+                }
+            }
+            if (!response.body || !contentType.includes('text/event-stream')) {
+                const result = await response.json().catch(() => ({}));
+                const content = this._extractContent(result);
+                const usage = this._normalizeUsage(result.usage);
+                if (content) {
+                    onChunk({ content });
+                }
+                onChunk({ usage, done: true });
+                return;
             }
 
             const reader = response.body.getReader();
@@ -92,24 +102,16 @@ class ProxyProvider extends BaseAIProvider {
                 const lines = buffer.split('\n');
                 buffer = lines.pop();
 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
-                        if (data && data !== '[DONE]') {
-                            try {
-                                const parsed = JSON.parse(data);
-                                const content = parsed.choices?.[0]?.delta?.content;
-                                if (content) {
-                                    onChunk({ content });
-                                }
-                            } catch (e) {
-                                // 忽略解析错误
-                            }
-                        }
-                    }
+                for (const rawLine of lines) {
+                    const line = rawLine.replace(/\r$/, '');
+                    this._handleSSELine(line, onChunk);
                 }
             }
 
+            const lastLine = buffer.trim();
+            if (lastLine) {
+                this._handleSSELine(lastLine, onChunk);
+            }
             onChunk({ done: true });
         } catch (error) {
             console.error('[Proxy] 流式请求失败:', error);
@@ -119,9 +121,89 @@ class ProxyProvider extends BaseAIProvider {
 
     parseResponse(response) {
         return {
-            content: response.content || '',
-            usage: response.usage || { prompt: 0, completion: 0, total: 0 }
+            content: this._extractContent(response),
+            usage: this._normalizeUsage(response.usage)
         };
+    }
+
+    _buildRequestBody(messages, options = {}) {
+        return {
+            machine_id: window._telemetryHWID || '',
+            messages,
+            context: options.context || {}
+        };
+    }
+
+    _handleSSELine(line, onChunk) {
+        if (!line || !line.startsWith('data: ')) {
+            return;
+        }
+
+        const data = line.slice(6).trim();
+        if (!data || data === '[DONE]') {
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(data);
+            const content = this._extractContent(parsed);
+            const usage = this._normalizeUsage(parsed.usage);
+
+            if (content) {
+                onChunk({ content });
+            }
+            if (usage.total > 0) {
+                onChunk({ usage });
+            }
+        } catch (_error) {
+            // 忽略非 JSON 或不完整片段
+        }
+    }
+
+    _extractContent(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return '';
+        }
+
+        if (typeof payload.content === 'string') {
+            return payload.content;
+        }
+
+        const choice = Array.isArray(payload.choices) ? payload.choices[0] : null;
+        if (!choice || typeof choice !== 'object') {
+            return '';
+        }
+
+        const delta = choice.delta;
+        if (typeof delta === 'string') {
+            return delta;
+        }
+        if (delta && typeof delta.content === 'string') {
+            return delta.content;
+        }
+
+        const message = choice.message;
+        if (message && typeof message.content === 'string') {
+            return message.content;
+        }
+
+        if (typeof choice.text === 'string') {
+            return choice.text;
+        }
+
+        return '';
+    }
+
+    _normalizeUsage(usage) {
+        if (!usage || typeof usage !== 'object') {
+            return { prompt: 0, completion: 0, total: 0 };
+        }
+
+        const prompt = Number(usage.prompt ?? usage.prompt_tokens ?? 0) || 0;
+        const completion = Number(usage.completion ?? usage.completion_tokens ?? 0) || 0;
+        const total = Number(usage.total ?? usage.total_tokens ?? (prompt + completion)) || 0;
+
+        return { prompt, completion, total };
     }
 }
 

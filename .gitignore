@@ -1,6 +1,8 @@
 # Runtime-generated / local state
 logs/
 *.log
+AimerWT-Log*.log
+**/AimerWT-Log*.log
 
 # Python cache
 __pycache__/

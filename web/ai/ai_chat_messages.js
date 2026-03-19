@@ -25,6 +25,25 @@ const AIChatMessages = {
         this._chat = chat;
     },
 
+    _ensureStreamState() {
+        const chat = this._chat;
+        if (!chat.state.currentStream || typeof chat.state.currentStream !== 'object') {
+            chat.state.currentStream = {
+                element: null,
+                content: ''
+            };
+        }
+        return chat.state.currentStream;
+    },
+
+    _resetStreamState() {
+        const chat = this._chat;
+        chat.state.currentStream = {
+            element: null,
+            content: ''
+        };
+    },
+
     // 添加消息到界面
     addMessage(type, content, contextFlags = {}) {
         const chat = this._chat;
@@ -86,21 +105,18 @@ const AIChatMessages = {
         const chat = this._chat;
         if (!chat?.elements?.messages) return;
         this.hideLoading();
+        const stream = this._ensureStreamState();
 
-        let messageEl = chat.elements.messages.querySelector('.ai-message.ai:last-child');
-        if (!messageEl || messageEl.dataset.finalized === 'true') {
-            messageEl = document.createElement('div');
-            messageEl.className = 'ai-message ai';
-            messageEl.innerHTML = `
-                <div class="ai-message-content">
-                    <div class="ai-message-bubble"></div>
-                </div>
-            `;
+        let messageEl = stream.element;
+        if (!messageEl || !messageEl.isConnected) {
+            messageEl = this._createAiMessageElement();
             chat.elements.messages.appendChild(messageEl);
+            stream.element = messageEl;
         }
+        stream.content = content || '';
 
         const bubble = messageEl.querySelector('.ai-message-bubble');
-        if (bubble) bubble.innerHTML = this.formatMessage(content);
+        if (bubble) bubble.innerHTML = this.formatMessage(stream.content);
 
         requestAnimationFrame(() => {
             this.scrollToBottom();
@@ -111,29 +127,49 @@ const AIChatMessages = {
     finalizeMessage(content) {
         const chat = this._chat;
         if (!chat?.elements?.messages) return;
-        const messageEl = chat.elements.messages.querySelector('.ai-message.ai:last-child');
-        if (messageEl) {
-            messageEl.dataset.finalized = 'true';
-            const bubble = messageEl.querySelector('.ai-message-bubble');
-            if (bubble) bubble.innerHTML = this.formatMessage(content);
+        this.hideLoading();
+        const stream = this._ensureStreamState();
+        const finalContent = String(content || stream.content || '');
+
+        let messageEl = stream.element;
+        if (!messageEl || !messageEl.isConnected) {
+            messageEl = this._createAiMessageElement();
+            chat.elements.messages.appendChild(messageEl);
         }
+
+        messageEl.dataset.finalized = 'true';
+        const bubble = messageEl.querySelector('.ai-message-bubble');
+        if (bubble) bubble.innerHTML = this.formatMessage(finalContent);
 
         const lastMsg = chat.state.messages[chat.state.messages.length - 1];
         if (lastMsg && lastMsg.type === 'ai') {
-            lastMsg.content = content;
+            lastMsg.content = finalContent;
         } else {
             chat.state.messages.push({
                 type: 'ai',
-                content: content
+                content: finalContent
             });
         }
 
         chat.state.isLoading = false;
+        this._resetStreamState();
+    },
+
+    _createAiMessageElement() {
+        const messageEl = document.createElement('div');
+        messageEl.className = 'ai-message ai';
+        messageEl.innerHTML = `
+            <div class="ai-message-content">
+                <div class="ai-message-bubble"></div>
+            </div>
+        `;
+        return messageEl;
     },
 
     // 显示加载动画
     showLoading() {
         const chat = this._chat;
+        this._resetStreamState();
         chat.state.isLoading = true;
         const loadingEl = document.createElement('div');
         loadingEl.className = 'ai-message ai ai-message-loading-container';
@@ -183,6 +219,7 @@ const AIChatMessages = {
 
         setTimeout(() => {
             chat.state.messages = [];
+            this._resetStreamState();
             chat.elements.messages.innerHTML = `
                 <div class="ai-chat-welcome" style="opacity: 0; transform: translateY(10px);">
                     <div class="ai-chat-welcome-title">对话已清空</div>
@@ -227,7 +264,7 @@ const AIChatMessages = {
 
     // 格式化消息（支持Markdown）
     formatMessage(text) {
-        // 情绪标签转换（HTML转义之前）
+        // 情绪标签转换
         if (typeof AIVocabularyMappings !== 'undefined') {
             text = this._convertEmotionTagsWithCache(text);
         }
@@ -235,29 +272,21 @@ const AIChatMessages = {
         // 移除前导空行
         text = text.replace(/^[\r\n]+/, '');
 
+        // 使用 marked.js 进行完整 Markdown 渲染
+        if (typeof marked !== 'undefined') {
+            try {
+                let html = marked.parse(text, { breaks: true, gfm: true });
+                // 为链接添加安全属性
+                html = html.replace(/<a\s+href=/g, '<a target="_blank" rel="noopener noreferrer" href=');
+                return html;
+            } catch (e) {
+                console.warn('[AIChatMessages] marked.parse 失败，降级渲染:', e);
+            }
+        }
+
+        // 降级方案：基本文本渲染
         text = this.escapeHtml(text);
-
-        // Markdown链接
-        text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-
-        // 纯URL自动转换
-        text = text.replace(/(https?:\/\/[^\s<]+)(?![^<]*>|[^<>]*<\/a)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">🔗 链接</a>');
-
-        // 代码块
-        text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-
-        // 行内代码
-        text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-        // 粗体
-        text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-        // 斜体
-        text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-        // 换行
         text = text.replace(/\n/g, '<br>');
-
         return text;
     },
 

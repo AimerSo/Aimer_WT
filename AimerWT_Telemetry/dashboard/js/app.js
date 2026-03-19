@@ -3379,17 +3379,17 @@ const app = {
                     </div>
                 </td>
                 <td class="hwid-cell" style="font-family: monospace; font-size: 12px;" data-hwid="${hwid}">${displayHwid}</td>
-                <td><span style="color: var(--secondary);">正常</span></td>
-                <td>${user.version || user.app_version || user.client_version || '-'}</td>
-                <td>${user.os || '-'}</td>
-                <td>${localeDisplay}</td>
-                <td>${this.formatTimeAgo(minutes)}</td>
                 <td>
                     <div style="display: flex; align-items: center;">
                         <span class="status-dot ${statusClass}"></span>
                         <span>${statusText}</span>
                     </div>
                 </td>
+                <td><span style="color: var(--secondary);">正常</span></td>
+                <td>${user.version || user.app_version || user.client_version || '-'}</td>
+                <td>${user.os || '-'}</td>
+                <td>${localeDisplay}</td>
+                <td>${this.formatTimeAgo(minutes)}</td>
             </tr>
         `}).join('');
     },
@@ -3490,8 +3490,8 @@ const app = {
                 items: [
                     { label: '用户 ID (数字)', value: `<b style="color: var(--primary);"># ${user.id || '-'}</b>` },
                     { label: '用户昵称', value: displayName },
-                    { label: '账户状态', value: `<span style="color: var(--secondary);">正常</span>` },
                     { label: '在线状态', value: `<span class="status-dot ${statusClass}"></span>${statusText}` },
+                    { label: '账户状态', value: `<span style="color: var(--secondary);">正常</span>` },
                     { label: '最近活跃', value: this.formatTimeAgo(minutes) },
                     { label: '最后更新', value: lastSeen },
                     { label: '注册时间', value: registerTime },
@@ -3521,7 +3521,9 @@ const app = {
                 items: [
                     { label: '使用Tokens', value: `<b style="color: var(--primary);">${(user.ai_tokens || 0).toLocaleString()}</b>` },
                     { label: '发送信息条数', value: `<b style="color: var(--secondary);">${(user.ai_messages || 0).toLocaleString()}</b>` },
-                    { label: '违规次数', value: `<b style="color: var(--danger);">${(user.ai_violations || 0).toLocaleString()}</b>` }
+                    { label: '违规次数', value: `<b style="color: var(--danger);">${(user.ai_violations || 0).toLocaleString()}</b>` },
+                    { label: '每日限额', value: `<span id="userDetailDailyLimit">加载中...</span>` },
+                    { label: '永久额度', value: `<span id="userDetailBonus">加载中...</span>` }
                 ]
             }
         ];
@@ -3606,6 +3608,19 @@ const app = {
                         </button>
                     </div>
                 </div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">AI 额度管理</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn" onclick="app.setUserDailyLimit('${hwid}', '${alias || originalName}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: var(--primary); color: var(--primary);">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                            提升每日限额
+                        </button>
+                        <button class="btn" onclick="app.addBonusCredits('${hwid}', '${alias || originalName}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: #10b981; color: #10b981;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            增加永久额度
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -3634,6 +3649,30 @@ const app = {
 
         html += `</div>`;
         container.innerHTML = html;
+
+        // 异步加载用户 AI 额度信息
+        fetch(`${this.config.apiBase}/admin/ai/usage?days=1`).then(r => r.json()).then(data => {
+            const ranking = (data.user_ranking || []).find(u => (u.machine_id || '') === hwid);
+            const limitEl = document.getElementById('userDetailDailyLimit');
+            const bonusEl = document.getElementById('userDetailBonus');
+            if (ranking) {
+                const effectiveLimit = ranking.effective_limit || 15;
+                const customLabel = ranking.custom_limit ? ' (自定义)' : ' (全局默认)';
+                if (limitEl) limitEl.innerHTML = `<b style="color: var(--primary);">${effectiveLimit}</b><span style="color: var(--text-muted); font-size: 12px;">${customLabel}</span>`;
+                const bonus = ranking.bonus_credits || 0;
+                if (bonusEl) bonusEl.innerHTML = bonus > 0
+                    ? `<b style="color: #10b981;">${bonus}</b>`
+                    : `<span style="color: var(--text-muted);">0</span>`;
+            } else {
+                if (limitEl) limitEl.textContent = '15 (全局默认)';
+                if (bonusEl) bonusEl.textContent = '0';
+            }
+        }).catch(() => {
+            const limitEl = document.getElementById('userDetailDailyLimit');
+            const bonusEl = document.getElementById('userDetailBonus');
+            if (limitEl) limitEl.textContent = '-';
+            if (bonusEl) bonusEl.textContent = '-';
+        });
 
         // 动态填充标签 badge 选择器
         this._renderUserTagBadges(hwid, user);
@@ -5177,6 +5216,39 @@ Aimer WT涂装系统：
             }
         } catch (err) {
             this.showAlert('设置失败: ' + err.message, 'danger');
+        }
+    },
+
+    /**
+     * 为用户增加永久固定额度
+     */
+    async addBonusCredits(machineId, userName) {
+        const input = prompt(`调整「${userName}」的永久 AI 额度\n\n输入正数增加、负数扣减（不会减到 0 以下）：`);
+        if (input === null) return;
+
+        const amount = parseInt(input);
+        if (isNaN(amount) || amount === 0) {
+            this.showAlert('请输入非零整数', 'warning');
+            return;
+        }
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/ai/bonus-credits`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine_id: machineId, amount: amount, mode: 'add' })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const action = amount > 0 ? `增加 ${amount}` : `扣减 ${Math.abs(amount)}`;
+                this.showAlert(`已${action} 次永久额度，当前余额: ${data.bonus_credits}`, 'success');
+                if (this.state.selectedUser) this.renderUserDetailView(this.state.selectedUser);
+                this.initAIUsagePage();
+            } else {
+                throw new Error('HTTP ' + res.status);
+            }
+        } catch (err) {
+            this.showAlert('操作失败: ' + err.message, 'danger');
         }
     },
 

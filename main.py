@@ -51,6 +51,7 @@ from services.telemetry_manager import (
     init_telemetry,
     submit_feedback,
 )
+from utils.utils import get_docs_data_dir
 try:
     from services.theme_unlock import ThemeUnlockService
 except Exception:
@@ -308,6 +309,7 @@ class AppApi:
         self._lock = threading.Lock()
 
         self._logger = setup_logger()
+        self._client_diagnostic_log_path = self._initialize_client_diagnostic_log()
 
         self._perf_enabled = bool(perf_enabled)
 
@@ -375,6 +377,29 @@ class AppApi:
 
         # 服务器数据缓存文件路径
         self._server_cache_file = Path(self._cfg_mgr.config_dir) / "server_cache.json"
+
+    def _get_client_diagnostic_log_path(self) -> Path:
+        log_dir = get_docs_data_dir() / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir / "AimerWT-Log.log"
+
+    def _initialize_client_diagnostic_log(self) -> Path:
+        path = self._get_client_diagnostic_log_path()
+        try:
+            if not path.exists() or path.stat().st_size == 0:
+                path.write_text(
+                    "AimerWT-Log 自动诊断日志\n"
+                    f"启动时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    "说明: 该文件会在前端启动后自动持续写入，便于排查白屏等问题。\n\n",
+                    encoding="utf-8",
+                )
+            else:
+                with path.open("a", encoding="utf-8") as f:
+                    f.write(f"\n\n[App Boot] {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            self._logger.info(f"AimerWT-Log 已初始化: {path}")
+        except Exception as e:
+            self._logger.warning(f"AimerWT-Log 初始化失败: {e}")
+        return path
 
     def _resolve_telemetry_target_url(self):
         """解析当前应连接的遥测地址，并同步开发模式状态。"""
@@ -1247,6 +1272,17 @@ class AppApi:
         }
         log_func = level_map.get(level.lower(), log.info)
         log_func(message)
+
+    def save_client_diagnostic_log(self, content):
+        """将前端 AimerWT-Log 自动同步到本地文件。"""
+        try:
+            path = self._client_diagnostic_log_path or self._get_client_diagnostic_log_path()
+            text = str(content or "")
+            path.write_text(text, encoding="utf-8", errors="replace")
+            return {"success": True, "path": str(path)}
+        except Exception as e:
+            self._logger.error(f"保存 AimerWT-Log 失败: {e}")
+            return {"success": False, "message": str(e)}
 
     def start_auto_search(self):
         # 在后台线程执行游戏目录自动搜索，并将结果写入配置后通知前端更新显示。

@@ -18,6 +18,10 @@
                                 <span class="sort-icon"></span>
                             </th>
                             <th>HWID</th>
+                            <th class="sortable" data-sort="status" onclick="app.sortUserList('status')">
+                                <span>在线状态</span>
+                                <span class="sort-icon"></span>
+                            </th>
                             <th>账户状态</th>
                             <th class="sortable" data-sort="version" onclick="app.sortUserList('version')">
                                 <span>版本</span>
@@ -33,10 +37,6 @@
                             </th>
                             <th class="sortable" data-sort="minutes" onclick="app.sortUserList('minutes')">
                                 <span>最后活跃</span>
-                                <span class="sort-icon"></span>
-                            </th>
-                            <th class="sortable" data-sort="status" onclick="app.sortUserList('status')">
-                                <span>在线状态</span>
                                 <span class="sort-icon"></span>
                             </th>
                         </tr>
