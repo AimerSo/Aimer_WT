@@ -11,6 +11,8 @@
  */
 
 const LogCollector = {
+    _initialized: false,
+
     // 日志缓存
     _logs: [],
     
@@ -19,6 +21,11 @@ const LogCollector = {
     
     // 初始化
     init() {
+        if (this._initialized) {
+            return;
+        }
+        this._initialized = true;
+
         // 拦截console方法以捕获日志
         this._interceptConsole();
         
@@ -29,12 +36,14 @@ const LogCollector = {
         this._interceptNetworkRequests();
         
         // 监听来自后端的日志推送
-        if (window.app && window.app.appendLog) {
+        if (window.app && window.app.appendLog && !window.app.appendLog._logCollectorWrapped) {
             const originalAppendLog = window.app.appendLog;
-            window.app.appendLog = (msg) => {
+            const wrappedAppendLog = (msg) => {
                 this._addLog(msg, 'backend');
                 return originalAppendLog.call(window.app, msg);
             };
+            wrappedAppendLog._logCollectorWrapped = true;
+            window.app.appendLog = wrappedAppendLog;
         }
         
         console.log('[AI] 日志收集器已初始化');

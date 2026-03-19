@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-统一日誌系统模组：创建并配置 logging.Logger，包括文件轮转写入、控制台输出及 UI 回调，供后端各模组複用。
+统一日志系统模块：创建并配置 logging.Logger，包括文件轮转写入、控制台输出及 UI 回调，供后端各模块复用。
 
 功能特性:
-- 支援多层级日誌 (DEBUG/INFO/WARNING/ERROR/CRITICAL)
+- 支持多层级日志 (DEBUG/INFO/WARNING/ERROR/CRITICAL)
 - 自动文件轮转 (每个文件最大 10MB，保留 5 个备份)
-- 支援 UI 回调以将日誌同步到前端
+- 支持 UI 回调以将日志同步到前端
 - 提供上下文记录器 (ContextLogger) 用于追踪操作流程
-- 异常日誌自动包含堆栈追踪
+- 异常日志自动包含堆栈追踪
 - 多编码兼容：自动适配系统编码 (UTF-8/Big5/GBK等)
 """
 
@@ -29,8 +29,9 @@ APP_LOGGER_NAME = "WT_Voice_Manager"
 
 _ui_callback: Callable[[str, logging.LogRecord], None] | None = None
 _ui_emit_guard = threading.local()
+_logger_setup_lock = threading.Lock()
 
-# 类型变数用于装饰器
+# 类型变量用于装饰器
 P = ParamSpec('P')
 T = TypeVar('T')
 
@@ -131,7 +132,7 @@ _setup_console_encoding()
 
 def set_ui_callback(callback: Callable[[str, logging.LogRecord], None] | None) -> None:
     """
-    设置前端 UI 日誌回调。
+    设置前端 UI 日志回调。
 
     Args:
         callback: 接收 (formatted_message: str, record: logging.LogRecord) 的回调函数。
@@ -141,7 +142,7 @@ def set_ui_callback(callback: Callable[[str, logging.LogRecord], None] | None) -
 
 
 class UiCallbackHandler(logging.Handler):
-    """将日誌讯息转发到 UI 回调的处理器。"""
+    """将日志消息转发到 UI 回调的处理器。"""
     
     def emit(self, record: logging.LogRecord) -> None:
         callback = _ui_callback
@@ -156,7 +157,7 @@ class UiCallbackHandler(logging.Handler):
             _ui_emit_guard.active = True
             callback(self.format(record), record)
         except Exception:
-            # 日誌链路不应影响业务逻辑
+            # 日志链路不应影响业务逻辑
             pass
         finally:
             _ui_emit_guard.active = False
@@ -164,7 +165,7 @@ class UiCallbackHandler(logging.Handler):
 
 class ContextLogger:
     """
-    带上下文的日誌记录器，用于追踪操作流程。
+    带上下文的日志记录器，用于追踪操作流程。
     
     使用示例:
         with ContextLogger(log, "安装语音包", mod_name=mod_name) as ctx:
@@ -218,7 +219,7 @@ def log_exceptions(logger: logging.Logger | None = None, reraise: bool = True, d
     装饰器：自动记录函数执行过程中的异常。
     
     Args:
-        logger: 使用的日誌记录器，None 则使用模组级记录器
+        logger: 使用的日志记录器，None 则使用模块级记录器
         reraise: 是否重新抛出异常
         default: 异常时返回的默认值（仅当 reraise=False 时有效）
     
@@ -253,7 +254,7 @@ def log_operation(logger: logging.Logger, operation: str, **context: Any):
     上下文管理器：记录操作的开始、结束或失败。
     
     Args:
-        logger: 日誌记录器
+        logger: 日志记录器
         operation: 操作名称
         **context: 额外上下文信息
     
@@ -273,7 +274,7 @@ def log_operation(logger: logging.Logger, operation: str, **context: Any):
 
 def format_exception(e: Exception, include_traceback: bool = False) -> str:
     """
-    格式化异常为可读字串。
+    格式化异常为可读字符串。
     
     Args:
         e: 异常对象
@@ -290,7 +291,7 @@ def format_exception(e: Exception, include_traceback: bool = False) -> str:
 
 
 def _get_log_dir() -> Path:
-    """获取日誌存储目录，确保目录存在。"""
+    """获取日志存储目录，确保目录存在。"""
     from utils.utils import get_docs_data_dir
     base_dir = get_docs_data_dir()
     log_dir = base_dir / "logs"
@@ -304,88 +305,106 @@ def _get_log_dir() -> Path:
             log_dir.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-        sys.stderr.write(f"无法创建日誌目录，使用临时目录: {log_dir} (原因: {e})\n")
+        sys.stderr.write(f"无法创建日志目录，使用临时目录: {log_dir} (原因: {e})\n")
     return log_dir
 
 
 def setup_logger(name: str = APP_LOGGER_NAME) -> logging.Logger:
     """
-    初始化并返回应用日誌记录器，提供文件轮转写入与控制台输出。
+    初始化并返回应用日志记录器，提供文件轮转写入与控制台输出。
     
     Args:
-        name: 日誌记录器名称
+        name: 日志记录器名称
     
     Returns:
         配置好的 Logger 实例
     """
     logger = logging.getLogger(name)
-    
-    # 防止重複添加 handler
-    if logger.handlers:
-        return logger
-        
-    logger.setLevel(logging.DEBUG)
-    logger.propagate = False
-    
-    # 使用统一的日誌目录逻辑
-    log_dir = _get_log_dir()
-    
-    # 日誌格式 - 文件使用详细格式
-    file_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
-    # 控制台使用简洁格式
-    console_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
 
-    # UI 使用更简洁的格式
-    ui_formatter = logging.Formatter(
-        '[%(asctime)s] [%(levelname)s] %(message)s',
-        datefmt='%H:%M:%S'
-    )
-    
-    # 1. 文件处理器 (RotatingFileHandler)
-    # 每个文件最大 10MB，最多保留 5 个备份
-    try:
-        file_handler = RotatingFileHandler(
-            log_dir / "app.log",
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=5,
-            encoding='utf-8'
+    with _logger_setup_lock:
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+
+        # 使用统一的日志目录逻辑
+        log_dir = _get_log_dir()
+        log_file = log_dir / "app.log"
+
+        # 日志格式 - 文件使用详细格式
+        file_formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
         )
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
-    except Exception as e:
-        sys.stderr.write(f"无法初始化文件日誌: {e}\n")
-    
-    # 2. 控制台处理器 (StreamHandler)
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
 
-    # 3. UI 处理器（回调为空时不输出）
-    ui_handler = UiCallbackHandler()
-    ui_handler.setLevel(logging.INFO)
-    ui_handler.setFormatter(ui_formatter)
-    logger.addHandler(ui_handler)
-    
-    logger.info(f"日誌系统初始化完成，日誌路径: {log_dir}")
-    
+        # 控制台使用简洁格式
+        console_formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+
+        # UI 使用更简洁的格式
+        ui_formatter = logging.Formatter(
+            '[%(asctime)s] [%(levelname)s] %(message)s',
+            datefmt='%H:%M:%S'
+        )
+
+        has_file_handler = any(
+            isinstance(handler, RotatingFileHandler)
+            and Path(getattr(handler, "baseFilename", "")) == log_file
+            for handler in logger.handlers
+        )
+        has_console_handler = any(
+            isinstance(handler, logging.StreamHandler)
+            and not isinstance(handler, (logging.FileHandler, UiCallbackHandler))
+            for handler in logger.handlers
+        )
+        has_ui_handler = any(
+            isinstance(handler, UiCallbackHandler)
+            for handler in logger.handlers
+        )
+
+        # 1. 文件处理器 (RotatingFileHandler)
+        # 每个文件最大 10MB，最多保留 5 个备份
+        if not has_file_handler:
+            try:
+                file_handler = RotatingFileHandler(
+                    log_file,
+                    maxBytes=10 * 1024 * 1024,  # 10MB
+                    backupCount=5,
+                    encoding='utf-8'
+                )
+                file_handler.setLevel(logging.DEBUG)
+                file_handler.setFormatter(file_formatter)
+                logger.addHandler(file_handler)
+            except Exception as e:
+                sys.stderr.write(f"无法初始化文件日志: {e}\n")
+
+        # 2. 控制台处理器 (StreamHandler)
+        if not has_console_handler:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.INFO)
+            console_handler.setFormatter(console_formatter)
+            logger.addHandler(console_handler)
+
+        # 3. UI 处理器（回调为空时不输出）
+        if not has_ui_handler:
+            ui_handler = UiCallbackHandler()
+            ui_handler.setLevel(logging.INFO)
+            ui_handler.setFormatter(ui_formatter)
+            logger.addHandler(ui_handler)
+
+        if not getattr(logger, "_aimerwt_init_logged", False):
+            logger.info(f"日志系统初始化完成，日志路径: {log_dir}")
+            logger._aimerwt_init_logged = True
+
     return logger
 
 
 def get_logger(module_name: str | None = None) -> logging.Logger:
     """
-    获取模组 logger：`WT_Voice_Manager.<module_name>`
+    获取模块 logger：`WT_Voice_Manager.<module_name>`
     
     Args:
-        module_name: 模组名称，None 则返回根记录器
+        module_name: 模块名称，None 则返回根记录器
     
     Returns:
         Logger 实例

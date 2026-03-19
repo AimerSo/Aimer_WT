@@ -177,7 +177,7 @@ def _show_fatal_error(title: str, message: str) -> None:
 
 
 def _install_global_exception_handlers() -> None:
-    """将未捕捉例外统一写入 app.log，避免只有 console 报错。"""
+    """将未捕获异常统一写入 app.log，避免只有 console 报错。"""
 
     def _excepthook(exc_type, exc, tb):
         if issubclass(exc_type, KeyboardInterrupt):
@@ -186,27 +186,27 @@ def _install_global_exception_handlers() -> None:
 
         try:
             fatal_log = get_logger("fatal")
-            fatal_log.critical("未捕捉例外", exc_info=(exc_type, exc, tb))
+            fatal_log.critical("未捕获异常", exc_info=(exc_type, exc, tb))
         except Exception:
             pass
 
         _show_fatal_error(
             "Aimer WT 发生错误",
-            f"程式遇到未处理的错误而终止。\n\n"
+            f"程序遇到未处理的错误而终止。\n\n"
             f"{exc_type.__name__}: {exc}\n\n"
-            f"详细资讯请查看 logs/app.log",
+            f"详细信息请查看 logs/app.log",
         )
 
     sys.excepthook = _excepthook
 
-    # Python 3.8+：捕捉 thread 未处理例外
+    # Python 3.8+：捕获 thread 未处理异常
     if hasattr(threading, "excepthook"):
 
         def _thread_excepthook(args):
             try:
                 th_log = get_logger("thread")
                 th_log.critical(
-                    "背景执行绪未捕捉例外: %s (%s)",
+                    "后台线程未捕获异常: %s (%s)",
                     getattr(args.thread, "name", "<unknown>"),
                     getattr(args.thread, "ident", "?"),
                     exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
@@ -4910,13 +4910,13 @@ def main() -> int:
         log.error(f"Edge Chromium 启动失败，尝试默认模式: {e}")
 
         # 在 Windows 上，若缺少 WebView2 Runtime，pywebview 可能回退到 MSHTML(IE)，
-        # 因此在侦测到 WebView2 不存在时，优先提示使用者安装，而不是静默降级。
+        # 因此在侦测到 WebView2 不存在时，优先提示用户安装，而不是静默降级。
         if sys.platform == "win32" and not _windows_has_webview2_runtime():
             allow_fallback = bool(getattr(cli, "allow_fallback", False))
             if not allow_fallback:
                 msg = (
                     "侦测到系统未安装 Microsoft Edge WebView2 Runtime。\n\n"
-                    "本程式需要 WebView2 才能正常显示与互动（否则会回退到旧版 IE 内核，导致一些意外的错误）。\n\n"
+                    "本程序需要 WebView2 才能正常显示与交互（否则会回退到旧版 IE 内核，导致一些意外的错误）。\n\n"
                     "请安装 WebView2 Evergreen Runtime 后再启动：\n"
                     "https://developer.microsoft.com/microsoft-edge/webview2/\n\n"
                     "（如仍想尝试旧模式启动，可使用启动参数 --allow-fallback）"

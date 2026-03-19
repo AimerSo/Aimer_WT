@@ -136,6 +136,8 @@ const app = {
     telemetryConnected: false,
     userSeqId: 0,
     _telemetryStatusTimer: 0,
+    _lastLogHtml: "",
+    _lastLogAt: 0,
 
     // 应用主题的函数
     applyTheme(themeObj) {
@@ -2227,6 +2229,19 @@ const app = {
     // --- 日志系统 ---
     appendLog(htmlMsg) {
         const container = document.getElementById('log-container');
+        if (!container) return;
+
+        const normalizedMsg = String(htmlMsg || '').trim();
+        const now = Date.now();
+
+        // 避免极短时间内同一条日志被重复追加到运行日志面板。
+        if (normalizedMsg && normalizedMsg === this._lastLogHtml && (now - this._lastLogAt) < 500) {
+            return;
+        }
+
+        this._lastLogHtml = normalizedMsg;
+        this._lastLogAt = now;
+
         const div = document.createElement('div');
         // 根据内容简单判断颜色类
         let cls = 'info';
