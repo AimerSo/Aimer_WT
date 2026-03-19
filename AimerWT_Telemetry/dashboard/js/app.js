@@ -4379,7 +4379,7 @@ const app = {
             setVal('aiMaxHistory', cfg.max_history || 30);
             setChecked('aiEnabled', cfg.enabled !== false);
             setVal('aiSystemPrompt', cfg.system_prompt || '');
-            setVal('aiHourlyLimit', cfg.hourly_limit || 20);
+            setVal('aiDailyLimit', cfg.daily_limit || 15);
 
             // API Key 输入框清空（不回显明文 Key）
             const keyInput = document.getElementById('aiApiKeyInput');
@@ -4445,7 +4445,7 @@ const app = {
             system_prompt: getVal('aiSystemPrompt'),
             max_tokens: parseInt(getVal('aiMaxTokens')) || 2048,
             temperature: parseFloat(getVal('aiTemperature')) || 0.7,
-            hourly_limit: parseInt(getVal('aiHourlyLimit')) || 20,
+            daily_limit: parseInt(getVal('aiDailyLimit')) || 15,
             max_history: parseInt(getVal('aiMaxHistory')) || 30,
         };
         const keyInput = document.getElementById('aiApiKeyInput');
@@ -4505,7 +4505,7 @@ const app = {
             system_prompt: getVal('aiSystemPrompt'),
             max_tokens: parseInt(getVal('aiMaxTokens')) || 2048,
             temperature: parseFloat(getVal('aiTemperature')) || 0.7,
-            hourly_limit: parseInt(getVal('aiHourlyLimit')) || 20,
+            daily_limit: parseInt(getVal('aiDailyLimit')) || 15,
             max_history: parseInt(getVal('aiMaxHistory')) || 30,
         };
 
@@ -5071,7 +5071,7 @@ Aimer WT涂装系统：
         const pageData = data.slice(start, end);
 
         if (pageData.length === 0) {
-            table.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">暂无数据</td></tr>';
+            table.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">暂无数据</td></tr>';
             if (info) info.textContent = `共 ${data.length} 条记录`;
             if (pagination) pagination.innerHTML = '';
             return;
@@ -5083,6 +5083,10 @@ Aimer WT涂装系统：
                 : user.rank;
             const statusClass = user.status === '正常' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
             const statusColor = user.status === '正常' ? 'var(--secondary)' : 'var(--danger)';
+
+            const limitDisplay = user.customLimit
+                ? `<span style="color: var(--primary); font-weight: 500;" title="自定义限额">${user.todayUsed}/${user.customLimit}</span>`
+                : `${user.todayUsed}/${user.effectiveLimit}`;
 
             return `<tr>
                 <td>${rankBadge}</td>
@@ -5097,9 +5101,12 @@ Aimer WT涂装系统：
                 </td>
                 <td>${user.messages.toLocaleString()}</td>
                 <td>${user.tokens.toLocaleString()}</td>
-                <td>${user.avgTime}</td>
+                <td>${limitDisplay}</td>
                 <td>${user.lastTime}</td>
                 <td><span style="display: inline-block; padding: 2px 8px; background: ${statusClass}; color: ${statusColor}; border-radius: 4px; font-size: 12px;">${user.status}</span></td>
+                <td>
+                    <button class="btn" style="padding: 2px 8px; font-size: 11px; white-space: nowrap;" onclick="app.setUserDailyLimit('${user.hwid}', '${user.name}')">设置限额</button>
+                </td>
             </tr>`;
         }).join('');
 
@@ -5144,6 +5151,33 @@ Aimer WT涂装系统：
         if (page < 1 || page > totalPages) return;
         this.state.usageCurrentPage = page;
         this.renderUsageUserTable(keyword);
+    },
+
+    /**
+     * 设置单用户每日 AI 限额
+     */
+    async setUserDailyLimit(machineId, userName) {
+        const input = prompt(`设置「${userName}」的每日 AI 限额\n\n输入每日对话次数（正整数），输入 0 或留空恢复全局默认：`);
+        if (input === null) return;
+
+        const limit = parseInt(input) || 0;
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/ai/user-limit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine_id: machineId, daily_limit: limit })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                this.showAlert(data.message || '限额已更新', 'success');
+                this.initAIUsagePage();
+            } else {
+                throw new Error('HTTP ' + res.status);
+            }
+        } catch (err) {
+            this.showAlert('设置失败: ' + err.message, 'danger');
+        }
     },
 
     /**
@@ -5197,7 +5231,9 @@ Aimer WT涂装系统：
             status: u.banned ? '已封禁' : '正常',
             avatar: (u.alias || '?')[0],
             avatarColor: u.banned ? '#ef4444' : '#2563eb',
-            customLimit: u.custom_limit || null
+            customLimit: u.custom_limit || null,
+            todayUsed: u.today_used || 0,
+            effectiveLimit: u.effective_limit || 15
         }));
         this.state.aiUsageData.users = users;
 

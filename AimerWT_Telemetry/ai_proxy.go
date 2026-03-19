@@ -26,8 +26,8 @@ type AIProxyConfig struct {
 	SystemPrompt string  `json:"system_prompt"`
 	MaxTokens    int     `json:"max_tokens"`
 	Temperature  float64 `json:"temperature"`
-	HourlyLimit  int     `json:"hourly_limit"` // 全局默认每小时限额
-	MaxHistory   int     `json:"max_history"`  // 最大历史对话条数
+	DailyLimit   int     `json:"daily_limit"` // 全局默认每日限额
+	MaxHistory   int     `json:"max_history"` // 最大历史对话条数
 }
 
 var aiConfig AIProxyConfig
@@ -51,7 +51,7 @@ func defaultAIConfig() AIProxyConfig {
 		SystemPrompt: "你是小艾米，AimerWT 软件的专属 AI 助手。AimerWT 是一款战争雷霆游戏辅助工具，提供语音包管理、涂装管理、炮镜管理等功能。\n\n回复要求：\n- 使用中文回复\n- 语气亲切可爱，适当使用颜文字\n- 技术问题给出具体解决步骤\n- 不确定时诚实告知\n- 拒绝回答政治敏感话题",
 		MaxTokens:    2048,
 		Temperature:  0.7,
-		HourlyLimit:  20,
+		DailyLimit:   15,
 		MaxHistory:   30,
 	}
 }
@@ -76,76 +76,50 @@ func SaveAIConfig() {
 	SaveConfig("ai_proxy_config", string(data))
 }
 
-// ─── 速率限制（内存计数器） ───
+// ─── 每日限额（基于数据库持久化） ───
 
-type rateLimiter struct {
-	mu       sync.Mutex
-	counters map[string][]time.Time // machine_id -> 请求时间戳列表
+type dailyLimiter struct {
+	mu sync.Mutex
 }
 
-var limiter = &rateLimiter{
-	counters: make(map[string][]time.Time),
+var limiter = &dailyLimiter{}
+
+// todayUsed 查询用户今日已使用的次数（基于 ai_usage_records 表）
+func (dl *dailyLimiter) todayUsed(machineID string) int {
+	today := time.Now().Format("2006-01-02")
+	var count int64
+	db.Model(&AIUsageRecord{}).Where("machine_id = ? AND date(created_at) = ?", machineID, today).Count(&count)
+	return int(count)
 }
 
-// 检查速率限制，返回是否允许
-func (rl *rateLimiter) Allow(machineID string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
+// Allow 检查用户是否还有今日剩余次数
+func (dl *dailyLimiter) Allow(machineID string) bool {
+	dl.mu.Lock()
+	defer dl.mu.Unlock()
 
-	now := time.Now()
-	oneHourAgo := now.Add(-1 * time.Hour)
-
-	// 清理过期记录
-	timestamps := rl.counters[machineID]
-	valid := timestamps[:0]
-	for _, t := range timestamps {
-		if t.After(oneHourAgo) {
-			valid = append(valid, t)
-		}
-	}
-	rl.counters[machineID] = valid
-
-	// 获取该用户的限额
-	limit := rl.getUserLimit(machineID)
-
-	if len(valid) >= limit {
-		return false
-	}
-
-	rl.counters[machineID] = append(valid, now)
-	return true
+	used := dl.todayUsed(machineID)
+	limit := dl.getUserLimit(machineID)
+	return used < limit
 }
 
-// 获取用户剩余次数
-func (rl *rateLimiter) Remaining(machineID string) int {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	now := time.Now()
-	oneHourAgo := now.Add(-1 * time.Hour)
-
-	count := 0
-	for _, t := range rl.counters[machineID] {
-		if t.After(oneHourAgo) {
-			count++
-		}
-	}
-
-	limit := rl.getUserLimit(machineID)
-	remaining := limit - count
+// Remaining 返回用户今日剩余次数
+func (dl *dailyLimiter) Remaining(machineID string) int {
+	used := dl.todayUsed(machineID)
+	limit := dl.getUserLimit(machineID)
+	remaining := limit - used
 	if remaining < 0 {
 		remaining = 0
 	}
 	return remaining
 }
 
-// 获取用户的速率限制（优先个人设置，否则全局默认）
-func (rl *rateLimiter) getUserLimit(machineID string) int {
+// getUserLimit 获取用户的每日限额（优先个人设置，否则全局默认）
+func (dl *dailyLimiter) getUserLimit(machineID string) int {
 	var userLimit AIUserLimit
 	if err := db.Where("machine_id = ?", machineID).First(&userLimit).Error; err == nil {
-		return userLimit.HourlyLimit
+		return userLimit.DailyLimit
 	}
-	return aiConfig.HourlyLimit
+	return aiConfig.DailyLimit
 }
 
 // ─── 封禁检查 ───
@@ -534,8 +508,12 @@ func initAIRoutes(admin *gin.RouterGroup) {
 				// 获取单用户限额
 				var ul AIUserLimit
 				if err := db.Where("machine_id = ?", mid).First(&ul).Error; err == nil {
-					userRanking[i]["custom_limit"] = ul.HourlyLimit
+					userRanking[i]["custom_limit"] = ul.DailyLimit
 				}
+
+				// 今日已用次数
+				userRanking[i]["today_used"] = limiter.todayUsed(mid)
+				userRanking[i]["effective_limit"] = limiter.getUserLimit(mid)
 			}
 
 			c.JSON(200, gin.H{
@@ -598,18 +576,18 @@ func initAIRoutes(admin *gin.RouterGroup) {
 			c.JSON(200, gin.H{"status": "success"})
 		})
 
-		// 设置单用户限额
+		// 设置单用户每日限额
 		ai.POST("/user-limit", func(c *gin.Context) {
 			var req struct {
-				MachineID   string `json:"machine_id"`
-				HourlyLimit int    `json:"hourly_limit"`
+				MachineID  string `json:"machine_id"`
+				DailyLimit int    `json:"daily_limit"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				c.JSON(400, gin.H{"error": "Invalid JSON"})
 				return
 			}
 
-			if req.HourlyLimit <= 0 {
+			if req.DailyLimit <= 0 {
 				// 删除自定义限额，回退到全局默认
 				db.Where("machine_id = ?", req.MachineID).Delete(&AIUserLimit{})
 				c.JSON(200, gin.H{"status": "success", "message": "已恢复默认限额"})
@@ -618,10 +596,10 @@ func initAIRoutes(admin *gin.RouterGroup) {
 
 			var existing AIUserLimit
 			if err := db.Where("machine_id = ?", req.MachineID).First(&existing).Error; err != nil {
-				existing = AIUserLimit{MachineID: req.MachineID, HourlyLimit: req.HourlyLimit}
+				existing = AIUserLimit{MachineID: req.MachineID, DailyLimit: req.DailyLimit}
 				db.Create(&existing)
 			} else {
-				db.Model(&existing).Update("hourly_limit", req.HourlyLimit)
+				db.Model(&existing).Update("daily_limit", req.DailyLimit)
 			}
 			c.JSON(200, gin.H{"status": "success"})
 		})
@@ -662,8 +640,13 @@ func handleAIQuota(c *gin.Context) {
 	remaining := limiter.Remaining(machineID)
 	limit := limiter.getUserLimit(machineID)
 
+	// 计算今天午夜（下次刷新时间）
+	now := time.Now()
+	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+
 	c.JSON(200, gin.H{
 		"remaining": remaining,
 		"limit":     limit,
+		"reset_at":  midnight.Format(time.RFC3339),
 	})
 }

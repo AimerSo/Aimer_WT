@@ -176,11 +176,11 @@ type AIUserBan struct {
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
-// AIUserLimit 单用户速率覆盖（未设置则使用全局默认值）
+// AIUserLimit 单用户每日限额覆盖（未设置则使用全局默认值）
 type AIUserLimit struct {
-	ID          uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	MachineID   string `gorm:"uniqueIndex;type:varchar(64)" json:"machine_id"`
-	HourlyLimit int    `json:"hourly_limit"`
+	ID         uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID  string `gorm:"uniqueIndex;type:varchar(64)" json:"machine_id"`
+	DailyLimit int    `json:"daily_limit"`
 }
 
 // UserTag 用户标签元数据（管理标签名称/颜色/图标）

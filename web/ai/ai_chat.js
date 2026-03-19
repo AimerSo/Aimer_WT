@@ -211,8 +211,8 @@ const AIChat = {
             </div>
             
             <div class="ai-chat-header">
-                <div class="ai-chat-quota" id="ai-chat-quota" title="每小时使用限额" style="display: none;">
-                    <i class="ri-time-line"></i>
+                <div class="ai-chat-quota" id="ai-chat-quota" title="每日 AI 对话次数" style="display: none;">
+                    <i class="ri-sparkling-line"></i>
                     <span id="ai-chat-quota-text">加载中...</span>
                 </div>
                 <span class="ai-chat-beta-tag">不稳定测试版</span>
@@ -443,14 +443,14 @@ const AIChat = {
             const resp = await fetch(`${serverUrl}/api/ai/quota?machine_id=${encodeURIComponent(machineId)}`);
             if (!resp.ok) throw new Error('请求失败');
             const data = await resp.json();
-            textEl.textContent = `${data.remaining}/${data.limit} 次`;
+            textEl.textContent = `剩余 ${data.remaining} 次`;
             quotaEl.style.display = 'flex';
 
             // 余量不足时高亮警示
-            quotaEl.classList.toggle('low', data.remaining <= 3);
+            quotaEl.classList.toggle('low', data.remaining <= 3 && data.remaining > 0);
             quotaEl.classList.toggle('empty', data.remaining === 0);
         } catch (e) {
-            textEl.textContent = '--/--';
+            textEl.textContent = '--';
         }
     },
 
@@ -486,8 +486,14 @@ const AIChat = {
         const message = this.elements.input.value.trim();
         if (!message || this.state.isLoading) return;
 
-        // 清空情绪标签缓存
-        this.state.emotionCache = {};
+        // Aimer 免费模式：次数用完时前端拦截
+        if (AI_CONFIG.get('apiMode') === 'aimer_free') {
+            const quotaEl = document.getElementById('ai-chat-quota');
+            if (quotaEl && quotaEl.classList.contains('empty')) {
+                AIChatMessages.addMessage('ai', '今日对话次数已用完啦~ 每天 0 点会刷新哦！ε٩(๑> ₃ <)۶з');
+                return;
+            }
+        }
 
         const contextFlags = {
             includeLogs: this.elements.toolLogs.classList.contains('active'),
