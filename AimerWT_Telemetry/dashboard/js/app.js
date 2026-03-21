@@ -3346,22 +3346,62 @@ const app = {
             return t2 - t1;
         });
 
+        this.state._renderedUserList = fullList;
+        this._populateTagFilter();
+        this._renderUserRows(fullList);
+    },
+
+    /**
+     * 动态填充标签筛选下拉选项
+     */
+    _populateTagFilter() {
+        const sel = document.getElementById('userListTagFilter');
+        if (!sel) return;
+        const current = sel.value;
+        const base = `<option value="all">全部标签</option><option value="_starred">⭐ 星标用户</option><option value="_admin">🔑 管理员</option>`;
+        const tag_defs = this.state.dashboardData?.tag_options || [];
+        const extra = tag_defs.map(t => {
+            const label = this._getTagLabel(t);
+            const icon_cls = t.icon || 'ri-price-tag-3-line';
+            return `<option value="${t.name}">${label}</option>`;
+        }).join('');
+        sel.innerHTML = base + extra;
+        sel.value = current || 'all';
+    },
+
+    /**
+     * 渲染用户行到 tbody（localeMap 内置）
+     */
+    _renderUserRows(list) {
+        const tbody = document.getElementById('fullUserListBody');
+        if (!tbody) return;
+
         const localeMap = {
-            'zh-CN': '中国',
-            'zh-TW': '中国台湾',
-            'zh-HK': '中国香港',
-            'en-US': '美国',
-            'en-GB': '英国',
-            'ja-JP': '日本',
-            'ko-KR': '韩国',
-            'ru-RU': '俄罗斯',
-            'de-DE': '德国',
-            'fr-FR': '法国'
+            'zh-CN': '中国', 'zh-TW': '中国台湾', 'zh-HK': '中国香港',
+            'en-US': '美国', 'en-GB': '英国', 'ja-JP': '日本',
+            'ko-KR': '韩国', 'ru-RU': '俄罗斯', 'de-DE': '德国', 'fr-FR': '法国'
         };
 
-        tbody.innerHTML = fullList.map(user => {
+        const countEl = document.getElementById('userListCount');
+        const totalCount = (this.state._renderedUserList || []).length;
+        if (countEl) {
+            countEl.textContent = list.length === totalCount
+                ? `共 ${totalCount} 人`
+                : `${list.length} / ${totalCount} 人`;
+        }
+
+        if (!list.length) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:48px;color:var(--text-muted);">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <span>无匹配用户</span>
+                </div>
+            </td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = list.map(user => {
             const hwid = user.hwid || user.hwid_hash || '-';
-            const displayHwid = this.formatHwid(hwid);
             const minutes = user.minutes_ago ?? user.minutes ?? user.last_seen_minutes ?? '-';
             const isOnline = typeof minutes === 'number' && minutes <= 5;
             const statusClass = isOnline ? 'online' : 'offline';
@@ -3369,7 +3409,7 @@ const app = {
             const localeCode = user.locale || '-';
             const localeDisplay = localeMap[localeCode] || localeCode;
             const isMarked = this.state.markedUsers.has(hwid);
-            const nameStyle = isMarked ? 'color: #f59e0b; font-weight: bold;' : '';
+            const nameStyle = isMarked ? 'color: #f59e0b;' : '';
 
             const isAdmin = this.state.adminUsers.has(hwid);
             const avatarBgStyle = isAdmin
@@ -3380,12 +3420,13 @@ const app = {
             const alias = this.normalizeUserName(user.alias);
             let nameHtml = this.getDisplayUserName(user);
             if (alias && alias !== originalName) {
-                nameHtml = `${alias} <span style="color: var(--text-muted); font-weight: normal; font-size: 0.9em;">(${originalName})</span>`;
+                nameHtml = `${alias} <span style="color:var(--text-muted);font-weight:normal;font-size:0.85em;">(${originalName})</span>`;
             }
-            // 解析用户标签 badge
-            let tag_badges_html = '';
-            if (isMarked) tag_badges_html += '<span style="margin-left:4px;" title="星标">⭐</span>';
-            if (isAdmin) tag_badges_html += '<span style="margin-left:4px;" title="管理员">🔑</span>';
+
+            // 标签 badges
+            let tag_badges = '';
+            if (isMarked) tag_badges += '<span class="user-tag" title="星标" style="color:#f59e0b;border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.06);">⭐</span>';
+            if (isAdmin) tag_badges += '<span class="user-tag" title="管理员" style="color:#2563eb;border-color:rgba(37,99,235,.3);background:rgba(37,99,235,.06);">🔑</span>';
             let user_tags = [];
             try { user_tags = typeof user.tags === 'string' ? JSON.parse(user.tags || '[]') : (user.tags || []); } catch {}
             const all_tag_defs = this.state.dashboardData?.tag_options || [];
@@ -3394,24 +3435,27 @@ const app = {
                 if (def) {
                     const icon_cls = def.icon || 'ri-price-tag-3-line';
                     const label = this._getTagLabel(def);
-                    tag_badges_html += `<span style="margin-left:4px;padding:1px 6px;border-radius:8px;font-size:10px;background:var(--bg);border:1px solid var(--border);color:#64748b;font-weight:600;display:inline-flex;align-items:center;gap:3px;" title="${def.display_name}"><i class="${icon_cls}" style="font-size:11px;"></i>${label}</span>`;
+                    tag_badges += `<span class="user-tag" title="${def.display_name}"><i class="${icon_cls}" style="font-size:10px;"></i>${label}</span>`;
                 }
             });
+
+            const tagRow = tag_badges ? `<div class="user-tags">${tag_badges}</div>` : '';
 
             const userData = encodeURIComponent(JSON.stringify(user));
 
             return `
-            <tr style="cursor: pointer;" onclick="app.openUserDetailByData('${userData}')">
+            <tr style="cursor:pointer;" onclick="app.openUserDetailByData('${userData}')">
                 <td>
-                    <div style="display: flex; align-items: center; ${nameStyle}">
-                        <div class="recent-avatar" style="width: 32px; height: 32px; font-size: 11px; margin-right: 8px; flex-shrink: 0; ${avatarBgStyle}">#${user.id || '-'}</div>
-                        <span>${nameHtml}</span>
-                        ${tag_badges_html}
+                    <div class="user-cell">
+                        <div class="user-avatar" style="${avatarBgStyle}">#${user.id || '-'}</div>
+                        <div class="user-info">
+                            <span class="user-name" style="${nameStyle}">${nameHtml}</span>
+                            ${tagRow}
+                        </div>
                     </div>
                 </td>
-                <td class="hwid-cell" style="font-family: monospace; font-size: 12px;" data-hwid="${hwid}">${displayHwid}</td>
                 <td>
-                    <div style="display: flex; align-items: center;">
+                    <div class="status-badge">
                         <span class="status-dot ${statusClass}"></span>
                         <span>${statusText}</span>
                     </div>
@@ -3420,9 +3464,62 @@ const app = {
                 <td>${user.version || user.app_version || user.client_version || '-'}</td>
                 <td>${user.os || '-'}</td>
                 <td>${localeDisplay}</td>
-                <td>${this.formatTimeAgo(minutes)}</td>
+                <td style="color:var(--text-muted);font-size:12px;">${this.formatTimeAgo(minutes)}</td>
             </tr>
         `}).join('');
+    },
+
+    /**
+     * 综合筛选：关键字搜索（用户名/UID/备注/标签） + 在线状态 + 标签
+     */
+    filterUserList() {
+        const keyword = (document.getElementById('userListSearch')?.value || '').trim().toLowerCase();
+        const statusFilter = document.getElementById('userListStatusFilter')?.value || 'all';
+        const tagFilter = document.getElementById('userListTagFilter')?.value || 'all';
+        let list = this.state._renderedUserList || [];
+
+        // 关键字搜索：用户名、UID、备注、标签名
+        if (keyword) {
+            list = list.filter(u => {
+                const name = (u.username || u.name || '').toLowerCase();
+                const alias = (u.alias || '').toLowerCase();
+                const uid = String(u.id || '');
+                // 标签搜索
+                let tag_text = '';
+                try {
+                    const tags = typeof u.tags === 'string' ? JSON.parse(u.tags || '[]') : (u.tags || []);
+                    const all_defs = this.state.dashboardData?.tag_options || [];
+                    tag_text = tags.map(tn => {
+                        const def = all_defs.find(t => t.name === tn);
+                        return def ? (this._getTagLabel(def) + ' ' + tn) : tn;
+                    }).join(' ').toLowerCase();
+                } catch {}
+                return name.includes(keyword) || alias.includes(keyword) || uid.includes(keyword) || tag_text.includes(keyword);
+            });
+        }
+
+        // 在线状态筛选
+        if (statusFilter !== 'all') {
+            list = list.filter(u => {
+                const min = u.minutes_ago ?? u.minutes ?? u.last_seen_minutes ?? Infinity;
+                const online = typeof min === 'number' && min <= 5;
+                return statusFilter === 'online' ? online : !online;
+            });
+        }
+
+        // 标签筛选
+        if (tagFilter !== 'all') {
+            list = list.filter(u => {
+                const hwid = u.hwid || u.hwid_hash || '';
+                if (tagFilter === '_starred') return this.state.markedUsers.has(hwid);
+                if (tagFilter === '_admin') return this.state.adminUsers.has(hwid);
+                let tags = [];
+                try { tags = typeof u.tags === 'string' ? JSON.parse(u.tags || '[]') : (u.tags || []); } catch {}
+                return tags.includes(tagFilter);
+            });
+        }
+
+        this._renderUserRows(list);
     },
 
     /**
@@ -3724,6 +3821,7 @@ const app = {
         'sponsor_2': '二级赞助者',
         'sponsor_3': '三级赞助者',
         'sponsor_4': '四级赞助者',
+        'streamer': '主播',
     },
 
     /**

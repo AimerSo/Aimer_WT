@@ -17,49 +17,56 @@
                 配置参数
             </div>
 
-            <!-- Payload 可视化编辑 -->
-            <div class="payload-editor" id="payloadEditor">
-                <div class="payload-row">
-                    <div class="payload-label"><span class="label-icon">🎨</span> 主题文件</div>
-                    <select class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadTheme" onchange="redeemModule.updatePreview()">
-                        <option value="">不解锁主题</option>
-                        <option value="supporter.json">支持者主题</option>
-                        <option value="bi_an.json">彼岸主题</option>
-                        <option value="beiku.json">beiku 主题</option>
-                        <option value="lianying.json">爱樱主题</option>
-                        <option value="chifeng.json">赤峰主题</option>
-                    </select>
+            <!-- Payload 可视化编辑（左右双栏） -->
+            <div class="payload-editor payload-editor-split" id="payloadEditor">
+                <!-- 左栏：参数配置 -->
+                <div class="payload-editor-left">
+                    <div class="payload-row">
+                        <div class="payload-label"><span class="label-icon">🎨</span> 主题文件</div>
+                        <select class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadTheme" onchange="redeemModule._renderRewardLabelFields(); redeemModule.updatePreview()">
+                            <option value="">不解锁主题</option>
+                            <option value="supporter.json">支持者主题</option>
+                            <option value="bi_an.json">彼岸主题</option>
+                            <option value="beiku.json">beiku 主题</option>
+                            <option value="lianying.json">爱樱主题</option>
+                            <option value="chifeng.json">赤峰主题</option>
+                        </select>
+                    </div>
+                    <div class="payload-row">
+                        <div class="payload-label"><span class="label-icon">💬</span> AI额度</div>
+                        <input type="number" class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadBonus" value="0" min="0" oninput="redeemModule._renderRewardLabelFields(); redeemModule.updatePreview()">
+                        <span style="font-size: 12px; color: var(--text-muted);">次永久对话额度</span>
+                    </div>
+                    <div class="payload-row">
+                        <div class="payload-label"><span class="label-icon">📈</span> 每日额度增加</div>
+                        <input type="number" class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadDailyBonus" value="0" min="0" oninput="redeemModule._renderRewardLabelFields(); redeemModule.updatePreview()">
+                        <span style="font-size: 12px; color: var(--text-muted);">次/天</span>
+                    </div>
+                    <div class="payload-row">
+                        <div class="payload-label"><span class="label-icon">🏷️</span> 用户标签</div>
+                        <select class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadTag" onchange="redeemModule._renderRewardLabelFields(); redeemModule.onTagChange()">
+                            <option value="">不添加标签</option>
+                        </select>
+                    </div>
+                    <div class="payload-row" id="redeemNoteTagRow" style="display: none;">
+                        <div class="payload-label"><span class="label-icon">📝</span> 备注标签</div>
+                        <input type="text" class="input" style="flex: 1; max-width: 160px;" id="redeemNoteTag" placeholder="主播ID或用户名" oninput="redeemModule.updatePreview()">
+                        <span style="font-size: 12px; color: var(--text-muted);">用于标识此主播</span>
+                    </div>
+                    <div class="payload-row" id="redeemStreamerIdRow" style="display: none;">
+                        <div class="payload-label"><span class="label-icon">🎙️</span> 主播ID</div>
+                        <input type="text" class="input" style="flex: 1; max-width: 160px;" id="redeemStreamerId" placeholder="弹窗中显示的主播名称" oninput="redeemModule.updatePreview()">
+                        <span style="font-size: 12px; color: var(--text-muted);">显示为"来自xxx的分享"</span>
+                    </div>
                 </div>
-                <div class="payload-row">
-                    <div class="payload-label"><span class="label-icon">💬</span> AI额度</div>
-                    <input type="number" class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadBonus" value="0" min="0" oninput="redeemModule.updatePreview()">
-                    <span style="font-size: 12px; color: var(--text-muted);">次永久对话额度</span>
-                </div>
-                <div class="payload-row">
-                    <div class="payload-label"><span class="label-icon">📈</span> 每日额度增加</div>
-                    <input type="number" class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadDailyBonus" value="0" min="0" oninput="redeemModule.updatePreview()">
-                    <span style="font-size: 12px; color: var(--text-muted);">次/天（0点刷新的每日上限增量）</span>
-                </div>
-                <div class="payload-row">
-                    <div class="payload-label"><span class="label-icon">🏷️</span> 用户标签</div>
-                    <select class="input" style="flex: 1; max-width: 160px;" id="redeemPayloadTag" onchange="redeemModule.onTagChange()">
-                        <option value="">不添加标签</option>
-                        <option value="sponsor_1">一级支持者</option>
-                        <option value="sponsor_2">二级支持者</option>
-                        <option value="sponsor_3">三级支持者</option>
-                        <option value="sponsor_4">四级支持者</option>
-                        <option value="streamer">主播</option>
-                    </select>
-                </div>
-                <div class="payload-row" id="redeemNoteTagRow" style="display: none;">
-                    <div class="payload-label"><span class="label-icon">📝</span> 备注标签</div>
-                    <input type="text" class="input" style="flex: 1; max-width: 160px;" id="redeemNoteTag" placeholder="主播ID或用户名" oninput="redeemModule.updatePreview()">
-                    <span style="font-size: 12px; color: var(--text-muted);">用于标识此主播</span>
-                </div>
-                <div class="payload-row" id="redeemStreamerIdRow" style="display: none;">
-                    <div class="payload-label"><span class="label-icon">🎙️</span> 主播ID</div>
-                    <input type="text" class="input" style="flex: 1; max-width: 160px;" id="redeemStreamerId" placeholder="弹窗中显示的主播名称" oninput="redeemModule.updatePreview()">
-                    <span style="font-size: 12px; color: var(--text-muted);">显示为“来自xxx的分享”</span>
+                <!-- 右栏：弹窗展示文案自定义 -->
+                <div class="payload-editor-right" id="rewardLabelsPanel">
+                    <div class="reward-labels-header">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        弹窗展示文案
+                    </div>
+                    <div class="reward-labels-hint">自定义弹窗中每项奖励的文字，留空用默认</div>
+                    <div id="rewardLabelFields"></div>
                 </div>
             </div>
 

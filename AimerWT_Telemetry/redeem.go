@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -76,8 +77,10 @@ var redeemPresets = []map[string]interface{}{
 	},
 }
 
+var errRedeemRejected = errors.New("redeem rejected")
+
 // executeRedeemPayload 执行兑换码对应的功能，支持自定义弹窗
-func executeRedeemPayload(machineID string, redeemCode *RedeemCode) (map[string]interface{}, error) {
+func executeRedeemPayload(store *gorm.DB, machineID string, redeemCode *RedeemCode) (map[string]interface{}, error) {
 	var payload map[string]interface{}
 	if err := json.Unmarshal([]byte(redeemCode.Payload), &payload); err != nil {
 		return nil, fmt.Errorf("payload 解析失败: %v", err)
@@ -100,11 +103,11 @@ func executeRedeemPayload(machineID string, redeemCode *RedeemCode) (map[string]
 		}
 		if bonus > 0 {
 			var existing AIUserLimit
-			if err := db.Where("machine_id = ?", machineID).First(&existing).Error; err != nil {
+			if err := store.Where("machine_id = ?", machineID).First(&existing).Error; err != nil {
 				existing = AIUserLimit{MachineID: machineID, DailyLimit: 0, BonusCredits: bonus}
-				db.Create(&existing)
+				store.Create(&existing)
 			} else {
-				db.Model(&existing).Update("bonus_credits", gorm.Expr("bonus_credits + ?", bonus))
+				store.Model(&existing).Update("bonus_credits", gorm.Expr("bonus_credits + ?", bonus))
 			}
 			messages = append(messages, fmt.Sprintf("获得 %d 次永久AI对话额度", bonus))
 		}
@@ -121,12 +124,12 @@ func executeRedeemPayload(machineID string, redeemCode *RedeemCode) (map[string]
 		}
 		if dlb > 0 {
 			var existing AIUserLimit
-			if err := db.Where("machine_id = ?", machineID).First(&existing).Error; err != nil {
+			if err := store.Where("machine_id = ?", machineID).First(&existing).Error; err != nil {
 				existing = AIUserLimit{MachineID: machineID, DailyLimit: dlb, BonusCredits: 0}
-				db.Create(&existing)
+				store.Create(&existing)
 			} else {
 				newLimit := existing.DailyLimit + dlb
-				db.Model(&existing).Update("daily_limit", newLimit)
+				store.Model(&existing).Update("daily_limit", newLimit)
 			}
 			messages = append(messages, "每日对话额度增加")
 		}
@@ -135,7 +138,7 @@ func executeRedeemPayload(machineID string, redeemCode *RedeemCode) (map[string]
 	// 处理用户标签
 	if tagName, ok := payload["tag"].(string); ok && tagName != "" {
 		var record TelemetryRecord
-		if err := db.Where("machine_id = ?", machineID).First(&record).Error; err == nil {
+		if err := store.Where("machine_id = ?", machineID).First(&record).Error; err == nil {
 			var currentTags []string
 			if record.Tags != "" {
 				json.Unmarshal([]byte(record.Tags), &currentTags)
@@ -150,12 +153,12 @@ func executeRedeemPayload(machineID string, redeemCode *RedeemCode) (map[string]
 			if !found {
 				currentTags = append(currentTags, tagName)
 				tagsJSON, _ := json.Marshal(currentTags)
-				db.Model(&record).Update("tags", string(tagsJSON))
+				store.Model(&record).Update("tags", string(tagsJSON))
 			}
 		}
 
 		var tagDef UserTag
-		if err := db.Where("name = ?", tagName).First(&tagDef).Error; err == nil {
+		if err := store.Where("name = ?", tagName).First(&tagDef).Error; err == nil {
 			messages = append(messages, fmt.Sprintf("获得「%s」称号", tagDef.DisplayName))
 		}
 	}
@@ -268,8 +271,7 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 
 			created := make([]RedeemCode, 0, req.Count)
 			for i := 0; i < req.Count; i++ {
-				code := RedeemCode{
-					Code:         generateCode(4, 3),
+				codeTemplate := RedeemCode{
 					Type:         req.Type,
 					Payload:      req.Payload,
 					MaxUses:      req.MaxUses,
@@ -280,11 +282,28 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 					PopupMessage: req.PopupMessage,
 					PopupStyle:   req.PopupStyle,
 				}
-				if err := db.Create(&code).Error; err != nil {
-					log.Printf("[Redeem] 创建兑换码失败: %v", err)
+
+				var createdCode RedeemCode
+				createdOK := false
+				for attempt := 0; attempt < 10; attempt++ {
+					code := codeTemplate
+					code.Code = generateCode(4, 3)
+					if err := db.Create(&code).Error; err != nil {
+						if strings.Contains(strings.ToLower(err.Error()), "unique") {
+							continue
+						}
+						log.Printf("[Redeem] 创建兑换码失败: %v", err)
+						break
+					}
+					createdCode = code
+					createdOK = true
+					break
+				}
+				if !createdOK {
+					log.Printf("[Redeem] 创建兑换码失败: 重试后仍未生成唯一兑换码")
 					continue
 				}
-				created = append(created, code)
+				created = append(created, createdCode)
 			}
 
 			log.Printf("[Redeem] 批量生成 %d 个兑换码 (类型: %s)", len(created), req.Type)
@@ -401,59 +420,80 @@ func handleRedeem(c *gin.Context) {
 		return
 	}
 
-	// 查询兑换码
-	var redeemCode RedeemCode
-	if err := db.Where("code = ?", code).First(&redeemCode).Error; err != nil {
-		c.JSON(200, gin.H{"status": "fail", "error": "兑换码无效或不存在"})
-		return
-	}
+	var (
+		cmd        map[string]interface{}
+		failMsg    string
+		redeemType string
+	)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var redeemCode RedeemCode
+		if err := tx.Where("code = ?", code).First(&redeemCode).Error; err != nil {
+			failMsg = "兑换码无效或不存在"
+			return errRedeemRejected
+		}
 
-	// 是否已停用
-	if !redeemCode.IsActive {
-		c.JSON(200, gin.H{"status": "fail", "error": "该兑换码已被停用"})
-		return
-	}
+		if !redeemCode.IsActive {
+			failMsg = "该兑换码已被停用"
+			return errRedeemRejected
+		}
+		if redeemCode.ExpiresAt != nil && redeemCode.ExpiresAt.Before(time.Now()) {
+			failMsg = "该兑换码已过期"
+			return errRedeemRejected
+		}
+		if redeemCode.MaxUses > 0 && redeemCode.UsedCount >= redeemCode.MaxUses {
+			failMsg = "该兑换码已被使用完毕"
+			return errRedeemRejected
+		}
 
-	// 是否已过期
-	if redeemCode.ExpiresAt != nil && redeemCode.ExpiresAt.Before(time.Now()) {
-		c.JSON(200, gin.H{"status": "fail", "error": "该兑换码已过期"})
-		return
-	}
+		record := RedeemRecord{Code: code, MachineID: req.MachineID}
+		if err := tx.Create(&record).Error; err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "unique") {
+				failMsg = "您已使用过此兑换码"
+				return errRedeemRejected
+			}
+			return err
+		}
 
-	// 是否已达到最大使用次数
-	if redeemCode.MaxUses > 0 && redeemCode.UsedCount >= redeemCode.MaxUses {
-		c.JSON(200, gin.H{"status": "fail", "error": "该兑换码已被使用完毕"})
-		return
-	}
+		executedCmd, err := executeRedeemPayload(tx, req.MachineID, &redeemCode)
+		if err != nil {
+			return err
+		}
 
-	// 同一用户是否已用过此码
-	var existingRecord int64
-	db.Model(&RedeemRecord{}).Where("code = ? AND machine_id = ?", code, req.MachineID).Count(&existingRecord)
-	if existingRecord > 0 {
-		c.JSON(200, gin.H{"status": "fail", "error": "您已使用过此兑换码"})
-		return
-	}
+		updateQuery := tx.Model(&RedeemCode{}).Where("id = ?", redeemCode.ID)
+		if redeemCode.MaxUses > 0 {
+			updateQuery = updateQuery.Where("used_count < max_uses")
+		}
+		updateResult := updateQuery.Update("used_count", gorm.Expr("used_count + 1"))
+		if updateResult.Error != nil {
+			return updateResult.Error
+		}
+		if updateResult.RowsAffected == 0 {
+			failMsg = "该兑换码已被使用完毕"
+			return errRedeemRejected
+		}
 
-	// 验证通过，执行兑换功能
-	cmd, err := executeRedeemPayload(req.MachineID, &redeemCode)
+		cmdJSON, _ := json.Marshal(executedCmd)
+		if err := tx.Model(&TelemetryRecord{}).
+			Where("machine_id = ?", req.MachineID).
+			Update("pending_command", string(cmdJSON)).Error; err != nil {
+			return err
+		}
+
+		cmd = executedCmd
+		redeemType = redeemCode.Type
+		return nil
+	})
 	if err != nil {
+		if errors.Is(err, errRedeemRejected) {
+			c.JSON(200, gin.H{"status": "fail", "error": failMsg})
+			return
+		}
 		log.Printf("[Redeem] 执行失败: %v", err)
 		c.JSON(500, gin.H{"status": "fail", "error": "兑换执行失败"})
 		return
 	}
 
-	// 写入使用记录
-	record := RedeemRecord{Code: code, MachineID: req.MachineID}
-	db.Create(&record)
-
-	// 递增使用次数
-	db.Model(&redeemCode).Update("used_count", gorm.Expr("used_count + 1"))
-
-	// 同时将指令存入 pending_command（作为备份，防止即时响应丢失）
-	cmdJSON, _ := json.Marshal(cmd)
-	db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("pending_command", string(cmdJSON))
-
-	log.Printf("[Redeem] 兑换成功 - 码: %s, 用户: %s, 类型: %s", code, req.MachineID, redeemCode.Type)
+	log.Printf("[Redeem] 兑换成功 - 码: %s, 用户: %s, 类型: %s", code, req.MachineID, redeemType)
 
 	c.JSON(200, gin.H{
 		"status":  "success",

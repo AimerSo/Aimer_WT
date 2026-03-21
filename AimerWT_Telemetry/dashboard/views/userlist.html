@@ -1,23 +1,43 @@
 <div class="view-container active">
     <div class="app">
-        <div class="topbar">
-            <div class="top-actions" style="margin-left: auto;">
-                <button class="btn" onclick="app.showAlert('用户列表已刷新', 'success')">刷新数据</button>
+        <!-- 单行紧凑工具栏：标题 + 计数 | 搜索 | 筛选 | 刷新 -->
+        <div class="userlist-toolbar">
+            <div class="userlist-toolbar-left">
+                <h2 class="userlist-title">用户列表</h2>
+                <span id="userListCount" class="userlist-count-badge"></span>
+            </div>
+            <div class="userlist-toolbar-right">
+                <div class="userlist-search-wrap">
+                    <svg class="userlist-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input class="input userlist-search-input" id="userListSearch" type="text" placeholder="搜索用户 / UID / 备注 / 标签" oninput="app.filterUserList()">
+                </div>
+                <select class="select userlist-filter-select" id="userListStatusFilter" onchange="app.filterUserList()">
+                    <option value="all">全部状态</option>
+                    <option value="online">在线</option>
+                    <option value="offline">离线</option>
+                </select>
+                <select class="select userlist-filter-select" id="userListTagFilter" onchange="app.filterUserList()">
+                    <option value="all">全部标签</option>
+                    <option value="_starred">⭐ 星标</option>
+                    <option value="_admin">🔑 管理员</option>
+                </select>
+                <button class="btn userlist-refresh-btn" onclick="app.initUserList(); app.showAlert('数据已刷新', 'success')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    刷新
+                </button>
             </div>
         </div>
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-title">用户列表</div>
-            </div>
+
+        <!-- 表格 -->
+        <div class="panel userlist-panel">
             <div class="panel-body" style="padding: 0;">
-                <table class="data-table" id="userListTable">
+                <table class="data-table data-table-compact" id="userListTable">
                     <thead>
                         <tr>
                             <th class="sortable" data-sort="id" onclick="app.sortUserList('id')">
-                                <span>UID</span>
+                                <span>用户</span>
                                 <span class="sort-icon"></span>
                             </th>
-                            <th>HWID</th>
                             <th class="sortable" data-sort="status" onclick="app.sortUserList('status')">
                                 <span>在线状态</span>
                                 <span class="sort-icon"></span>
@@ -43,7 +63,7 @@
                     </thead>
                     <tbody id="fullUserListBody">
                         <tr>
-                            <td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                            <td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">
                                 加载中...
                             </td>
                         </tr>

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AimerWT | 遥测数据仪表盘 v1.1</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/base.css?v=20260321">
     <link rel="stylesheet" href="css/notice_preview.css">
     <link rel="stylesheet" href="css/notice_markdown.css?v=20260318">
     <link rel="stylesheet" href="css/vendor/github-dark.min.css">
@@ -215,16 +215,6 @@
                         <span>广告统计</span>
                     </div>
                 </div>
-                <div class="menu-item" data-view="app_browser" onclick="app.switchView('app_browser', this)">
-                    <div class="menu-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                            <line x1="8" y1="21" x2="16" y2="21"></line>
-                            <line x1="12" y1="17" x2="12" y2="21"></line>
-                        </svg>
-                    </div>
-                    <span>浏览主软件</span>
-                </div>
                 <div class="menu-item menu-item-with-submenu" id="redeemMenuItem" onclick="app.handleRedeemMenuClick(this)">
                     <div class="menu-icon">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -262,6 +252,16 @@
                         </div>
                         <span>兑换码统计</span>
                     </div>
+                </div>
+                <div class="menu-item" data-view="app_browser" onclick="app.switchView('app_browser', this)">
+                    <div class="menu-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                    </div>
+                    <span>浏览主软件</span>
                 </div>
                 <div class="menu-item" data-view="settings" onclick="app.switchView('settings', this)">
                     <div class="menu-icon">
@@ -335,6 +335,6 @@
     <script src="js/notice_preview.js?v=20260318"></script>
     <script src="js/image_cropper.js?v=1"></script>
     <script src="redeem/redeem_module.js?v=20260320"></script>
-    <script src="js/app.js?v=2"></script>
+    <script src="js/app.js?v=3"></script>
 </body>
 </html>

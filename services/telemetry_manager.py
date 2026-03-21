@@ -38,6 +38,20 @@ def resolve_report_url(report_url: Optional[str] = None) -> str:
     return final_url or "https://api.example.com/telemetry"
 
 
+def resolve_service_base_url(report_url: Optional[str] = None) -> str:
+    """从遥测地址推导服务基地址。"""
+    final_url = resolve_report_url(report_url).strip()
+    if final_url.endswith("/telemetry"):
+        return final_url[:-len("/telemetry")]
+    return final_url.rstrip("/")
+
+
+def resolve_related_endpoint(report_url: Optional[str], endpoint: str) -> str:
+    """基于遥测地址推导关联公开端点，例如 /feedback、/redeem。"""
+    normalized_endpoint = "/" + str(endpoint or "").lstrip("/")
+    return f"{resolve_service_base_url(report_url)}{normalized_endpoint}"
+
+
 class TelemetryManager:
     def __init__(self, app_version: str, report_url: Optional[str] = None):
         self._stop_heartbeat = None
@@ -319,7 +333,7 @@ class TelemetryManager:
                 callback(False, "遥测服务未配置")
             return
 
-        feedback_url = self.report_url.replace("/telemetry", "/feedback")
+        feedback_url = resolve_related_endpoint(self.report_url, "/feedback")
 
         def _do_submit():
             try:

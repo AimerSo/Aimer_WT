@@ -11,6 +11,8 @@ const redeemModule = {
     _statsTab: 'codes',
     _editingCodeId: null,
     _popupStyleCache: {},
+    _pendingRewardLabels: null,
+    _searchKeyword: '',
 
     // 预设类型 → 弹窗样式文件映射
     _popupStyleMap: {
@@ -53,27 +55,110 @@ const redeemModule = {
         'streamer': '主播',
     },
 
-    /** 从预设 payload JSON 中解析出可读的奖励列表 */
-    parsePayloadRewards(payloadStr, forPopup = false) {
+    _escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
+    _getPopupStyleOptions(selectedValue = 'default') {
+        const options = [
+            { value: 'default', label: '跟随预设类型' },
+            { value: 'style_sponsor_1', label: '支持者一级' },
+            { value: 'style_sponsor_2', label: '支持者二级' },
+            { value: 'style_sponsor_3', label: '支持者三级' },
+            { value: 'style_sponsor_4', label: '支持者四级' },
+            { value: 'style_streamer', label: '主播专属' },
+            { value: 'style_streamer_share', label: '主播分享' },
+        ];
+        if (selectedValue && !options.some((opt) => opt.value === selectedValue)) {
+            options.push({ value: selectedValue, label: `保留当前值 (${selectedValue})` });
+        }
+        return options.map((opt) =>
+            `<option value="${this._escapeHtml(opt.value)}" ${opt.value === selectedValue ? 'selected' : ''}>${this._escapeHtml(opt.label)}</option>`
+        ).join('');
+    },
+
+    /** 从预设 payload JSON 中解析出可读的奖励列表，customLabels 可覆盖各项的默认文案 */
+    parsePayloadRewards(payloadStr, forPopup = false, customLabels = null) {
         try {
             const p = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
             const rewards = [];
             if (p.theme) {
                 const themeName = this._themeDisplayNames[p.theme] || p.theme;
-                rewards.push({ icon: '🎨', text: '解锁' + themeName, type: 'theme' });
+                const defaultText = '解锁' + themeName;
+                const text = (customLabels && customLabels.theme) || defaultText;
+                rewards.push({ icon: '🎨', text, type: 'theme', key: 'theme', defaultText });
             }
-            if (p.bonus && p.bonus > 0) rewards.push({ icon: '💬', text: p.bonus + ' 次AI永久额度', type: 'bonus' });
+            if (p.bonus && p.bonus > 0) {
+                const defaultText = p.bonus + ' 次AI永久额度';
+                const text = (customLabels && customLabels.bonus) || defaultText;
+                rewards.push({ icon: '💬', text, type: 'bonus', key: 'bonus', defaultText });
+            }
             if (p.daily_limit_bonus && p.daily_limit_bonus > 0) {
-                const dlbText = forPopup ? '每日对话额度增加' : '每日对话额度增加 +' + p.daily_limit_bonus;
-                rewards.push({ icon: '📈', text: dlbText, type: 'bonus' });
+                const defaultText = forPopup ? '每日对话额度增加' : '每日对话额度增加 +' + p.daily_limit_bonus;
+                const text = (customLabels && customLabels.daily_limit_bonus) || defaultText;
+                rewards.push({ icon: '📈', text, type: 'bonus', key: 'daily_limit_bonus', defaultText });
             }
             if (p.tag) {
-                const tagLabel = this._tagLabelMap[p.tag] || p.tag;
-                rewards.push({ icon: '🏷️', text: '称号: ' + tagLabel, type: 'tag' });
+                let tagLabel = this._tagLabelMap[p.tag] || p.tag;
+                if (this._allTagDefs) {
+                    const def = this._allTagDefs.find(t => t.name === p.tag);
+                    if (def) tagLabel = this._stripEmoji(def.display_name);
+                }
+                const defaultText = '称号: ' + tagLabel;
+                const text = (customLabels && customLabels.tag) || defaultText;
+                rewards.push({ icon: '🏷️', text, type: 'tag', key: 'tag', defaultText });
             }
-            if (rewards.length === 0) rewards.push({ icon: '🎁', text: '无特殊奖励', type: 'bonus' });
+            if (rewards.length === 0) rewards.push({ icon: '🎁', text: '无特殊奖励', type: 'bonus', key: 'none', defaultText: '无特殊奖励' });
             return rewards;
-        } catch { return [{ icon: '🎁', text: '自定义内容', type: 'bonus' }]; }
+        } catch { return [{ icon: '🎁', text: '自定义内容', type: 'bonus', key: 'none', defaultText: '自定义内容' }]; }
+    },
+
+    /** 根据当前 payload 配置，动态渲染奖励文案输入行 */
+    _renderRewardLabelFields() {
+        const container = document.getElementById('rewardLabelFields');
+        if (!container) return;
+        const rewards = this.parsePayloadRewards(this._buildPayload(), true);
+        if (rewards.length === 1 && rewards[0].key === 'none') {
+            container.innerHTML = '<div style="font-size: 12px; color: var(--text-muted); padding: 8px 0;">当前无奖励项</div>';
+            this._pendingRewardLabels = null;
+            return;
+        }
+        const pending = this._pendingRewardLabels || {};
+        const iconMap = { theme: '🎨', bonus: '💬', daily_limit_bonus: '📈', tag: '🏷️' };
+        container.innerHTML = rewards.map(r => {
+            const existingEl = document.getElementById('rewardLabel_' + r.key);
+            const val = existingEl ? existingEl.value : (pending[r.key] || '');
+            return `<div class="reward-label-row">
+                <span class="reward-label-icon">${iconMap[r.key] || '🎁'}</span>
+                <input type="text" class="input" id="rewardLabel_${r.key}"
+                    value="${this._escapeHtml(val)}"
+                    placeholder="${this._escapeHtml(r.defaultText)}"
+                    oninput="redeemModule.updatePreview()">
+            </div>`;
+        }).join('');
+        this._pendingRewardLabels = null;
+    },
+
+    /** 收集文案输入框中的自定义文案 */
+    _collectRewardLabels() {
+        const labels = {};
+        ['theme', 'bonus', 'daily_limit_bonus', 'tag'].forEach(key => {
+            const el = document.getElementById('rewardLabel_' + key);
+            if (el && el.value.trim()) labels[key] = el.value.trim();
+        });
+        return Object.keys(labels).length > 0 ? labels : null;
+    },
+
+    /** 根据自定义文案生成弹窗中的奖励文本（用于 popup_message） */
+    _buildPopupMessageFromLabels(customLabels) {
+        const rewards = this.parsePayloadRewards(this._buildPayload(), true, customLabels);
+        if (rewards.length === 1 && rewards[0].key === 'none') return '';
+        return rewards.map(r => '✓ ' + r.text).join('\n');
     },
 
     // ═══════════════════════════════════════════════════════
@@ -82,8 +167,36 @@ const redeemModule = {
 
     async initGenerate() {
         await this._loadPresets();
+        await this._loadTagOptions();
         this._renderPresetGrid();
         this.updatePreview();
+    },
+
+    /** 加载标签选项并填充下拉框 */
+    async _loadTagOptions() {
+        const select = document.getElementById('redeemPayloadTag');
+        if (!select) return;
+        try {
+            const res = await fetch(`${app.config.apiBase}/admin/tags`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const tags = data.tags || [];
+            this._allTagDefs = tags;
+            const current = select.value;
+            while (select.options.length > 1) select.remove(1);
+            tags.forEach(tag => {
+                const opt = document.createElement('option');
+                opt.value = tag.name;
+                opt.textContent = this._stripEmoji(tag.display_name);
+                select.appendChild(opt);
+            });
+            select.value = current || '';
+        } catch {}
+    },
+
+    _stripEmoji(text) {
+        if (!text) return '';
+        return text.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{FE0F}\u{200D}\u{20E3}\u{2702}-\u{27B0}\u{26A0}]+\s*/u, '').trim();
     },
 
     async _loadPresets() {
@@ -175,6 +288,8 @@ const redeemModule = {
             if (noteTagEl) noteTagEl.value = savedDefaults.note_tag || '';
             const streamerIdEl = document.getElementById('redeemStreamerId');
             if (streamerIdEl) streamerIdEl.value = savedDefaults.streamer_id || '';
+            // 暂存自定义文案以供 _renderRewardLabelFields 回填
+            this._pendingRewardLabels = savedDefaults.reward_labels || null;
         } else if (idx !== 'custom') {
             // 使用服务器预设默认值
             const preset = this._presets[idx];
@@ -213,6 +328,7 @@ const redeemModule = {
 
         // 根据预设类型显示/隐藏主播相关行
         this._updateStreamerRows(presetType);
+        this._renderRewardLabelFields();
         this.updatePreview();
     },
 
@@ -270,8 +386,9 @@ const redeemModule = {
         const customTitle = document.getElementById('redeemPopupTitle')?.value?.trim() || '';
         const customMsg = document.getElementById('redeemPopupMessage')?.value?.trim() || '';
 
-        // 构建奖励列表 HTML
-        const rewards = this.parsePayloadRewards(this._buildPayload(), true);
+        // 构建奖励列表 HTML（使用自定义文案）
+        const customLabels = this._collectRewardLabels();
+        const rewards = this.parsePayloadRewards(this._buildPayload(), true, customLabels);
         const rewardItemsHtml = rewards.map(r =>
             `<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:13px;">` +
             `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; opacity:0.6;"><path d="M20 6L9 17l-5-5"/></svg>` +
@@ -325,6 +442,9 @@ const redeemModule = {
         document.getElementById('redeemPayloadTheme').value = '';
         document.getElementById('redeemPayloadBonus').value = 0;
         document.getElementById('redeemPayloadDailyBonus').value = 0;
+        // 清空文案输入
+        const labelFields = document.getElementById('rewardLabelFields');
+        if (labelFields) labelFields.innerHTML = '';
         document.getElementById('redeemPayloadTag').value = '';
         document.getElementById('redeemGenCount').value = 1;
         document.getElementById('redeemGenMaxUses').value = 1;
@@ -366,6 +486,14 @@ const redeemModule = {
         let note = document.getElementById('redeemGenNote')?.value?.trim() || '';
         const popupTitle = document.getElementById('redeemPopupTitle')?.value?.trim() || '';
         let popupMessage = document.getElementById('redeemPopupMessage')?.value?.trim() || '';
+
+        // 将自定义奖励文案组装为 popup_message（仅在用户没有手动填写弹窗内容时）
+        if (!popupMessage) {
+            const customLabels = this._collectRewardLabels();
+            if (customLabels) {
+                popupMessage = this._buildPopupMessageFromLabels(customLabels);
+            }
+        }
 
         // 备注标签和主播ID拼接到备注中
         const noteTag = document.getElementById('redeemNoteTag')?.value?.trim() || '';
@@ -453,12 +581,28 @@ const redeemModule = {
 
     async initStats() {
         this._statsTab = 'codes';
+        this._searchKeyword = '';
         await this._loadPresets();
         await this._loadAllCodes();
         this._renderStatsCards();
         this._renderCategoryTabs();
         this._renderFilteredCodes();
         this.switchStatsTab('codes');
+    },
+
+    /** 搜索输入回调 */
+    onSearchInput() {
+        this._searchKeyword = (document.getElementById('redeemSearchInput')?.value || '').trim().toLowerCase();
+        this._renderFilteredCodes();
+    },
+
+    /** 刷新统计数据 */
+    async refreshStats() {
+        await this._loadAllCodes();
+        this._renderStatsCards();
+        this._renderCategoryTabs();
+        this._renderFilteredCodes();
+        app.showAlert('已刷新', 'success');
     },
 
     async _loadAllCodes() {
@@ -485,18 +629,21 @@ const redeemModule = {
         const totalUsed = codes.reduce((s, c) => s + (c.used_count || 0), 0);
 
         const stats = [
-            { label: '总数', value: total, color: 'var(--primary)' },
-            { label: '可用', value: active, color: 'var(--secondary)' },
-            { label: '已用完', value: used, color: 'var(--warning)' },
-            { label: '已过期', value: expired, color: 'var(--danger)' },
-            { label: '已停用', value: disabled, color: 'var(--text-muted)' },
-            { label: '总使用次数', value: totalUsed, color: '#8b5cf6' },
+            { label: '总数', value: total, color: 'var(--primary)', icon: '📦', bg: 'rgba(59,130,246,0.08)' },
+            { label: '可用', value: active, color: '#10b981', icon: '✅', bg: 'rgba(16,185,129,0.08)' },
+            { label: '已用完', value: used, color: '#f59e0b', icon: '⚡', bg: 'rgba(245,158,11,0.08)' },
+            { label: '已过期', value: expired, color: '#ef4444', icon: '⏰', bg: 'rgba(239,68,68,0.08)' },
+            { label: '已停用', value: disabled, color: '#94a3b8', icon: '🚫', bg: 'rgba(148,163,184,0.08)' },
+            { label: '总使用次数', value: totalUsed, color: '#8b5cf6', icon: '📊', bg: 'rgba(139,92,246,0.08)' },
         ];
 
         container.innerHTML = stats.map(s =>
-            `<div class="redeem-stat-card">
-                <div class="stat-label">${s.label}</div>
-                <div class="stat-value" style="color: ${s.color};">${s.value}</div>
+            `<div class="rs-stat-card" style="--accent-color: ${s.color};">
+                <div class="rs-stat-header">
+                    <span class="rs-stat-label">${s.label}</span>
+                    <span class="rs-stat-icon" style="--icon-bg: ${s.bg};">${s.icon}</span>
+                </div>
+                <div class="rs-stat-value">${s.value}</div>
             </div>`
         ).join('');
     },
@@ -506,18 +653,15 @@ const redeemModule = {
         const container = document.getElementById('redeemCategoryTabs');
         if (!container) return;
 
-        // 统计每种类型的数量
         const typeCounts = {};
         this._allCodes.forEach(c => {
             typeCounts[c.type] = (typeCounts[c.type] || 0) + 1;
         });
 
-        // 预设类型 label 映射
         const typeLabels = {};
         this._presets.forEach(p => { typeLabels[p.type] = p.label; });
 
-        // 构建标签
-        const allTab = `<div class="redeem-category-tab ${this._currentCategory === 'all' ? 'active' : ''}"
+        const allTab = `<div class="rs-cat-tab ${this._currentCategory === 'all' ? 'active' : ''}"
             onclick="redeemModule.filterByCategory('all')">
             全部 <span class="tab-count">${this._allCodes.length}</span>
         </div>`;
@@ -525,7 +669,7 @@ const redeemModule = {
         const typeTabs = Object.keys(typeCounts).map(type => {
             const label = typeLabels[type] || type;
             const isActive = this._currentCategory === type;
-            return `<div class="redeem-category-tab ${isActive ? 'active' : ''}"
+            return `<div class="rs-cat-tab ${isActive ? 'active' : ''}"
                 onclick="redeemModule.filterByCategory('${type}')">
                 ${label} <span class="tab-count">${typeCounts[type]}</span>
             </div>`;
@@ -541,55 +685,79 @@ const redeemModule = {
         this._renderFilteredCodes();
     },
 
-    /** 渲染过滤后的兑换码列表 */
+    /** 渲染过滤后的兑换码列表（卡片式） */
     _renderFilteredCodes() {
-        const tbody = document.getElementById('statsCodesBody');
-        if (!tbody) return;
+        const container = document.getElementById('statsCodesBody');
+        if (!container) return;
 
-        const codes = this._currentCategory === 'all'
+        let codes = this._currentCategory === 'all'
             ? this._allCodes
             : this._allCodes.filter(c => c.type === this._currentCategory);
 
+        // 搜索过滤
+        if (this._searchKeyword) {
+            const kw = this._searchKeyword;
+            codes = codes.filter(c =>
+                (c.code || '').toLowerCase().includes(kw) ||
+                (c.note || '').toLowerCase().includes(kw) ||
+                (c.type || '').toLowerCase().includes(kw)
+            );
+        }
+
         if (codes.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 40px;">该类型暂无兑换码</td></tr>';
+            container.innerHTML = `<div class="rs-empty">
+                <div class="rs-empty-icon">📭</div>
+                <div class="rs-empty-text">${this._searchKeyword ? '未找到匹配的兑换码' : '该类型暂无兑换码'}</div>
+            </div>`;
             return;
         }
 
         const typeLabels = {};
         this._presets.forEach(p => { typeLabels[p.type] = p.label; });
 
-        tbody.innerHTML = codes.map(code => {
-            const statusMap = {
-                'active': '<span style="color: var(--secondary);">可用</span>',
-                'used': '<span style="color: var(--warning);">已用完</span>',
-                'expired': '<span style="color: var(--danger);">已过期</span>',
-                'disabled': '<span style="color: var(--text-muted);">已停用</span>',
-            };
-            const statusHtml = statusMap[code.status] || code.status;
+        const statusTextMap = {
+            'active': '可用', 'used': '已用完', 'expired': '已过期', 'disabled': '已停用',
+        };
+        const statusClassMap = {
+            'active': 's-active', 'used': 's-used', 'expired': 's-expired', 'disabled': 's-disabled',
+        };
+
+        container.innerHTML = codes.map((code, idx) => {
             const typeLabel = typeLabels[code.type] || code.type;
-            const usageText = code.max_uses > 0 ? `${code.used_count} / ${code.max_uses}` : `${code.used_count} / ∞`;
+            const usageText = code.max_uses > 0 ? `${code.used_count}/${code.max_uses}` : `${code.used_count}/∞`;
+            const usagePct = code.max_uses > 0 ? Math.min(100, (code.used_count / code.max_uses) * 100) : 0;
+            const isFull = code.max_uses > 0 && code.used_count >= code.max_uses;
 
-            // 解析奖励描述
             const rewards = this.parsePayloadRewards(code.payload);
-            const rewardText = rewards.map(r => r.icon + ' ' + r.text).join('、');
+            const rewardSummary = rewards.map(r => r.icon + ' ' + r.text).join(' · ');
+            const safeCreatedAt = (code.created_at || '').replace('T', ' ').substring(0, 16);
 
-            const activeBtn = code.is_active
-                ? `<button class="btn" onclick="event.stopPropagation(); redeemModule.toggleActive(${code.id}, false)" style="font-size:11px; padding:2px 8px;">停用</button>`
-                : `<button class="btn" onclick="event.stopPropagation(); redeemModule.toggleActive(${code.id}, true)" style="font-size:11px; padding:2px 8px;">启用</button>`;
+            const toggleSvg = code.is_active
+                ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4" y1="4" x2="20" y2="20"/></svg>'
+                : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
 
-            return `<tr onclick="redeemModule.showDetail(${code.id})">
-                <td style="font-family: monospace; font-size: 13px; font-weight: 600; letter-spacing: 1px; cursor: pointer;" title="点击查看详情">${code.code}</td>
-                <td><span style="padding: 2px 8px; border-radius: 8px; font-size: 11px; background: var(--bg); border: 1px solid var(--border);">${typeLabel}</span></td>
-                <td style="font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${rewardText}">${rewardText}</td>
-                <td>${usageText}</td>
-                <td>${statusHtml}</td>
-                <td style="max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${code.note || ''}">${code.note || '-'}</td>
-                <td style="font-size: 12px; color: var(--text-muted);">${(code.created_at || '').replace('T', ' ').substring(0, 19)}</td>
-                <td style="display: flex; gap: 4px;" onclick="event.stopPropagation();">
-                    ${activeBtn}
-                    <button class="btn" onclick="redeemModule.deleteCode(${code.id})" style="font-size:11px; padding:2px 8px; color: var(--danger); border-color: var(--danger);">删除</button>
-                </td>
-            </tr>`;
+            return `<div class="rs-code-card status-${code.status}" onclick="redeemModule.showDetail(${code.id})" style="animation-delay: ${idx * 0.03}s">
+                <div class="rs-code-main">
+                    <span class="rs-code-text">${code.code}</span>
+                    <div class="rs-code-meta">
+                        <span class="rs-type-badge">${this._escapeHtml(typeLabel)}</span>
+                        <span class="rs-reward-summary" title="${this._escapeHtml(rewardSummary)}">${this._escapeHtml(rewardSummary)}</span>
+                    </div>
+                    ${code.note ? `<div class="rs-code-note" title="${this._escapeHtml(code.note)}">📝 ${this._escapeHtml(code.note)}</div>` : ''}
+                </div>
+                <div class="rs-code-right">
+                    <div class="rs-usage-pill">
+                        <div class="rs-usage-bar"><div class="rs-usage-fill${isFull ? ' full' : ''}" style="width:${usagePct}%"></div></div>
+                        <span>${usageText}</span>
+                    </div>
+                    <span class="rs-status-dot ${statusClassMap[code.status] || ''}">${statusTextMap[code.status] || code.status}</span>
+                    <span class="rs-code-time">${safeCreatedAt}</span>
+                    <div class="rs-code-actions" onclick="event.stopPropagation();">
+                        <button class="rs-action-btn" onclick="redeemModule.toggleActive(${code.id}, ${!code.is_active})" title="${code.is_active ? '停用' : '启用'}">${toggleSvg}</button>
+                        <button class="rs-action-btn danger" onclick="redeemModule.deleteCode(${code.id})" title="删除"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                    </div>
+                </div>
+            </div>`;
         }).join('');
     },
 
@@ -604,13 +772,13 @@ const redeemModule = {
         if (tab === 'codes') {
             if (codesPanel) codesPanel.style.display = '';
             if (recordsPanel) recordsPanel.style.display = 'none';
-            if (codesBtn) codesBtn.style.fontWeight = '600';
-            if (recordsBtn) recordsBtn.style.fontWeight = '';
+            if (codesBtn) { codesBtn.classList.add('active'); }
+            if (recordsBtn) { recordsBtn.classList.remove('active'); }
         } else {
             if (codesPanel) codesPanel.style.display = 'none';
             if (recordsPanel) recordsPanel.style.display = '';
-            if (codesBtn) codesBtn.style.fontWeight = '';
-            if (recordsBtn) recordsBtn.style.fontWeight = '600';
+            if (codesBtn) { codesBtn.classList.remove('active'); }
+            if (recordsBtn) { recordsBtn.classList.add('active'); }
             this._loadRecords();
         }
     },
@@ -648,7 +816,7 @@ const redeemModule = {
 
     // ─────────── 码详情弹窗 ───────────
 
-    /** 展示兑换码详情 */
+    /** 展示兑换码详情（侧面板） */
     showDetail(codeId) {
         const code = this._allCodes.find(c => c.id === codeId);
         if (!code) return;
@@ -658,103 +826,167 @@ const redeemModule = {
         this._presets.forEach(p => { typeLabels[p.type] = p.label; });
 
         const rewards = this.parsePayloadRewards(code.payload);
-        const rewardHtml = rewards.map(r =>
-            `<span style="display: inline-flex; align-items: center; gap: 4px; margin-right: 12px;">${r.icon} ${r.text}</span>`
-        ).join('');
+        const rewardListHtml = rewards.map(r => {
+            const iconClass = r.type === 'theme' ? 'theme' : (r.type === 'tag' ? 'tag' : 'bonus');
+            return `<div class="rs-reward-item">
+                <span class="rs-reward-icon ${iconClass}">${this._escapeHtml(r.icon)}</span>
+                <span>${this._escapeHtml(r.text)}</span>
+            </div>`;
+        }).join('');
 
-        const statusMap = {
-            'active': '<span style="color: var(--secondary); font-weight: 600;">✅ 可用</span>',
-            'used': '<span style="color: var(--warning); font-weight: 600;">⚠️ 已用完</span>',
-            'expired': '<span style="color: var(--danger); font-weight: 600;">⏰ 已过期</span>',
-            'disabled': '<span style="color: var(--text-muted); font-weight: 600;">🚫 已停用</span>',
+        const safeCode = this._escapeHtml(code.code);
+        const safeTheme = this._escapeHtml(this._parseField(code.payload, 'theme'));
+        const safeTag = this._escapeHtml(this._parseField(code.payload, 'tag'));
+        const safeNote = this._escapeHtml(code.note || '-');
+        const safePopupTitle = this._escapeHtml(code.popup_title || '');
+        const safePopupMessage = this._escapeHtml(code.popup_message || '');
+        const safeCreatedAt = this._escapeHtml((code.created_at || '').replace('T', ' ').substring(0, 19));
+        const safeExpiresAt = this._escapeHtml(code.expires_at ? code.expires_at.replace('T', ' ').substring(0, 19) : '永不过期');
+
+        const statusTextMap = {
+            'active': '✅ 可用', 'used': '⚠️ 已用完', 'expired': '⏰ 已过期', 'disabled': '🚫 已停用',
         };
+        const statusClassMap = {
+            'active': 's-active', 'used': 's-used', 'expired': 's-expired', 'disabled': 's-disabled',
+        };
+
+        const usagePct = code.max_uses > 0 ? Math.min(100, (code.used_count / code.max_uses) * 100) : 0;
+        const isFull = code.max_uses > 0 && code.used_count >= code.max_uses;
+        const usageText = code.max_uses > 0 ? `${code.used_count} / ${code.max_uses}` : `${code.used_count} / ∞`;
 
         const body = document.getElementById('redeemDetailBody');
         body.innerHTML = `
-            <div class="redeem-detail-grid">
-                <div class="detail-label">兑换码</div>
-                <div class="detail-value mono" style="cursor: pointer;" onclick="navigator.clipboard.writeText('${code.code}'); app.showAlert('已复制', 'success');" title="点击复制">${code.code}</div>
+            <!-- 基础信息 -->
+            <div class="rs-info-section">
+                <div class="rs-info-section-title">📋 基础信息</div>
+                <div class="rs-info-grid">
+                    <div class="rs-info-label">兑换码</div>
+                    <div class="rs-info-value mono" onclick="navigator.clipboard.writeText('${code.code}'); app.showAlert('已复制', 'success');" title="点击复制">${safeCode}</div>
 
-                <div class="detail-label">类型</div>
-                <div class="detail-value">${typeLabels[code.type] || code.type}</div>
+                    <div class="rs-info-label">类型</div>
+                    <div class="rs-info-value"><span class="rs-type-badge">${this._escapeHtml(typeLabels[code.type] || code.type)}</span></div>
 
-                <div class="detail-label">状态</div>
-                <div class="detail-value">${statusMap[code.status] || code.status}</div>
+                    <div class="rs-info-label">状态</div>
+                    <div class="rs-info-value"><span class="rs-status-dot ${statusClassMap[code.status] || ''}">${statusTextMap[code.status] || code.status}</span></div>
 
-                <div class="detail-label">使用次数</div>
-                <div class="detail-value">${code.max_uses > 0 ? code.used_count + ' / ' + code.max_uses : code.used_count + ' / ∞'}</div>
+                    <div class="rs-info-label">使用次数</div>
+                    <div class="rs-info-value">
+                        <div class="rs-detail-progress">
+                            <div class="rs-detail-progress-bar"><div class="rs-detail-progress-fill${isFull ? ' full' : ''}" style="width:${usagePct}%"></div></div>
+                            <span class="rs-detail-progress-text">${usageText}</span>
+                        </div>
+                    </div>
 
-                <div class="detail-label">奖励内容</div>
-                <div class="detail-value">${rewardHtml}</div>
+                    <div class="rs-info-label">创建时间</div>
+                    <div class="rs-info-value">${safeCreatedAt}</div>
 
-                <div class="detail-label">创建时间</div>
-                <div class="detail-value">${(code.created_at || '').replace('T', ' ').substring(0, 19)}</div>
+                    <div class="rs-info-label">过期时间</div>
+                    <div class="rs-info-value">${safeExpiresAt}</div>
 
-                <div class="detail-label">过期时间</div>
-                <div class="detail-value">${code.expires_at ? code.expires_at.replace('T', ' ').substring(0, 19) : '永不过期'}</div>
-
-                <div class="detail-label">备注</div>
-                <div class="detail-value">${code.note || '-'}</div>
+                    <div class="rs-info-label">备注</div>
+                    <div class="rs-info-value">${safeNote}</div>
+                </div>
             </div>
 
-            <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
-                <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">编辑奖励参数</div>
-                <div class="payload-editor">
-                    <div class="payload-row">
-                        <div class="payload-label"><span class="label-icon">🎨</span> 主题</div>
-                        <input type="text" class="input" style="flex: 1;" id="detailPayloadTheme" value="${this._parseField(code.payload, 'theme')}">
+            <!-- 奖励内容 -->
+            <div class="rs-info-section">
+                <div class="rs-info-section-title">🎁 奖励内容</div>
+                <div class="rs-reward-list">${rewardListHtml}</div>
+            </div>
+
+            <!-- 编辑奖励参数 -->
+            <div class="rs-info-section">
+                <div class="rs-info-section-title">✏️ 编辑奖励参数</div>
+                <div class="rs-edit-section">
+                    <div class="rs-edit-row">
+                        <div class="rs-edit-label"><span class="e-icon">🎨</span> 主题</div>
+                        <input type="text" class="input" style="flex: 1;" id="detailPayloadTheme" value="${safeTheme}">
                     </div>
-                    <div class="payload-row">
-                        <div class="payload-label"><span class="label-icon">💬</span> AI额度</div>
+                    <div class="rs-edit-row">
+                        <div class="rs-edit-label"><span class="e-icon">💬</span> AI额度</div>
                         <input type="number" class="input" style="flex: 1; max-width: 120px;" id="detailPayloadBonus" value="${this._parseField(code.payload, 'bonus') || 0}" min="0">
                     </div>
-                    <div class="payload-row">
-                        <div class="payload-label"><span class="label-icon">🏷️</span> 标签</div>
-                        <input type="text" class="input" style="flex: 1;" id="detailPayloadTag" value="${this._parseField(code.payload, 'tag')}">
+                    <div class="rs-edit-row">
+                        <div class="rs-edit-label"><span class="e-icon">📈</span> 每日额度</div>
+                        <input type="number" class="input" style="flex: 1; max-width: 120px;" id="detailPayloadDailyBonus" value="${this._parseField(code.payload, 'daily_limit_bonus') || 0}" min="0">
+                    </div>
+                    <div class="rs-edit-row">
+                        <div class="rs-edit-label"><span class="e-icon">🏷️</span> 标签</div>
+                        <input type="text" class="input" style="flex: 1;" id="detailPayloadTag" value="${safeTag}">
                     </div>
                 </div>
             </div>
 
-            <div style="margin-top: 16px;">
-                <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">自定义兑换弹窗</div>
-                <div class="redeem-form-grid">
-                    <div class="form-group">
-                        <label>弹窗标题</label>
-                        <input type="text" class="input" style="width: 100%;" id="detailPopupTitle" value="${code.popup_title || ''}" placeholder="留空则用默认">
+            <!-- 自定义弹窗 -->
+            <div class="rs-info-section">
+                <div class="rs-info-section-title">🖼️ 自定义兑换弹窗</div>
+                <div class="rs-edit-section">
+                    <div class="rs-edit-row">
+                        <div class="rs-edit-label">弹窗标题</div>
+                        <input type="text" class="input" style="flex: 1;" id="detailPopupTitle" value="${safePopupTitle}" placeholder="留空则用默认">
                     </div>
-                    <div class="form-group">
-                        <label>弹窗样式</label>
-                        <select class="select" style="width: 100%;" id="detailPopupStyle">
-                            <option value="default" ${(code.popup_style || 'default') === 'default' ? 'selected' : ''}>默认</option>
-                            <option value="celebration" ${code.popup_style === 'celebration' ? 'selected' : ''}>🎉 庆祝</option>
-                            <option value="premium" ${code.popup_style === 'premium' ? 'selected' : ''}>💎 高级</option>
+                    <div class="rs-edit-row">
+                        <div class="rs-edit-label">弹窗样式</div>
+                        <select class="select" style="flex: 1;" id="detailPopupStyle">
+                            ${this._getPopupStyleOptions(code.popup_style || 'default')}
                         </select>
                     </div>
-                    <div class="form-group full-width">
-                        <label>弹窗内容</label>
-                        <textarea class="input" style="width: 100%; height: 60px; resize: vertical;" id="detailPopupMessage" placeholder="留空则自动生成">${code.popup_message || ''}</textarea>
+                    <div style="margin-top: 12px;">
+                        <div class="rs-edit-label" style="margin-bottom: 6px;">弹窗内容</div>
+                        <textarea class="input" style="width: 100%; height: 60px; resize: vertical;" id="detailPopupMessage" placeholder="留空则自动生成">${safePopupMessage}</textarea>
                     </div>
                 </div>
+            </div>
+
+            <!-- 使用记录 -->
+            <div class="rs-info-section">
+                <div class="rs-info-section-title">📜 使用记录</div>
+                <div class="rs-detail-records" id="detailRecordsList">加载中...</div>
             </div>`;
 
         document.getElementById('redeemDetailSaveBtn').style.display = '';
-        document.getElementById('redeemDetailMask').style.display = '';
-        document.getElementById('redeemDetailMask').classList.add('show');
-        document.getElementById('redeemDetailModal').classList.add('show');
+
+        // 打开侧面板
+        document.getElementById('rsDetailOverlay').classList.add('show');
+        document.getElementById('rsDetailPanel').classList.add('show');
+
+        // 异步加载该码的使用记录
+        this._loadCodeRecords(code.code);
+    },
+
+    /** 加载指定兑换码的使用记录 */
+    async _loadCodeRecords(codeStr) {
+        const container = document.getElementById('detailRecordsList');
+        if (!container) return;
+        try {
+            const res = await fetch(`${app.config.apiBase}/admin/redeem/records`);
+            if (!res.ok) { container.innerHTML = '<div style="color:var(--text-muted); font-size:12px;">加载失败</div>'; return; }
+            const data = await res.json();
+            const records = (data.records || []).filter(r => r.code === codeStr);
+            if (records.length === 0) {
+                container.innerHTML = '<div style="color:var(--text-muted); font-size:12px;">暂无使用记录</div>';
+                return;
+            }
+            container.innerHTML = records.map(r => {
+                const userDisplay = r.alias || (r.machine_id ? r.machine_id.substring(0, 8) + '...' : '-');
+                return `<div class="rs-detail-record-item">
+                    <span class="rs-detail-record-user">${this._escapeHtml(userDisplay)}</span>
+                    <span class="rs-detail-record-time">${this._escapeHtml(r.created_at || '-')}</span>
+                </div>`;
+            }).join('');
+        } catch {
+            container.innerHTML = '<div style="color:var(--text-muted); font-size:12px;">加载失败</div>';
+        }
     },
 
     _parseField(payloadStr, field) {
         try { return JSON.parse(payloadStr)[field] || ''; } catch { return ''; }
     },
 
-    /** 关闭详情弹窗 */
+    /** 关闭详情侧面板 */
     closeDetail() {
-        document.getElementById('redeemDetailMask').classList.remove('show');
-        document.getElementById('redeemDetailModal').classList.remove('show');
-        setTimeout(() => {
-            const mask = document.getElementById('redeemDetailMask');
-            if (mask) mask.style.display = 'none';
-        }, 200);
+        document.getElementById('rsDetailOverlay').classList.remove('show');
+        document.getElementById('rsDetailPanel').classList.remove('show');
         this._editingCodeId = null;
     },
 
@@ -764,8 +996,9 @@ const redeemModule = {
 
         const theme = document.getElementById('detailPayloadTheme')?.value?.trim() || '';
         const bonus = parseInt(document.getElementById('detailPayloadBonus')?.value) || 0;
+        const daily_limit_bonus = parseInt(document.getElementById('detailPayloadDailyBonus')?.value) || 0;
         const tag = document.getElementById('detailPayloadTag')?.value?.trim() || '';
-        const payload = JSON.stringify({ theme, bonus, tag });
+        const payload = JSON.stringify({ theme, bonus, daily_limit_bonus, tag });
 
         const popupTitle = document.getElementById('detailPopupTitle')?.value?.trim() || '';
         const popupMessage = document.getElementById('detailPopupMessage')?.value?.trim() || '';
@@ -876,6 +1109,7 @@ const redeemModule = {
             popup_logo: document.getElementById('redeemPopupLogo')?.value || 'default',
             note_tag: document.getElementById('redeemNoteTag')?.value?.trim() || '',
             streamer_id: document.getElementById('redeemStreamerId')?.value?.trim() || '',
+            reward_labels: this._collectRewardLabels() || {},
         };
     },
 

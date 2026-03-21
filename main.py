@@ -49,6 +49,8 @@ from services.telemetry_manager import (
     get_telemetry_manager,
     get_user_seq_id,
     init_telemetry,
+    resolve_related_endpoint,
+    resolve_service_base_url,
     submit_feedback,
 )
 from utils.utils import get_docs_data_dir
@@ -111,6 +113,24 @@ class _ThemeUnlockFallbackService:
 
     def redeem_theme_code(self, code: str) -> dict:
         return {"success": False, "message": "GitHub版本不支持，请使用分发版本。"}
+
+    def unlock_theme_by_name(self, filename: str) -> dict:
+        filename = str(filename or "").strip()
+        if not filename:
+            return {"success": False, "message": "缺少主题文件名"}
+
+        theme_path = WEB_DIR / "themes" / filename
+        if not theme_path.exists():
+            return {"success": False, "message": f"主题文件不存在: {filename}"}
+
+        # 公开版没有隐藏主题模块时，允许已存在的主题平滑通过，避免服务端兑换成功后客户端报错。
+        self._cfg_mgr.set_active_theme(filename)
+        return {
+            "success": True,
+            "already_unlocked": True,
+            "theme_file": filename,
+            "message": "主题已可用",
+        }
 
     def reset_unlocked_themes(self) -> bool:
         return self._cfg_mgr.set_unlocked_themes([])
@@ -977,7 +997,7 @@ class AppApi:
         telemetry_base_url = ""
         tm = get_telemetry_manager()
         if tm and tm.report_url:
-            telemetry_base_url = tm.report_url.rsplit("/telemetry", 1)[0]
+            telemetry_base_url = resolve_service_base_url(tm.report_url)
 
         return {
             "game_path": path,
@@ -4247,7 +4267,7 @@ class AppApi:
         if not tm or not tm.report_url:
             return {"success": False, "message": "遥测服务未配置"}
 
-        redeem_url = tm.report_url.replace("/telemetry", "/redeem")
+        redeem_url = resolve_related_endpoint(tm.report_url, "/redeem")
         try:
             resp = requests.post(
                 redeem_url,

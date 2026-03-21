@@ -1,52 +1,52 @@
 <div class="view-container active">
     <div class="app">
+        <!-- 顶部工具栏 -->
         <div class="topbar">
             <h2 style="margin: 0; font-size: 18px; font-weight: 700;">兑换码统计</h2>
-            <div class="top-actions" style="margin-left: auto;">
-                <button class="btn" onclick="redeemModule.exportCodes()" style="font-size: 12px;">
+            <div class="top-actions" style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
+                <div class="rs-search-box">
+                    <svg class="rs-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" class="input rs-search-input" id="redeemSearchInput" placeholder="搜索兑换码 / 备注..." oninput="redeemModule.onSearchInput()">
+                </div>
+                <button class="btn rs-icon-btn" onclick="redeemModule.refreshStats()" title="刷新">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                <button class="btn rs-icon-btn" onclick="redeemModule.exportCodes()" title="导出CSV">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    导出
                 </button>
             </div>
         </div>
 
         <!-- 统计概览卡片 -->
-        <div class="redeem-stats-grid" id="redeemStatsCards"></div>
+        <div class="rs-stats-grid" id="redeemStatsCards"></div>
 
         <!-- 分类标签栏 -->
-        <div class="redeem-category-tabs" id="redeemCategoryTabs"></div>
+        <div class="rs-category-bar">
+            <div class="rs-category-tabs" id="redeemCategoryTabs"></div>
+        </div>
 
         <!-- 内容标签页切换 -->
-        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
-            <button class="btn" id="statsTabCodes" onclick="redeemModule.switchStatsTab('codes')" style="font-weight: 600;">兑换码列表</button>
-            <button class="btn" id="statsTabRecords" onclick="redeemModule.switchStatsTab('records')">使用记录</button>
+        <div class="rs-tab-bar">
+            <button class="rs-tab active" id="statsTabCodes" onclick="redeemModule.switchStatsTab('codes')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                兑换码列表
+            </button>
+            <button class="rs-tab" id="statsTabRecords" onclick="redeemModule.switchStatsTab('records')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                使用记录
+            </button>
+            <div class="rs-tab-indicator" id="rsTabIndicator"></div>
         </div>
 
         <!-- 兑换码列表面板 -->
         <div id="statsCodesPanel">
-            <div class="table-container">
-                <table class="table redeem-codes-table" id="statsCodesTable">
-                    <thead>
-                        <tr>
-                            <th>兑换码</th>
-                            <th>类型</th>
-                            <th>奖励内容</th>
-                            <th>使用次数</th>
-                            <th>状态</th>
-                            <th>备注</th>
-                            <th>创建时间</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="statsCodesBody"></tbody>
-                </table>
-            </div>
+            <div class="rs-codes-grid" id="statsCodesBody"></div>
         </div>
 
         <!-- 使用记录面板 -->
         <div id="statsRecordsPanel" style="display: none;">
-            <div class="table-container">
-                <table class="table" id="statsRecordsTable">
+            <div class="table-container rs-records-table-wrap">
+                <table class="table rs-records-table" id="statsRecordsTable">
                     <thead>
                         <tr>
                             <th>兑换码</th>
@@ -62,15 +62,17 @@
     </div>
 </div>
 
-<!-- 码详情弹窗 -->
-<div class="modal-mask" id="redeemDetailMask" onclick="redeemModule.closeDetail()" style="display:none;"></div>
-<div class="modal" id="redeemDetailModal" style="max-width: 560px;">
-    <div class="modal-header">
+<!-- 码详情侧面板 -->
+<div class="rs-detail-overlay" id="rsDetailOverlay" onclick="redeemModule.closeDetail()"></div>
+<div class="rs-detail-panel" id="rsDetailPanel">
+    <div class="rs-detail-header">
         <h3 id="redeemDetailTitle">兑换码详情</h3>
-        <button class="btn-icon" onclick="redeemModule.closeDetail()">×</button>
+        <button class="btn-icon rs-detail-close" onclick="redeemModule.closeDetail()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
     </div>
-    <div class="modal-body" id="redeemDetailBody"></div>
-    <div class="modal-footer">
+    <div class="rs-detail-body" id="redeemDetailBody"></div>
+    <div class="rs-detail-footer">
         <button class="btn" onclick="redeemModule.closeDetail()">关闭</button>
         <button class="btn primary" id="redeemDetailSaveBtn" onclick="redeemModule.saveDetail()" style="display:none;">保存修改</button>
     </div>

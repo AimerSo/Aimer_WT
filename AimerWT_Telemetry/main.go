@@ -113,6 +113,7 @@ func seedSystemTags() {
 		{Name: "sponsor_2", DisplayName: "二级赞助者", Color: "#64748b", Icon: "ri-heart-2-line", IsSystem: true, SortOrder: 11, CreatedAt: time.Now()},
 		{Name: "sponsor_3", DisplayName: "三级赞助者", Color: "#64748b", Icon: "ri-heart-3-line", IsSystem: true, SortOrder: 12, CreatedAt: time.Now()},
 		{Name: "sponsor_4", DisplayName: "四级赞助者", Color: "#64748b", Icon: "ri-vip-crown-line", IsSystem: true, SortOrder: 13, CreatedAt: time.Now()},
+		{Name: "streamer", DisplayName: "主播", Color: "#64748b", Icon: "ri-live-line", IsSystem: true, SortOrder: 14, CreatedAt: time.Now()},
 	}
 	for _, tag := range presets {
 		var count int64
