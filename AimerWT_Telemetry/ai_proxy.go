@@ -136,7 +136,7 @@ func (dl *dailyLimiter) Allow(machineID string) bool {
 
 // Reserve 在同一把锁内完成「限额校验 + 预留一次使用记录」。
 // 这样可以避免并发请求同时通过校验，导致次数少扣/漏扣。
-func (dl *dailyLimiter) Reserve(machineID string) (uint, int, bool, error) {
+func (dl *dailyLimiter) Reserve(machineID string) (uint, int, bool, bool, error) {
 	unlock := dl.lock(machineID)
 	defer unlock()
 
@@ -147,12 +147,12 @@ func (dl *dailyLimiter) Reserve(machineID string) (uint, int, bool, error) {
 
 	if used >= limit {
 		if bonus <= 0 {
-			return 0, 0, false, nil
+			return 0, 0, false, false, nil
 		}
 		useBonus = true
 		if err := db.Model(&AIUserLimit{}).Where("machine_id = ?", machineID).
 			Update("bonus_credits", gorm.Expr("bonus_credits - 1")).Error; err != nil {
-			return 0, 0, false, err
+			return 0, 0, false, false, err
 		}
 		bonus -= 1
 	}
@@ -169,7 +169,7 @@ func (dl *dailyLimiter) Reserve(machineID string) (uint, int, bool, error) {
 			db.Model(&AIUserLimit{}).Where("machine_id = ?", machineID).
 				Update("bonus_credits", gorm.Expr("bonus_credits + 1"))
 		}
-		return 0, 0, false, err
+		return 0, 0, useBonus, false, err
 	}
 
 	remaining := 0
@@ -182,7 +182,25 @@ func (dl *dailyLimiter) Reserve(machineID string) (uint, int, bool, error) {
 		remaining = 0
 	}
 
-	return usage.ID, remaining, true, nil
+	return usage.ID, remaining, useBonus, true, nil
+}
+
+func (dl *dailyLimiter) ReleaseReservation(machineID string, usageID uint, restoreBonus bool) error {
+	unlock := dl.lock(machineID)
+	defer unlock()
+
+	if usageID != 0 {
+		if err := db.Delete(&AIUsageRecord{}, usageID).Error; err != nil {
+			return err
+		}
+	}
+	if restoreBonus {
+		if err := db.Model(&AIUserLimit{}).Where("machine_id = ?", machineID).
+			Update("bonus_credits", gorm.Expr("bonus_credits + 1")).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Remaining 返回用户总可用剩余次数（每日剩余 + bonus）
@@ -275,7 +293,7 @@ func handleAIChat(c *gin.Context) {
 	}
 
 	// 速率检查 + 预留次数
-	usageID, remainingAfter, allowed, reserveErr := limiter.Reserve(req.MachineID)
+	usageID, remainingAfter, usedBonus, allowed, reserveErr := limiter.Reserve(req.MachineID)
 	if reserveErr != nil {
 		log.Printf("[AI] 预留用量失败: %v", reserveErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "AI 服务暂时不可用"})
@@ -294,7 +312,7 @@ func handleAIChat(c *gin.Context) {
 	messages := buildProxyMessages(req)
 
 	// 调用上游 AI API（SSE 转发）
-	streamToClient(c, messages, req.MachineID, usageID, remainingAfter)
+	streamToClient(c, messages, req.MachineID, usageID, remainingAfter, usedBonus)
 }
 
 // 构建完整的消息数组
@@ -336,7 +354,13 @@ func buildProxyMessages(req AIChatRequest) []map[string]interface{} {
 }
 
 // SSE 流式转发
-func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID string, usageID uint, remainingAfter int) {
+func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID string, usageID uint, remainingAfter int, usedBonus bool) {
+	rollbackReservation := func() {
+		if err := limiter.ReleaseReservation(machineID, usageID, usedBonus); err != nil {
+			log.Printf("[AI] 回滚预留用量失败: %v", err)
+		}
+	}
+
 	// 构建上游请求体
 	reqBody := map[string]interface{}{
 		"model":       aiConfig.Model,
@@ -350,6 +374,7 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 
 	upstreamReq, err := http.NewRequest("POST", aiConfig.ApiUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
+		rollbackReservation()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "构建请求失败"})
 		return
 	}
@@ -360,7 +385,7 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
-		db.Delete(&AIUsageRecord{}, usageID)
+		rollbackReservation()
 		log.Printf("[AI] 上游请求失败: %v", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "AI 服务暂时不可用"})
 		return
@@ -368,7 +393,7 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		db.Delete(&AIUsageRecord{}, usageID)
+		rollbackReservation()
 		body, _ := io.ReadAll(resp.Body)
 		log.Printf("[AI] 上游返回错误 %d: %s", resp.StatusCode, string(body))
 		c.JSON(resp.StatusCode, gin.H{"error": "AI 服务返回错误", "detail": string(body)})
@@ -384,7 +409,7 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
-		db.Delete(&AIUsageRecord{}, usageID)
+		rollbackReservation()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "不支持流式输出"})
 		return
 	}

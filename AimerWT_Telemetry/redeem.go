@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 兑换码字符集（大写字母+数字，去掉易混淆字符 O/0/I/1）
@@ -91,6 +92,23 @@ func validateRedeemPayload(payload string) error {
 	return nil
 }
 
+func getOrCreateAIUserLimit(store *gorm.DB, machineID string) (*AIUserLimit, error) {
+	var existing AIUserLimit
+	err := store.Where("machine_id = ?", machineID).First(&existing).Error
+	if err == nil {
+		return &existing, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	existing = AIUserLimit{MachineID: machineID}
+	if err := store.Create(&existing).Error; err != nil {
+		return nil, err
+	}
+	return &existing, nil
+}
+
 // executeRedeemPayload 执行兑换码对应的功能，支持自定义弹窗
 func executeRedeemPayload(store *gorm.DB, machineID string, redeemCode *RedeemCode) (map[string]interface{}, error) {
 	var payload map[string]interface{}
@@ -114,12 +132,12 @@ func executeRedeemPayload(store *gorm.DB, machineID string, redeemCode *RedeemCo
 			bonus = v
 		}
 		if bonus > 0 {
-			var existing AIUserLimit
-			if err := store.Where("machine_id = ?", machineID).First(&existing).Error; err != nil {
-				existing = AIUserLimit{MachineID: machineID, DailyLimit: 0, BonusCredits: bonus}
-				store.Create(&existing)
-			} else {
-				store.Model(&existing).Update("bonus_credits", gorm.Expr("bonus_credits + ?", bonus))
+			existing, err := getOrCreateAIUserLimit(store, machineID)
+			if err != nil {
+				return nil, fmt.Errorf("读取 AI 额度失败: %w", err)
+			}
+			if err := store.Model(existing).Update("bonus_credits", gorm.Expr("bonus_credits + ?", bonus)).Error; err != nil {
+				return nil, fmt.Errorf("发放 AI 永久额度失败: %w", err)
 			}
 			messages = append(messages, fmt.Sprintf("获得 %d 次永久AI对话额度", bonus))
 		}
@@ -135,13 +153,13 @@ func executeRedeemPayload(store *gorm.DB, machineID string, redeemCode *RedeemCo
 			dlb = v
 		}
 		if dlb > 0 {
-			var existing AIUserLimit
-			if err := store.Where("machine_id = ?", machineID).First(&existing).Error; err != nil {
-				existing = AIUserLimit{MachineID: machineID, DailyLimit: dlb, BonusCredits: 0}
-				store.Create(&existing)
-			} else {
-				newLimit := existing.DailyLimit + dlb
-				store.Model(&existing).Update("daily_limit", newLimit)
+			existing, err := getOrCreateAIUserLimit(store, machineID)
+			if err != nil {
+				return nil, fmt.Errorf("读取每日额度失败: %w", err)
+			}
+			newLimit := existing.DailyLimit + dlb
+			if err := store.Model(existing).Update("daily_limit", newLimit).Error; err != nil {
+				return nil, fmt.Errorf("发放每日额度失败: %w", err)
 			}
 			messages = append(messages, "每日对话额度增加")
 		}
@@ -150,28 +168,44 @@ func executeRedeemPayload(store *gorm.DB, machineID string, redeemCode *RedeemCo
 	// 处理用户标签
 	if tagName, ok := payload["tag"].(string); ok && tagName != "" {
 		var record TelemetryRecord
-		if err := store.Where("machine_id = ?", machineID).First(&record).Error; err == nil {
-			var currentTags []string
-			if record.Tags != "" {
-				json.Unmarshal([]byte(record.Tags), &currentTags)
+		err := store.Where("machine_id = ?", machineID).First(&record).Error
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, fmt.Errorf("读取用户标签失败: %w", err)
 			}
-			found := false
-			for _, t := range currentTags {
-				if t == tagName {
-					found = true
-					break
-				}
+			record = TelemetryRecord{
+				MachineID:  machineID,
+				LastSeenAt: time.Now(),
 			}
-			if !found {
-				currentTags = append(currentTags, tagName)
-				tagsJSON, _ := json.Marshal(currentTags)
-				store.Model(&record).Update("tags", string(tagsJSON))
+			if err := store.Create(&record).Error; err != nil {
+				return nil, fmt.Errorf("创建用户记录失败: %w", err)
+			}
+		}
+
+		var currentTags []string
+		if record.Tags != "" {
+			_ = json.Unmarshal([]byte(record.Tags), &currentTags)
+		}
+		found := false
+		for _, t := range currentTags {
+			if t == tagName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			currentTags = append(currentTags, tagName)
+			tagsJSON, _ := json.Marshal(currentTags)
+			if err := store.Model(&record).Update("tags", string(tagsJSON)).Error; err != nil {
+				return nil, fmt.Errorf("写入用户标签失败: %w", err)
 			}
 		}
 
 		var tagDef UserTag
 		if err := store.Where("name = ?", tagName).First(&tagDef).Error; err == nil {
 			messages = append(messages, fmt.Sprintf("获得「%s」称号", tagDef.DisplayName))
+		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("读取标签定义失败: %w", err)
 		}
 	}
 
@@ -497,10 +531,27 @@ func handleRedeem(c *gin.Context) {
 		}
 
 		cmdJSON, _ := json.Marshal(executedCmd)
-		if err := tx.Model(&TelemetryRecord{}).
+		pendingUpdate := tx.Model(&TelemetryRecord{}).
 			Where("machine_id = ?", req.MachineID).
-			Update("pending_command", string(cmdJSON)).Error; err != nil {
-			return err
+			Update("pending_command", string(cmdJSON))
+		if pendingUpdate.Error != nil {
+			return pendingUpdate.Error
+		}
+		if pendingUpdate.RowsAffected == 0 {
+			placeholder := TelemetryRecord{
+				MachineID:      req.MachineID,
+				PendingCommand: string(cmdJSON),
+				LastSeenAt:     time.Now(),
+			}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "machine_id"}},
+				DoUpdates: clause.Assignments(map[string]interface{}{
+					"pending_command": string(cmdJSON),
+					"last_seen_at":    time.Now(),
+				}),
+			}).Create(&placeholder).Error; err != nil {
+				return err
+			}
 		}
 
 		cmd = executedCmd

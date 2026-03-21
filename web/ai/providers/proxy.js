@@ -15,7 +15,7 @@ class ProxyProvider extends BaseAIProvider {
         super(config);
         this.name = 'proxy';
         this.label = 'Aimer AI服务';
-        this.serverUrl = config.serverUrl || 'https://telemetry.aimerelle.com';
+        this.serverUrl = String(config.serverUrl || '').replace(/\/+$/, '');
     }
 
     async _buildHeaders(path, method, machineId = '') {
@@ -37,6 +37,9 @@ class ProxyProvider extends BaseAIProvider {
     }
 
     validateConfig() {
+        if (!this.serverUrl) {
+            return { valid: false, error: 'AI 服务地址未配置' };
+        }
         return { valid: true };
     }
 

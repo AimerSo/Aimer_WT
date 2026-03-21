@@ -297,7 +297,10 @@ const AIChatSettings = {
         try {
             const serverUrl = (window.AIChat && typeof AIChat._getServerUrl === 'function')
                 ? AIChat._getServerUrl()
-                : (window._telemetryBaseUrl || 'https://telemetry.aimerelle.com');
+                : (window._telemetryBaseUrl || '').replace(/\/+$/, '');
+            if (!serverUrl) {
+                throw new Error('server not configured');
+            }
             const headers = {
                 'X-AimerWT-Client': '1'
             };

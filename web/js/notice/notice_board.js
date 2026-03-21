@@ -100,16 +100,39 @@
         const container = document.getElementById('notice-board') || document.querySelector('.notice-content');
         if (!container) return;
 
+        const hasRemoteData = !!(app && app._noticeDataSource === 'remote');
         let data = normalizeData(app && Array.isArray(app.noticeData) ? app.noticeData : []);
-        if (!data.length) {
+        if (!data.length && !hasRemoteData) {
             const fallback = normalizeData(getDefaultData());
             if (fallback.length) {
                 data = fallback;
                 if (app) app.noticeData = fallback;
             }
         }
+
+        const connected = !!(app && app.telemetryConnected);
+        const seqId = (app && app.userSeqId) ? app.userSeqId : 0;
+        const footerText = connected
+            ? (seqId ? `已连接服务器 · 用户UID: ${seqId}` : '已连接服务器')
+            : '未连接到服务器';
+        const dotClass = connected ? 'connected' : 'disconnected';
+
         if (!data.length) {
-            container.innerHTML = '';
+            if (app) app._noticeMap = {};
+            container.innerHTML = `
+                <div class="notice-section">
+                    <span class="notice-section-text">往期动态</span>
+                    <span class="notice-section-line"></span>
+                </div>
+                <div class="notice-history custom-scrollbar">
+                    <div style="padding: 18px 6px; color: var(--text-muted); font-size: 13px;">暂无公告</div>
+                </div>
+                <div class="notice-footer" id="notice-server-status" data-connected="${connected ? '1' : '0'}">
+                    <span class="notice-footer-dot ${dotClass}" aria-hidden="true"></span>
+                    <span class="notice-footer-text">${footerText}</span>
+                </div>
+            `;
+            bindEvents(app);
             return;
         }
 
@@ -135,13 +158,6 @@
                 </div>
             `;
         }).join('');
-
-        const connected = !!(app && app.telemetryConnected);
-        const seqId = (app && app.userSeqId) ? app.userSeqId : 0;
-        const footerText = connected
-            ? (seqId ? `已连接服务器 · 用户UID: ${seqId}` : '已连接服务器')
-            : '未连接到服务器';
-        const dotClass = connected ? 'connected' : 'disconnected';
 
         let pinnedHtml = '';
         if (pinned) {

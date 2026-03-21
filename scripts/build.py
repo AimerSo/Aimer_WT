@@ -66,10 +66,15 @@ def build_exe():
 
     load_dotenv()
 
-    # 在打包前，从打包环境的环境变量中读取加密salt和遥测url
-    # 如果没有设置，则使用开发默认值
+    # 在打包前，从打包环境的环境变量中读取遥测配置。
     salt = os.environ.get("TELEMETRY_SALT", "DEVELOPMENT_SALT")
-    url = os.environ.get("REPORT_URL", "https://api.example.com/telemetry")
+    url = os.environ.get("REPORT_URL", "").strip()
+    client_secret = os.environ.get("TELEMETRY_CLIENT_SECRET", "").strip()
+
+    if not url:
+        log.warning("未配置 REPORT_URL，打包产物将不会连接遥测/AI/兑换服务")
+    if not client_secret:
+        log.warning("未配置 TELEMETRY_CLIENT_SECRET，正式环境将退回旧版弱校验模式")
 
     # 生成临时的 app_secrets.py 供编译使用
     # 注意：该文件已被加入 .gitignore，不会被上传到 GitHub
@@ -78,6 +83,7 @@ def build_exe():
         f.write("# 由 build.py 自动生成 - 不要把它提交到github\n")
         f.write(f"TELEMETRY_SALT = {repr(salt)}\n")
         f.write(f"REPORT_URL = {repr(url)}\n")
+        f.write(f"TELEMETRY_CLIENT_SECRET = {repr(client_secret)}\n")
 
     # Os specific separator
     sep = ';' if os.name == 'nt' else ':'

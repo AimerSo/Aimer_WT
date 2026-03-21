@@ -440,6 +440,11 @@ const AIChat = {
 
         try {
             const serverUrl = this._getServerUrl();
+            if (!serverUrl) {
+                textEl.textContent = '服务未配置';
+                quotaEl.style.display = 'flex';
+                return;
+            }
             const headers = {
                 'X-AimerWT-Client': '1'
             };
@@ -478,7 +483,7 @@ const AIChat = {
         if (provider?.name === 'proxy' && provider.serverUrl) {
             return provider.serverUrl;
         }
-        return window._telemetryBaseUrl || 'https://telemetry.aimerelle.com';
+        return (window._telemetryBaseUrl || '').replace(/\/+$/, '');
     },
     
     // 关闭聊天框

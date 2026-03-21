@@ -29,6 +29,14 @@ from urllib.parse import urlparse
 import requests
 
 
+_PLACEHOLDER_REPORT_URLS = {
+    "https://api.example.com/telemetry",
+    "http://api.example.com/telemetry",
+    "https://example.com/telemetry",
+    "http://example.com/telemetry",
+}
+
+
 def resolve_report_url(report_url: Optional[str] = None) -> str:
     """解析最终上报地址，优先使用显式传入值。"""
     final_url = (report_url or "").strip()
@@ -38,12 +46,17 @@ def resolve_report_url(report_url: Optional[str] = None) -> str:
             final_url = str(getattr(app_secrets, "REPORT_URL", "") or "").strip()
         except ImportError:
             final_url = ""
-    return final_url or "https://api.example.com/telemetry"
+    normalized = final_url.rstrip("/")
+    if normalized in _PLACEHOLDER_REPORT_URLS:
+        return ""
+    return final_url
 
 
 def resolve_service_base_url(report_url: Optional[str] = None) -> str:
     """从遥测地址推导服务基地址。"""
     final_url = resolve_report_url(report_url).strip()
+    if not final_url:
+        return ""
     if final_url.endswith("/telemetry"):
         return final_url[:-len("/telemetry")]
     return final_url.rstrip("/")
@@ -52,7 +65,10 @@ def resolve_service_base_url(report_url: Optional[str] = None) -> str:
 def resolve_related_endpoint(report_url: Optional[str], endpoint: str) -> str:
     """基于遥测地址推导关联公开端点，例如 /feedback、/redeem。"""
     normalized_endpoint = "/" + str(endpoint or "").lstrip("/")
-    return f"{resolve_service_base_url(report_url)}{normalized_endpoint}"
+    base_url = resolve_service_base_url(report_url)
+    if not base_url:
+        return ""
+    return f"{base_url}{normalized_endpoint}"
 
 
 def resolve_client_auth_secret() -> str:

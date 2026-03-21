@@ -474,6 +474,7 @@ class AppApi:
             "function apply(){"
             "if(!window.app) return false;"
             "window.app.noticeData = items;"
+            "window.app._noticeDataSource = 'remote';"
             "if(window.NoticeBoardModule && typeof window.NoticeBoardModule.renderNoticeBoard === 'function') {"
             "window.NoticeBoardModule.renderNoticeBoard(window.app);"
             "}"
@@ -544,6 +545,66 @@ class AppApi:
             "})();"
         )
 
+    def _normalize_banner_payload(self, config: dict):
+        raw_items = config.get("banner_items", [])
+        raw_interval = config.get("banner_interval", 6)
+
+        banner_interval = 6
+        if isinstance(raw_interval, (int, float)) and not isinstance(raw_interval, bool):
+            banner_interval = int(raw_interval) if int(raw_interval) > 0 else 6
+
+        if not isinstance(raw_items, list):
+            raw_items = []
+
+        # 兼容旧的单条 notice 配置
+        if not raw_items:
+            notice_text = config.get("notice_content", "") or config.get("content", "")
+            if notice_text:
+                action_type = config.get("notice_action_type", "none")
+                item = {"type": "announcement", "text": notice_text, "icon": "ri-megaphone-line"}
+                if action_type == "url":
+                    item["action"] = {"type": "url", "url": config.get("notice_action_url", "")}
+                elif action_type == "alert":
+                    item["action"] = {
+                        "type": "alert",
+                        "title": config.get("notice_action_title", "系统公告"),
+                        "content": config.get("notice_action_content", notice_text),
+                        "level": "info"
+                    }
+                raw_items = [item]
+
+        normalized_items = []
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text", "") or "").strip()
+            if not text:
+                continue
+
+            action_obj = item.get("action") if isinstance(item.get("action"), dict) else None
+            if not action_obj:
+                action_type = str(item.get("action_type", "none") or "none").strip().lower()
+                if action_type == "url" and item.get("action_url"):
+                    action_obj = {"type": "url", "url": item.get("action_url", "")}
+                elif action_type == "alert":
+                    action_obj = {
+                        "type": "alert",
+                        "title": item.get("action_title", "系统公告"),
+                        "content": item.get("action_content", text),
+                        "level": "info"
+                    }
+
+            normalized_item = {
+                "type": str(item.get("type", "announcement") or "announcement"),
+                "text": text,
+                "icon": str(item.get("icon", "ri-megaphone-line") or "ri-megaphone-line"),
+            }
+            if action_obj:
+                normalized_item["action"] = action_obj
+            normalized_items.append(normalized_item)
+
+        return normalized_items, banner_interval
+
     def _schedule_server_config_replay(self, delays=(0.8, 2.0, 4.0)):
         """在首页脚本陆续就绪后重放最近一次服务端配置。"""
         if not self._window or not isinstance(self._latest_server_config, dict):
@@ -601,79 +662,25 @@ class AppApi:
 
             # 3. Header Banner 信息带推送 (notice 通道，支持多条 banner_items)
             if config.get("notice_active"):
-                banner_items = config.get("banner_items", [])
-                banner_interval = config.get("banner_interval", 6)
-
-                # 兼容旧的单条模式
-                if not banner_items:
-                    notice_text = config.get("notice_content", "") or config.get("content", "")
-                    if notice_text:
-                        action_type = config.get("notice_action_type", "none")
-                        item = {"type": "announcement", "text": notice_text, "icon": "ri-megaphone-line"}
-                        if action_type == "url":
-                            item["action"] = {"type": "url", "url": config.get("notice_action_url", "")}
-                        elif action_type == "alert":
-                            item["action"] = {
-                                "type": "alert",
-                                "title": config.get("notice_action_title", "系统公告"),
-                                "content": config.get("notice_action_content", notice_text),
-                                "level": "info"
-                            }
-                        banner_items = [item]
-
-                notice_key = json.dumps(banner_items, ensure_ascii=False, sort_keys=True)
-                if banner_items and (force or self._last_notice_content != notice_key):
-                    self._window.evaluate_js(
-                        "if(window.HeaderBannerModule) HeaderBannerModule.clearAnnouncement()"
-                    )
-
-                    if banner_interval and banner_interval != 6:
-                        self._window.evaluate_js(
-                            f"(function(){{ var m=window.HeaderBannerModule; if(m && m._setInterval) m._setInterval({int(banner_interval) * 1000}); }})()"
-                        )
-
-                    for item in banner_items:
-                        text = item.get("text", "")
-                        if not text:
-                            continue
-
-                        action_obj = None
-                        action_type = item.get("action_type", "none")
-                        if action_type == "url" and item.get("action_url"):
-                            action_obj = {"type": "url", "url": item["action_url"]}
-                        elif action_type == "alert":
-                            action_obj = {
-                                "type": "alert",
-                                "title": item.get("action_title", "系统公告"),
-                                "content": item.get("action_content", text),
-                                "level": "info"
-                            }
-                        if not action_obj and item.get("action"):
-                            action_obj = item["action"]
-
-                        text_json = json.dumps(text, ensure_ascii=False)
-                        if action_obj:
-                            action_json = json.dumps(action_obj, ensure_ascii=False)
-                            self._window.evaluate_js(
-                                f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({text_json}, {action_json}, true)"
-                            )
-                        else:
-                            self._window.evaluate_js(
-                                f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({text_json}, null, true)"
-                            )
+                banner_items, banner_interval = self._normalize_banner_payload(config)
+                notice_key = json.dumps({
+                    "items": banner_items,
+                    "interval": banner_interval,
+                }, ensure_ascii=False, sort_keys=True)
+                if force or self._last_notice_content != notice_key:
+                    self._window.evaluate_js(self._build_header_banner_apply_js(banner_items, banner_interval))
                     self._last_notice_content = notice_key
                     self._save_server_cache(
                         banner_payload={
                             "items": banner_items,
-                            "interval": int(banner_interval) if isinstance(banner_interval, int) else 6,
+                            "interval": banner_interval,
                         }
                     )
             else:
-                if force or self._last_notice_content is not None:
-                    self._window.evaluate_js(
-                        "if(window.HeaderBannerModule) HeaderBannerModule.clearAnnouncement()"
-                    )
-                    self._last_notice_content = None
+                empty_notice_key = json.dumps({"items": [], "interval": 6}, ensure_ascii=False, sort_keys=True)
+                if force or self._last_notice_content != empty_notice_key:
+                    self._window.evaluate_js(self._build_header_banner_apply_js([], 6))
+                    self._last_notice_content = empty_notice_key
                     self._save_server_cache(banner_payload={"items": [], "interval": 6})
 
             # 4. 更新提示（纯内存去重：激活时每次启动弹一次，会话内不重复）
@@ -860,12 +867,8 @@ class AppApi:
 
                 # 注入缓存的公告数据
                 cached_notices = cache.get("notice_items")
-                if isinstance(cached_notices, list) and cached_notices:
-                    items_json = json.dumps(cached_notices, ensure_ascii=False)
-                    self._window.evaluate_js(
-                        f"if(window.app) {{ app.noticeData = {items_json}; "
-                        f"if(window.NoticeBoardModule) NoticeBoardModule.renderNoticeBoard(app); }}"
-                    )
+                if isinstance(cached_notices, list):
+                    self._window.evaluate_js(self._build_notice_items_apply_js(cached_notices))
                     log.info(f"[缓存] 已注入 {len(cached_notices)} 条缓存公告")
 
                 # 注入缓存的广告轮播数据
@@ -873,19 +876,8 @@ class AppApi:
                 if isinstance(cached_ad, dict):
                     ad_items = cached_ad.get("items")
                     ad_interval = cached_ad.get("interval_ms")
-                    if isinstance(ad_items, list) and ad_items:
-                        js_parts = [
-                            f"window.AIMER_AD_CAROUSEL_CONFIG.items = {json.dumps(ad_items, ensure_ascii=False)}"
-                        ]
-                        if isinstance(ad_interval, int) and ad_interval > 0:
-                            js_parts.append(f"window.AIMER_AD_CAROUSEL_CONFIG.autoPlayIntervalMs = {ad_interval}")
-                        js_parts.append(
-                            "if(window.AdCarouselModule && typeof window.AdCarouselModule.refresh === 'function') "
-                            "{ window.AdCarouselModule.refresh(); }"
-                        )
-                        self._window.evaluate_js(
-                            "if(window.AIMER_AD_CAROUSEL_CONFIG) { " + "; ".join(js_parts) + "; }"
-                        )
+                    if isinstance(ad_items, list):
+                        self._window.evaluate_js(self._build_ad_carousel_apply_js(ad_items, ad_interval))
                         log.info(f"[缓存] 已注入 {len(ad_items)} 条缓存广告")
 
                 cached_banner = cache.get("banner_payload")
