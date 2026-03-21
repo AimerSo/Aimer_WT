@@ -4,3 +4,8 @@
 
 # 遥测服务器上报地址
 REPORT_URL = "https://api.example.com/telemetry"
+
+# 遥测客户端签名密钥
+# - 客户端（app_secrets.py）与服务端（环境变量 TELEMETRY_CLIENT_SECRET）保持一致
+# - 留空时仍可本地兼容旧版/无密钥测试，但正式环境强烈建议配置
+TELEMETRY_CLIENT_SECRET = ""

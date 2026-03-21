@@ -440,7 +440,16 @@ const AIChat = {
 
         try {
             const serverUrl = this._getServerUrl();
-            const resp = await fetch(`${serverUrl}/api/ai/quota?machine_id=${encodeURIComponent(machineId)}`);
+            const headers = {
+                'X-AimerWT-Client': '1'
+            };
+            if (window.pywebview?.api?.get_telemetry_auth_headers) {
+                const authHeaders = await window.pywebview.api.get_telemetry_auth_headers('/api/ai/quota', 'GET', machineId);
+                if (authHeaders && typeof authHeaders === 'object') {
+                    Object.assign(headers, authHeaders);
+                }
+            }
+            const resp = await fetch(`${serverUrl}/api/ai/quota?machine_id=${encodeURIComponent(machineId)}`, { headers });
             if (!resp.ok) throw new Error('请求失败');
             const data = await resp.json();
             this._setQuotaDisplay(data.remaining);

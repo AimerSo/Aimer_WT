@@ -44,6 +44,7 @@ from services.bank_preview_service import BankPreviewService
 from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
 from services.telemetry_manager import (
+    build_client_auth_headers,
     get_hwid,
     get_telemetry_connection_status,
     get_telemetry_manager,
@@ -448,10 +449,12 @@ class AppApi:
             return None
 
         telemetry_url, telemetry_message = self._resolve_telemetry_target_url()
-        telemetry_manager = init_telemetry(APP_VERSION, telemetry_url)
+        telemetry_manager = init_telemetry(APP_VERSION, telemetry_url, autostart=False)
         self._bind_telemetry_callbacks(telemetry_manager)
 
-        # init_telemetry 会立即启动首次上报，这里补拉一次，避免首帧配置丢在回调绑定之前。
+        # 回调必须先绑定，再启动首次上报，避免 pending_command 被服务端清掉后客户端却没接住。
+        telemetry_manager.stop()
+        telemetry_manager.start_heartbeat_loop()
         telemetry_manager.report_startup()
 
         if telemetry_message:
@@ -500,6 +503,36 @@ class AppApi:
             "if(window.AdCarouselModule && typeof window.AdCarouselModule.refresh === 'function') {"
             "window.AdCarouselModule.refresh();"
             "}"
+            "return true;"
+            "}"
+            "if(apply()) return;"
+            "var attempts = 0;"
+            "var timer = window.setInterval(function(){"
+            "attempts += 1;"
+            "if(apply() || attempts >= 20){ window.clearInterval(timer); }"
+            "}, 300);"
+            "})();"
+        )
+
+    def _build_header_banner_apply_js(self, banner_items, banner_interval):
+        items_json = json.dumps(banner_items, ensure_ascii=False)
+        interval_clause = ""
+        if isinstance(banner_interval, int) and banner_interval > 0:
+            interval_clause = (
+                "if(window.HeaderBannerModule && window.HeaderBannerModule._setInterval) "
+                f"window.HeaderBannerModule._setInterval({banner_interval * 1000});"
+            )
+        return (
+            "(function(){"
+            f"var items={items_json};"
+            "function apply(){"
+            "if(!window.HeaderBannerModule) return false;"
+            "window.HeaderBannerModule.clearAnnouncement();"
+            f"{interval_clause}"
+            "items.forEach(function(item){"
+            "if(!item || !item.text) return;"
+            "window.HeaderBannerModule.pushAnnouncement(item.text, item.action || null, true);"
+            "});"
             "return true;"
             "}"
             "if(apply()) return;"
@@ -629,12 +662,19 @@ class AppApi:
                                 f"if(window.HeaderBannerModule) HeaderBannerModule.pushAnnouncement({text_json}, null, true)"
                             )
                     self._last_notice_content = notice_key
+                    self._save_server_cache(
+                        banner_payload={
+                            "items": banner_items,
+                            "interval": int(banner_interval) if isinstance(banner_interval, int) else 6,
+                        }
+                    )
             else:
                 if force or self._last_notice_content is not None:
                     self._window.evaluate_js(
                         "if(window.HeaderBannerModule) HeaderBannerModule.clearAnnouncement()"
                     )
                     self._last_notice_content = None
+                    self._save_server_cache(banner_payload={"items": [], "interval": 6})
 
             # 4. 更新提示（纯内存去重：激活时每次启动弹一次，会话内不重复）
             if config.get("update_active"):
@@ -770,7 +810,7 @@ class AppApi:
         # 重放最近一次服务器配置，覆盖窗口和首页脚本尚未就绪的时机差。
         self._schedule_server_config_replay()
 
-    def _save_server_cache(self, notice_items=None, ad_carousel=None):
+    def _save_server_cache(self, notice_items=None, ad_carousel=None, banner_payload=None):
         """将服务器下发的公告/广告数据持久化到本地缓存文件（开发模式跳过）"""
         if getattr(self, '_is_dev_mode', False):
             return
@@ -780,6 +820,8 @@ class AppApi:
                 cache["notice_items"] = notice_items
             if ad_carousel is not None:
                 cache["ad_carousel"] = ad_carousel
+            if banner_payload is not None:
+                cache["banner_payload"] = banner_payload
             cache_file = self._server_cache_file
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             tmp = cache_file.with_suffix('.tmp')
@@ -845,6 +887,14 @@ class AppApi:
                             "if(window.AIMER_AD_CAROUSEL_CONFIG) { " + "; ".join(js_parts) + "; }"
                         )
                         log.info(f"[缓存] 已注入 {len(ad_items)} 条缓存广告")
+
+                cached_banner = cache.get("banner_payload")
+                if isinstance(cached_banner, dict):
+                    banner_items = cached_banner.get("items")
+                    banner_interval = cached_banner.get("interval")
+                    if isinstance(banner_items, list):
+                        self._window.evaluate_js(self._build_header_banner_apply_js(banner_items, banner_interval))
+                        log.info(f"[缓存] 已注入 {len(banner_items)} 条缓存横幅公告")
             except Exception as e:
                 log.debug(f"注入服务器缓存失败: {e}")
 
@@ -1123,7 +1173,7 @@ class AppApi:
 
         if enabled:
             telemetry_url, telemetry_message = self._resolve_telemetry_target_url()
-            tm = init_telemetry(APP_VERSION, telemetry_url)
+            tm = init_telemetry(APP_VERSION, telemetry_url, autostart=False)
             self._bind_telemetry_callbacks(tm)
 
             # 手动重启服务：先停止可能存在的旧循环，再启动新循环
@@ -1168,6 +1218,20 @@ class AppApi:
 
         submit_feedback(contact, content, category, callback=_on_result)
         return {"submitted": True, "message": "正在提交…"}
+
+    def get_telemetry_auth_headers(self, path, method="GET", machine_id=""):
+        """
+        供前端 JS 获取当前请求所需的遥测签名头。
+        不包含浏览器禁止设置的 User-Agent。
+        """
+        tm = get_telemetry_manager()
+        resolved_machine_id = str(machine_id or "").strip()
+        if not resolved_machine_id and tm:
+            try:
+                resolved_machine_id = tm.get_machine_id()
+            except Exception:
+                resolved_machine_id = ""
+        return build_client_auth_headers(path, method=method, machine_id=resolved_machine_id)
 
     def get_autostart_status(self):
         """
@@ -4269,13 +4333,19 @@ class AppApi:
 
         redeem_url = resolve_related_endpoint(tm.report_url, "/redeem")
         try:
+            machine_id = tm.get_machine_id()
             resp = requests.post(
                 redeem_url,
                 json={
                     "code": str(code or "").strip(),
-                    "machine_id": tm.machine_id,
+                    "machine_id": machine_id,
                 },
-                headers={"User-Agent": f"AimerWT-Client/{tm.app_version}"},
+                headers=build_client_auth_headers(
+                    redeem_url,
+                    method="POST",
+                    machine_id=machine_id,
+                    user_agent=f"AimerWT-Client/{tm.app_version}",
+                ),
                 timeout=10,
             )
             data = resp.json()

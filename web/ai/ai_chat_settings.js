@@ -298,7 +298,16 @@ const AIChatSettings = {
             const serverUrl = (window.AIChat && typeof AIChat._getServerUrl === 'function')
                 ? AIChat._getServerUrl()
                 : (window._telemetryBaseUrl || 'https://telemetry.aimerelle.com');
-            const resp = await fetch(`${serverUrl}/api/ai/stats`);
+            const headers = {
+                'X-AimerWT-Client': '1'
+            };
+            if (window.pywebview?.api?.get_telemetry_auth_headers) {
+                const authHeaders = await window.pywebview.api.get_telemetry_auth_headers('/api/ai/stats', 'GET', '');
+                if (authHeaders && typeof authHeaders === 'object') {
+                    Object.assign(headers, authHeaders);
+                }
+            }
+            const resp = await fetch(`${serverUrl}/api/ai/stats`, { headers });
             if (!resp.ok) throw new Error('请求失败');
             const data = await resp.json();
 

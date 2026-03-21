@@ -83,7 +83,7 @@ func initRouter(r *gin.Engine) {
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-AimerWT-Client")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-AimerWT-Client, X-AimerWT-Timestamp, X-AimerWT-Machine, X-AimerWT-Signature")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
@@ -116,10 +116,17 @@ func initRouter(r *gin.Engine) {
 			return
 		}
 
-		if path == "/telemetry" || path == "/feedback" || path == "/redeem" {
-			ua := c.GetHeader("User-Agent")
-			if len(ua) < 14 || ua[:14] != "AimerWT-Client" {
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Access Denied"})
+		protectedClientPaths := map[string]bool{
+			"/telemetry":          true,
+			"/feedback":           true,
+			"/redeem":             true,
+			"/telemetry/ad-click": true,
+			"/api/ai/chat":        true,
+			"/api/ai/stats":       true,
+			"/api/ai/quota":       true,
+		}
+		if protectedClientPaths[path] {
+			if !requireClientRequest(c) {
 				return
 			}
 			c.Next()
@@ -841,15 +848,15 @@ func initRouter(r *gin.Engine) {
 
 			c.JSON(200, gin.H{
 				"summary": gin.H{
-					"total_clicks":  totalClicks,
-					"today_clicks":  todayClicks,
-					"unique_users":  uniqueUsers,
-					"avg_daily":     fmt.Sprintf("%.1f", avgDaily),
+					"total_clicks": totalClicks,
+					"today_clicks": todayClicks,
+					"unique_users": uniqueUsers,
+					"avg_daily":    fmt.Sprintf("%.1f", avgDaily),
 				},
-				"daily_clicks":       dailyClicks,
-				"top_ads":            topAds,
+				"daily_clicks":        dailyClicks,
+				"top_ads":             topAds,
 				"medium_distribution": mediumDist,
-				"recent_clicks":      recentList,
+				"recent_clicks":       recentList,
 			})
 		})
 
@@ -1012,9 +1019,13 @@ func initRouter(r *gin.Engine) {
 
 	// 客户端反馈提交（使用与 /telemetry 相同的 UA 校验）
 	r.POST("/feedback", func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
 		var fb FeedbackRecord
 		if err := c.ShouldBindJSON(&fb); err != nil {
 			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			return
+		}
+		if !ensureClientMachineBinding(c, fb.MachineID) {
 			return
 		}
 
@@ -1051,6 +1062,7 @@ func initRouter(r *gin.Engine) {
 
 	// 广告点击上报（客户端直接调用，不需要 admin 认证）
 	r.POST("/telemetry/ad-click", func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
 		var req struct {
 			MachineID string `json:"machine_id"`
 			AdMedium  string `json:"ad_medium"`
@@ -1063,6 +1075,9 @@ func initRouter(r *gin.Engine) {
 		}
 		if req.AdMedium == "" || req.AdID == "" {
 			c.JSON(400, gin.H{"error": "ad_medium and ad_id are required"})
+			return
+		}
+		if !ensureClientMachineBinding(c, req.MachineID) {
 			return
 		}
 		// 字段长度限制
@@ -1111,9 +1126,13 @@ func initRouter(r *gin.Engine) {
 			return
 		}
 
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
 		var record TelemetryRecord
 		if err := c.ShouldBindJSON(&record); err != nil {
 			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			return
+		}
+		if !ensureClientMachineBinding(c, record.MachineID) {
 			return
 		}
 
@@ -1172,24 +1191,22 @@ func initRouter(r *gin.Engine) {
 		}
 
 		// 构建广告轮播数据供客户端同步（图片路径补全为完整 URL）
-		if adItemsRaw := LoadConfig("ad_carousel_items"); adItemsRaw != "" {
-			items := LoadAdCarouselItems()
-			scheme := "http"
-			if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
-				scheme = "https"
-			}
-			baseURL := scheme + "://" + c.Request.Host
-			for i := range items {
-				if len(items[i].Image) > 0 && items[i].Image[0] == '/' {
-					items[i].Image = baseURL + items[i].Image
-				}
-			}
-			adJson, _ := json.Marshal(items)
-			var parsed interface{}
-			json.Unmarshal(adJson, &parsed)
-			response["ad_carousel_items"] = parsed
-			response["ad_carousel_interval_ms"] = LoadAdCarouselInterval()
+		items := LoadAdCarouselItems()
+		scheme := "http"
+		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+			scheme = "https"
 		}
+		baseURL := scheme + "://" + c.Request.Host
+		for i := range items {
+			if len(items[i].Image) > 0 && items[i].Image[0] == '/' {
+				items[i].Image = baseURL + items[i].Image
+			}
+		}
+		adJSON, _ := json.Marshal(items)
+		var parsed interface{}
+		json.Unmarshal(adJSON, &parsed)
+		response["ad_carousel_items"] = parsed
+		response["ad_carousel_interval_ms"] = LoadAdCarouselInterval()
 
 		// 构建公告列表数据供客户端同步
 		var noticeItems []NoticeItem

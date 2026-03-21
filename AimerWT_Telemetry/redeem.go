@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"net/http"
 	"strings"
 	"time"
 
@@ -78,6 +79,17 @@ var redeemPresets = []map[string]interface{}{
 }
 
 var errRedeemRejected = errors.New("redeem rejected")
+
+func validateRedeemPayload(payload string) error {
+	if strings.TrimSpace(payload) == "" {
+		return errors.New("payload 不能为空")
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(payload), &parsed); err != nil {
+		return fmt.Errorf("payload 不是合法 JSON: %w", err)
+	}
+	return nil
+}
 
 // executeRedeemPayload 执行兑换码对应的功能，支持自定义弹窗
 func executeRedeemPayload(store *gorm.DB, machineID string, redeemCode *RedeemCode) (map[string]interface{}, error) {
@@ -262,6 +274,10 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 			if req.PopupStyle == "" {
 				req.PopupStyle = "default"
 			}
+			if err := validateRedeemPayload(req.Payload); err != nil {
+				c.JSON(400, gin.H{"error": err.Error()})
+				return
+			}
 
 			var expiresAt *time.Time
 			if req.ExpireIn > 0 {
@@ -345,6 +361,10 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 				updates["max_uses"] = *req.MaxUses
 			}
 			if req.Payload != nil {
+				if err := validateRedeemPayload(*req.Payload); err != nil {
+					c.JSON(400, gin.H{"error": err.Error()})
+					return
+				}
 				updates["payload"] = *req.Payload
 			}
 			if req.Type != nil {
@@ -401,6 +421,7 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 
 // handleRedeem 客户端提交兑换码验证（公开端点，UA 校验）
 func handleRedeem(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
 	var req struct {
 		Code      string `json:"code"`
 		MachineID string `json:"machine_id"`
@@ -417,6 +438,9 @@ func handleRedeem(c *gin.Context) {
 	}
 	if req.MachineID == "" {
 		c.JSON(400, gin.H{"error": "缺少设备标识"})
+		return
+	}
+	if !ensureClientMachineBinding(c, req.MachineID) {
 		return
 	}
 

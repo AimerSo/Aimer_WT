@@ -18,6 +18,24 @@ class ProxyProvider extends BaseAIProvider {
         this.serverUrl = config.serverUrl || 'https://telemetry.aimerelle.com';
     }
 
+    async _buildHeaders(path, method, machineId = '') {
+        const headers = {
+            'Content-Type': 'application/json',
+            'X-AimerWT-Client': '1'
+        };
+        if (window.pywebview?.api?.get_telemetry_auth_headers) {
+            try {
+                const authHeaders = await window.pywebview.api.get_telemetry_auth_headers(path, method, machineId || '');
+                if (authHeaders && typeof authHeaders === 'object') {
+                    Object.assign(headers, authHeaders);
+                }
+            } catch (error) {
+                console.warn('[Proxy] 获取遥测认证头失败:', error);
+            }
+        }
+        return headers;
+    }
+
     validateConfig() {
         return { valid: true };
     }
@@ -30,12 +48,10 @@ class ProxyProvider extends BaseAIProvider {
 
     async chat(messages, options = {}) {
         try {
+            const machineId = window._telemetryHWID || '';
             const response = await fetch(`${this.serverUrl}/api/ai/chat`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-AimerWT-Client': '1'
-                },
+                headers: await this._buildHeaders('/api/ai/chat', 'POST', machineId),
                 body: JSON.stringify(this._buildRequestBody(messages, options))
             });
 
@@ -57,12 +73,10 @@ class ProxyProvider extends BaseAIProvider {
 
     async chatStream(messages, onChunk, options = {}) {
         try {
+            const machineId = window._telemetryHWID || '';
             const response = await fetch(`${this.serverUrl}/api/ai/chat`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-AimerWT-Client': '1'
-                },
+                headers: await this._buildHeaders('/api/ai/chat', 'POST', machineId),
                 body: JSON.stringify(this._buildRequestBody(messages, options))
             });
 

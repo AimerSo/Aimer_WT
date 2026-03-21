@@ -27,9 +27,21 @@ func initDB() {
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
-	db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{}, &FeedbackRecord{},
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("数据库句柄获取失败: %v", err)
+	}
+	if _, err := sqlDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		log.Printf("警告: 启用 SQLite WAL 失败: %v", err)
+	}
+	if _, err := sqlDB.Exec("PRAGMA busy_timeout = 5000;"); err != nil {
+		log.Printf("警告: 设置 SQLite busy_timeout 失败: %v", err)
+	}
+	if err := db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{}, &FeedbackRecord{},
 		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{}, &AdClickEvent{},
-		&RedeemCode{}, &RedeemRecord{})
+		&RedeemCode{}, &RedeemRecord{}); err != nil {
+		log.Fatalf("数据库迁移失败: %v", err)
+	}
 }
 
 func loadDashboard() {

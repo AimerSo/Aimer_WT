@@ -15,13 +15,16 @@
 """
 
 import hashlib
+import hmac
 import os
 import platform
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -52,12 +55,72 @@ def resolve_related_endpoint(report_url: Optional[str], endpoint: str) -> str:
     return f"{resolve_service_base_url(report_url)}{normalized_endpoint}"
 
 
+def resolve_client_auth_secret() -> str:
+    """读取客户端与遥测服务共享的签名密钥。"""
+    secret = os.environ.get("TELEMETRY_CLIENT_SECRET", "").strip()
+    if not secret:
+        try:
+            import app_secrets
+            secret = str(getattr(app_secrets, "TELEMETRY_CLIENT_SECRET", "") or "").strip()
+        except ImportError:
+            secret = ""
+    return secret
+
+
+def _normalize_auth_path(path_or_url: str) -> str:
+    raw = str(path_or_url or "").strip()
+    if not raw:
+        return "/"
+    parsed = urlparse(raw)
+    path = parsed.path if parsed.scheme or parsed.netloc else raw
+    path = path or "/"
+    return path if path.startswith("/") else "/" + path
+
+
+def build_client_auth_headers(path_or_url: str, method: str = "POST", machine_id: str = "",
+                              user_agent: Optional[str] = None) -> dict[str, str]:
+    """
+    构建客户端请求头。
+
+    - 未配置密钥时：保留兼容头，继续支持本地/旧版测试环境。
+    - 配置密钥时：追加时间戳 + HMAC 签名，供服务端严格校验。
+    """
+    headers: dict[str, str] = {
+        "X-AimerWT-Client": "1",
+    }
+    if user_agent:
+        headers["User-Agent"] = user_agent
+
+    secret = resolve_client_auth_secret()
+    if not secret:
+        return headers
+
+    normalized_path = _normalize_auth_path(path_or_url)
+    timestamp = str(int(time.time()))
+    machine = str(machine_id or "").strip()
+    canonical = "\n".join([
+        str(method or "GET").upper(),
+        normalized_path,
+        machine,
+        timestamp,
+    ])
+    signature = hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    headers.update({
+        "X-AimerWT-Timestamp": timestamp,
+        "X-AimerWT-Machine": machine,
+        "X-AimerWT-Signature": signature,
+    })
+    return headers
+
+
 class TelemetryManager:
     def __init__(self, app_version: str, report_url: Optional[str] = None):
         self._stop_heartbeat = None
         self._is_log_error = False
         self._server_connected = False
         self._heartbeat_interval = 60
+        self._telemetry_started = False
         self.app_version = app_version
 
         self.report_url = resolve_report_url(report_url)
@@ -243,7 +306,12 @@ class TelemetryManager:
                     self.report_url,
                     json=payload,
                     timeout=15,
-                    headers={'User-Agent': f'AimerWT-Client/{self.app_version} ({platform.system()})'}
+                    headers=build_client_auth_headers(
+                        self.report_url,
+                        method="POST",
+                        machine_id=self._machine_id,
+                        user_agent=f'AimerWT-Client/{self.app_version} ({platform.system()})',
+                    ),
                 )
 
                 if response.status_code == 200 or response.status_code == 503:
@@ -300,6 +368,7 @@ class TelemetryManager:
         心跳循环，间隔由服务端 heartbeat_interval 动态控制，默认 60 秒。
         """
         self._stop_heartbeat = threading.Event()
+        self._telemetry_started = True
 
         def _loop():
             while not self._stop_heartbeat.wait(self._heartbeat_interval):
@@ -315,6 +384,7 @@ class TelemetryManager:
         """停止心跳上报"""
         if self._stop_heartbeat:
             self._stop_heartbeat.set()
+        self._telemetry_started = False
         self._server_connected = False
 
     def submit_feedback(self, contact: str, content: str, category: str = "other",
@@ -368,7 +438,12 @@ class TelemetryManager:
                     feedback_url,
                     json=payload,
                     timeout=15,
-                    headers={'User-Agent': f'AimerWT-Client/{self.app_version} ({platform.system()})'}
+                    headers=build_client_auth_headers(
+                        feedback_url,
+                        method="POST",
+                        machine_id=self._machine_id,
+                        user_agent=f'AimerWT-Client/{self.app_version} ({platform.system()})',
+                    ),
                 )
 
                 if response.status_code == 200:
@@ -395,20 +470,27 @@ class TelemetryManager:
 _instance = None
 
 
-def init_telemetry(version: str, url: str = None):
+def init_telemetry(version: str, url: str = None, autostart: bool = True):
     """
     初始化并启动遥测服务（含心跳）。
     """
     global _instance
     target_url = resolve_report_url(url)
+    should_start = False
     if _instance is None:
         _instance = TelemetryManager(version, target_url)
-
-        _instance.report_startup()
-        _instance.start_heartbeat_loop()
+        should_start = True
     else:
         _instance.app_version = version
         _instance.update_report_url(target_url)
+        if not _instance._telemetry_started or (_instance._stop_heartbeat is not None and _instance._stop_heartbeat.is_set()):
+            should_start = True
+
+    if autostart and should_start:
+        if _instance._stop_heartbeat is None or _instance._stop_heartbeat.is_set():
+            _instance.start_heartbeat_loop()
+        _instance.report_startup()
+        _instance._telemetry_started = True
     return _instance
 
 

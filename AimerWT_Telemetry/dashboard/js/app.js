@@ -3435,7 +3435,8 @@ const app = {
                 if (def) {
                     const icon_cls = def.icon || 'ri-price-tag-3-line';
                     const label = this._getTagLabel(def);
-                    tag_badges += `<span class="user-tag" title="${def.display_name}"><i class="${icon_cls}" style="font-size:10px;"></i>${label}</span>`;
+                    const tc = this._getTagColor(tn);
+                    tag_badges += `<span class="user-tag" title="${def.display_name}" style="color:${tc.color};border-color:${tc.borderColor};background:${tc.bg};"><i class="${icon_cls}" style="font-size:10px;"></i>${label}</span>`;
                 }
             });
 
@@ -3722,15 +3723,15 @@ const app = {
                 <div style="display: flex; flex-direction: column; gap: 8px;">
                     <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">权限管理</div>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn" onclick="app.banFeedback('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: var(--warning); border-color: var(--warning); color: white;">
+                        <button class="btn" onclick="app.banFeedback('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: var(--warning); border-color: var(--warning); color: white; min-width: 120px; justify-content: center;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
                             封禁反馈
                         </button>
-                        <button class="btn" onclick="app.banAI('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: #18181b; border-color: #18181b; color: white;">
+                        <button class="btn" onclick="app.banAI('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: #18181b; border-color: #18181b; color: white; min-width: 120px; justify-content: center;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line></svg>
                             封禁AI
                         </button>
-                        <button class="btn" onclick="app.deleteUser('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: var(--danger); border-color: var(--danger); color: white;">
+                        <button class="btn" onclick="app.deleteUser('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: var(--danger); border-color: var(--danger); color: white; min-width: 120px; justify-content: center;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                             删除用户
                         </button>
@@ -3824,6 +3825,25 @@ const app = {
         'streamer': '主播',
     },
 
+    // 标签颜色映射：{ color, bg, borderColor }
+    _tagColorMap: {
+        'streamer':       { color: '#dc2626', bg: 'rgba(220,38,38,.08)',  borderColor: 'rgba(220,38,38,.3)' },
+        'sponsor_1':      { color: '#b07c3b', bg: 'rgba(176,124,59,.08)', borderColor: 'rgba(176,124,59,.3)' },
+        'sponsor_2':      { color: '#94a3b8', bg: 'rgba(148,163,184,.10)', borderColor: 'rgba(148,163,184,.4)' },
+        'sponsor_3':      { color: '#d99a00', bg: 'rgba(217,154,0,.08)',  borderColor: 'rgba(217,154,0,.3)' },
+        'sponsor_4':      { color: '#1a1a1a', bg: 'linear-gradient(135deg, rgba(26,26,26,.06), rgba(217,154,0,.08))', borderColor: '#1a1a1a' },
+        'risk':           { color: '#dc2626', bg: 'rgba(220,38,38,.08)',  borderColor: 'rgba(220,38,38,.3)' },
+        'vip':            { color: '#d99a00', bg: 'rgba(217,154,0,.08)',  borderColor: 'rgba(217,154,0,.3)' },
+        'friend':         { color: '#16a34a', bg: 'rgba(22,163,74,.08)', borderColor: 'rgba(22,163,74,.3)' },
+        'internal':       { color: '#1a1a1a', bg: 'rgba(26,26,26,.06)',  borderColor: 'rgba(26,26,26,.3)' },
+        'tester':         { color: '#2563eb', bg: 'rgba(37,99,235,.08)', borderColor: 'rgba(37,99,235,.3)' },
+    },
+
+    // 获取标签颜色配置，未匹配返回默认灰色
+    _getTagColor(tag_name) {
+        return this._tagColorMap[tag_name] || { color: '#64748b', bg: 'var(--bg)', borderColor: 'var(--border)' };
+    },
+
     /**
      * 获取标签的中文显示名称，优先后端 display_name，回退前端映射
      */
@@ -3855,18 +3875,19 @@ const app = {
 
         container.innerHTML = all_tags.map(tag => {
             const active = current_tags.includes(tag.name);
-            const bg = active ? '#f0f0f0' : 'var(--bg)';
-            const border = active ? '#94a3b8' : 'var(--border)';
-            const txt_color = active ? '#1e293b' : 'var(--text-muted)';
+            const tc = this._getTagColor(tag.name);
+            const bg = active ? tc.bg : 'var(--bg)';
+            const border = active ? tc.borderColor : 'var(--border)';
+            const txt_color = active ? tc.color : 'var(--text-muted)';
+            const icon_color = active ? tc.color : '#64748b';
             const icon_cls = tag.icon || 'ri-price-tag-3-line';
             const label = this._getTagLabel(tag);
-            const check = active ? '<i class="ri-check-line" style="font-size:12px;margin-right:2px;"></i>' : '';
             return `<button onclick="app.toggleUserTag('${hwid}','${tag.name}')" style="
                 padding: 4px 12px; border-radius: 16px; font-size: 12px; font-weight: 600;
                 border: 1.5px solid ${border}; background: ${bg}; color: ${txt_color};
                 cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 4px;
                 min-width: 110px; justify-content: center;
-            ">${check}<i class="${icon_cls}" style="font-size:13px;color:#64748b;"></i>${label}</button>`;
+            "><i class="${icon_cls}" style="font-size:13px;color:${icon_color};"></i>${label}</button>`;
         }).join('');
     },
 

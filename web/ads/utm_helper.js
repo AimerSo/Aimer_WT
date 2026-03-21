@@ -44,25 +44,40 @@
      * @param {string} targetUrl 目标链接
      */
     function reportClick(medium, adId, targetUrl) {
-        var base = window._aimerTelemetryBase;
+        var base = window._aimerTelemetryBase || window._telemetryBaseUrl;
         if (!base) return;
 
         var endpoint = base.replace(/\/+$/, '') + '/telemetry/ad-click';
-        var machineId = window._aimerMachineId || '';
+        var machineId = window._aimerMachineId || window._telemetryHWID || '';
 
-        try {
-            var xhr = new XMLHttpRequest();
-            xhr.open('POST', endpoint, true);
-            xhr.setRequestHeader('Content-Type', 'application/json');
-            xhr.send(JSON.stringify({
-                machine_id: machineId,
-                ad_medium: medium || '',
-                ad_id: adId || '',
-                target_url: targetUrl || ''
-            }));
-        } catch (e) {
-            // 上报失败不影响跳转
-        }
+        Promise.resolve().then(async function () {
+            try {
+                var headers = {
+                    'Content-Type': 'application/json',
+                    'X-AimerWT-Client': '1'
+                };
+                if (window.pywebview && window.pywebview.api && window.pywebview.api.get_telemetry_auth_headers) {
+                    var authHeaders = await window.pywebview.api.get_telemetry_auth_headers('/telemetry/ad-click', 'POST', machineId || '');
+                    if (authHeaders && typeof authHeaders === 'object') {
+                        Object.assign(headers, authHeaders);
+                    }
+                }
+
+                fetch(endpoint, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        machine_id: machineId,
+                        ad_medium: medium || '',
+                        ad_id: adId || '',
+                        target_url: targetUrl || ''
+                    }),
+                    keepalive: true
+                }).catch(function () { });
+            } catch (e) {
+                // 上报失败不影响跳转
+            }
+        });
     }
 
     window.AimerUtm = {

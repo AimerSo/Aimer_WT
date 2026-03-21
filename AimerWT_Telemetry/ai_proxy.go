@@ -21,10 +21,10 @@ import (
 
 type AIProxyConfig struct {
 	Enabled      bool    `json:"enabled"`
-	Provider     string  `json:"provider"`      // 标记用途（zhipu / deepseek / openai / relay 等）
-	ApiUrl       string  `json:"api_url"`        // OpenAI 兼容的 chat/completions 端点
-	ApiKey       string  `json:"api_key"`        // 持久化到数据库的 API Key（优先级高于环境变量）
-	Model        string  `json:"model"`          // 模型名称，自由填写
+	Provider     string  `json:"provider"` // 标记用途（zhipu / deepseek / openai / relay 等）
+	ApiUrl       string  `json:"api_url"`  // OpenAI 兼容的 chat/completions 端点
+	ApiKey       string  `json:"api_key"`  // 持久化到数据库的 API Key（优先级高于环境变量）
+	Model        string  `json:"model"`    // 模型名称，自由填写
 	SystemPrompt string  `json:"system_prompt"`
 	MaxTokens    int     `json:"max_tokens"`
 	Temperature  float64 `json:"temperature"`
@@ -85,10 +85,21 @@ func SaveAIConfig() {
 // ─── 每日限额（基于数据库持久化） ───
 
 type dailyLimiter struct {
-	mu sync.Mutex
+	locks sync.Map
 }
 
 var limiter = &dailyLimiter{}
+
+func (dl *dailyLimiter) lock(machineID string) func() {
+	key := strings.TrimSpace(machineID)
+	if key == "" {
+		key = "__anonymous__"
+	}
+	actual, _ := dl.locks.LoadOrStore(key, &sync.Mutex{})
+	mu := actual.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
 
 // todayUsed 查询用户今日已使用的次数（基于 ai_usage_records 表）
 func (dl *dailyLimiter) todayUsed(machineID string) int {
@@ -100,8 +111,8 @@ func (dl *dailyLimiter) todayUsed(machineID string) int {
 
 // Allow 检查用户是否还有今日剩余次数或 bonus 额度
 func (dl *dailyLimiter) Allow(machineID string) bool {
-	dl.mu.Lock()
-	defer dl.mu.Unlock()
+	unlock := dl.lock(machineID)
+	defer unlock()
 
 	used := dl.todayUsed(machineID)
 	limit := dl.getUserLimit(machineID)
@@ -126,8 +137,8 @@ func (dl *dailyLimiter) Allow(machineID string) bool {
 // Reserve 在同一把锁内完成「限额校验 + 预留一次使用记录」。
 // 这样可以避免并发请求同时通过校验，导致次数少扣/漏扣。
 func (dl *dailyLimiter) Reserve(machineID string) (uint, int, bool, error) {
-	dl.mu.Lock()
-	defer dl.mu.Unlock()
+	unlock := dl.lock(machineID)
+	defer unlock()
 
 	used := dl.todayUsed(machineID)
 	limit := dl.getUserLimit(machineID)
@@ -222,6 +233,13 @@ type AIChatRequest struct {
 	Context   map[string]interface{}   `json:"context"`
 }
 
+func clampString(value string, maxLen int) string {
+	if maxLen <= 0 || len(value) <= maxLen {
+		return value
+	}
+	return value[:maxLen]
+}
+
 // ─── SSE 流式转发 handler ───
 
 func handleAIChat(c *gin.Context) {
@@ -235,6 +253,7 @@ func handleAIChat(c *gin.Context) {
 		return
 	}
 
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 256<<10)
 	var req AIChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -243,6 +262,9 @@ func handleAIChat(c *gin.Context) {
 
 	if req.MachineID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少设备标识"})
+		return
+	}
+	if !ensureClientMachineBinding(c, req.MachineID) {
 		return
 	}
 
@@ -285,12 +307,12 @@ func buildProxyMessages(req AIChatRequest) []map[string]interface{} {
 	// 拼接客户端上下文
 	if ctx, ok := req.Context["page"]; ok && ctx != nil {
 		if pageStr, ok := ctx.(string); ok && pageStr != "" {
-			systemPrompt += "\n\n=== 当前页面信息 ===\n" + pageStr
+			systemPrompt += "\n\n=== 当前页面信息 ===\n" + clampString(pageStr, 12000)
 		}
 	}
 	if ctx, ok := req.Context["logs"]; ok && ctx != nil {
 		if logsStr, ok := ctx.(string); ok && logsStr != "" {
-			systemPrompt += "\n\n=== 最近软件日志 ===\n" + logsStr
+			systemPrompt += "\n\n=== 最近软件日志 ===\n" + clampString(logsStr, 12000)
 		}
 	}
 
@@ -367,16 +389,18 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 		return
 	}
 
-	// 逐行读取上游 SSE 并转发
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 64*1024)
-
+	// 逐行读取上游 SSE 并转发。使用 Reader 避免 Scanner 的 64KB token 限制。
+	reader := bufio.NewReader(resp.Body)
 	var totalPromptTokens, totalCompletionTokens int
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			log.Printf("[AI] 读取流式响应失败: %v", err)
+			break
+		}
 
-		// 直接转发 SSE 行
+		line = strings.TrimRight(line, "\r\n")
 		if strings.HasPrefix(line, "data: ") {
 			data := line[6:]
 
@@ -397,9 +421,10 @@ func streamToClient(c *gin.Context, messages []map[string]interface{}, machineID
 
 			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			flusher.Flush()
-		} else if line == "" {
-			// SSE 空行分隔符
-			continue
+		}
+
+		if err == io.EOF {
+			break
 		}
 	}
 
@@ -763,6 +788,9 @@ func handleAIQuota(c *gin.Context) {
 	machineID := c.Query("machine_id")
 	if machineID == "" {
 		c.JSON(400, gin.H{"error": "缺少 machine_id"})
+		return
+	}
+	if !ensureClientMachineBinding(c, machineID) {
 		return
 	}
 
