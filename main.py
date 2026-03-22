@@ -4312,6 +4312,46 @@ class AppApi:
             log.error(f"加载主题失败: {e}")
             return None
 
+    def get_app_version(self):
+        """返回当前软件版本号，供前端更新检测卡片展示"""
+        return {"version": APP_VERSION}
+
+    def check_for_update(self):
+        """向服务端查询最新版本号，与本地版本比较并返回结果"""
+        import requests
+        tm = get_telemetry_manager()
+        if not tm or not tm.report_url:
+            return {"success": False, "message": "遥测服务未配置"}
+
+        version_url = resolve_related_endpoint(tm.report_url, "/latest-version")
+        try:
+            resp = requests.get(version_url, timeout=10, headers={
+                "User-Agent": f"AimerWT-Client/{APP_VERSION}",
+            })
+            data = resp.json()
+            latest = str(data.get("latest_version", "") or "").strip()
+            if not latest:
+                return {"success": True, "has_update": False, "current": APP_VERSION,
+                        "message": "服务端暂未配置版本信息"}
+
+            has_update = latest != APP_VERSION
+            result = {
+                "success": True,
+                "has_update": has_update,
+                "current": APP_VERSION,
+                "latest": latest,
+                "download_url": data.get("download_url", ""),
+                "changelog": data.get("changelog", ""),
+            }
+            if has_update:
+                result["message"] = f"发现新版本: {latest}"
+            else:
+                result["message"] = "当前已是最新版本"
+            return result
+        except Exception as e:
+            log.error(f"检查更新失败: {e}")
+            return {"success": False, "message": "网络请求失败，请稍后重试"}
+
     def redeem_theme_code(self, code):
         # 校验兑换口令并解锁对应的隐藏主题。
         return self._theme_unlock.redeem_theme_code(code)

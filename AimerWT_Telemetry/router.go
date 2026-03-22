@@ -451,6 +451,18 @@ func initRouter(r *gin.Engine) {
 						sysConfig.ProjectLastUpdate = val
 					}
 
+				case "latest_version":
+					if val, ok := req["version"].(string); ok {
+						SaveConfig("latest_version", val)
+					}
+					if val, ok := req["download_url"].(string); ok {
+						SaveConfig("latest_version_url", val)
+					}
+					if val, ok := req["changelog"].(string); ok {
+						SaveConfig("latest_version_changelog", val)
+					}
+					shouldPersist = false
+
 				case "_query":
 					shouldPersist = false
 				default:
@@ -1013,6 +1025,18 @@ func initRouter(r *gin.Engine) {
 
 	// 客户端 AI 限额查询端点（返回用户剩余次数）
 	r.GET("/api/ai/quota", handleAIQuota)
+
+	// 客户端版本检测：返回管理员配置的最新发布版本号
+	r.GET("/latest-version", func(c *gin.Context) {
+		version := LoadConfig("latest_version")
+		downloadUrl := LoadConfig("latest_version_url")
+		changelog := LoadConfig("latest_version_changelog")
+		c.JSON(200, gin.H{
+			"latest_version": version,
+			"download_url":   downloadUrl,
+			"changelog":      changelog,
+		})
+	})
 
 	// 客户端兑换码提交（使用与 /telemetry 相同的 UA 校验）
 	r.POST("/redeem", handleRedeem)

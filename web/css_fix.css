@@ -1631,3 +1631,216 @@ a.contributor-card {
     width: 100%;
     height: 20px;
 }
+
+/* ========================
+   兑换弹窗样式
+   ======================== */
+.redeem-modal {
+    max-width: 400px;
+    min-width: 360px;
+    min-height: auto;
+    padding: 32px 28px 24px;
+    text-align: center;
+    position: relative;
+    overflow: visible;
+    animation: redeemSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes redeemSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.redeem-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-sec);
+    cursor: pointer;
+    font-size: 18px;
+    transition: all 0.2s ease;
+}
+
+.redeem-modal-close:hover {
+    background: var(--bg-body);
+    color: var(--text-main);
+}
+
+.redeem-icon-area {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.redeem-icon-circle {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(255, 153, 0, 0.1), rgba(255, 120, 0, 0.18));
+    border: 1px solid rgba(255, 153, 0, 0.15);
+    transition: all 0.3s ease;
+}
+
+.redeem-icon-circle i {
+    font-size: 28px;
+    color: var(--primary);
+}
+
+.redeem-modal:hover .redeem-icon-circle {
+    transform: scale(1.06) rotate(3deg);
+    box-shadow: 0 6px 20px rgba(255, 153, 0, 0.2);
+}
+
+.redeem-title {
+    margin: 0 0 6px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-main);
+    letter-spacing: -0.02em;
+}
+
+.redeem-desc {
+    margin: 0 0 22px;
+    font-size: 13px;
+    color: var(--text-sec);
+    line-height: 1.5;
+}
+
+.redeem-input-group {
+    margin-bottom: 18px;
+}
+
+.redeem-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.redeem-input-icon {
+    position: absolute;
+    left: 14px;
+    font-size: 17px;
+    color: var(--text-sec);
+    transition: color 0.2s ease;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.redeem-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 16px 0 42px;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    color: var(--text-main);
+    background: var(--bg-body);
+    border: 1.5px solid var(--border-color);
+    border-radius: 12px;
+    outline: none;
+    transition: all 0.25s ease;
+    box-sizing: border-box;
+}
+
+.redeem-input::placeholder {
+    color: var(--text-sec);
+    opacity: 0.55;
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
+.redeem-input:hover {
+    border-color: rgba(255, 153, 0, 0.4);
+}
+
+.redeem-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(255, 153, 0, 0.12);
+}
+
+.redeem-input:focus ~ .redeem-input-icon,
+.redeem-input-wrapper:focus-within .redeem-input-icon {
+    color: var(--primary);
+}
+
+.redeem-submit-btn {
+    width: 100%;
+    height: 46px;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.25s ease;
+}
+
+.redeem-submit-btn:active {
+    transform: scale(0.98);
+}
+
+.redeem-footer {
+    margin-top: 16px;
+    display: flex;
+    justify-content: center;
+}
+
+.redeem-footer-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-sec);
+    font-size: 12px;
+    cursor: pointer;
+    transition: color 0.2s ease;
+    opacity: 0.7;
+}
+
+.redeem-footer-link:hover {
+    color: var(--primary);
+    opacity: 1;
+}
+
+.redeem-footer-link i {
+    font-size: 13px;
+}
+
+/* 暗色模式微调 */
+[data-theme='dark'] .redeem-icon-circle {
+    background: linear-gradient(135deg, rgba(255, 153, 0, 0.12), rgba(255, 120, 0, 0.22));
+    border-color: rgba(255, 153, 0, 0.2);
+}
+
+[data-theme='dark'] .redeem-input {
+    background: #1a1a1e;
+    border-color: #3f3f46;
+}
+
+[data-theme='dark'] .redeem-input:hover {
+    border-color: rgba(255, 153, 0, 0.5);
+}
+
+[data-theme='dark'] .redeem-modal-close:hover {
+    background: #27272a;
+}

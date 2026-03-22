@@ -1119,6 +1119,64 @@ const app = {
         }
     },
 
+    _lastUpdateCheckTime: 0,
+
+    async checkForUpdate() {
+        const now = Date.now();
+        const cooldown = 5 * 60 * 1000;
+        if (now - this._lastUpdateCheckTime < cooldown) {
+            const remaining = Math.ceil((cooldown - (now - this._lastUpdateCheckTime)) / 1000);
+            const min = Math.floor(remaining / 60);
+            const sec = remaining % 60;
+            this.showAlert('提示', `请等待 ${min}分${sec}秒 后再次检测`, 'warn');
+            return;
+        }
+
+        const btn = document.getElementById('btn-check-update');
+        const badge = document.getElementById('update-status-badge');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="ri-loader-4-line"></i> 检测中…';
+        }
+
+        try {
+            const result = await pywebview.api.check_for_update();
+            this._lastUpdateCheckTime = Date.now();
+
+            if (!result?.success) {
+                this.showAlert('检查更新', result?.message || '检查失败', 'error');
+                if (badge) badge.style.display = 'none';
+                return;
+            }
+
+            if (result.has_update) {
+                if (badge) {
+                    badge.style.display = '';
+                    badge.textContent = '有新版本 ' + result.latest;
+                    badge.style.background = 'var(--primary)';
+                    badge.style.color = '#fff';
+                }
+                this.showAlert('发现新版本', `最新版本: ${result.latest}\n${result.changelog || ''}`, 'success');
+            } else {
+                if (badge) {
+                    badge.style.display = '';
+                    badge.textContent = '已是最新';
+                    badge.style.background = 'var(--bg-body)';
+                    badge.style.color = 'var(--text-sec)';
+                }
+                this.showAlert('检查更新', result.message || '当前已是最新版本', 'success');
+            }
+        } catch (e) {
+            console.error('checkForUpdate failed:', e);
+            this.showAlert('检查更新', '检查失败，请稍后重试', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="ri-refresh-line"></i> 检查更新';
+            }
+        }
+    },
+
     openFeedbackModal() {
         const modal = document.getElementById('modal-feedback');
         if (!modal) return;
@@ -3570,6 +3628,17 @@ app.init = async function () {
             await this.loadLibraryPathInfo();
         } catch (e) {
             console.error('loadLibraryPathInfo failed:', e);
+        }
+
+        // 加载版本号到更新检测卡片
+        try {
+            const verInfo = await pywebview.api.get_app_version();
+            if (verInfo?.version) {
+                const el = document.getElementById('current-version-display');
+                if (el) el.textContent = 'v' + verInfo.version;
+            }
+        } catch (e) {
+            console.error('get_app_version failed:', e);
         }
 
         // 绑定快捷键

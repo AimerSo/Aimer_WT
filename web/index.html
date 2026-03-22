@@ -874,11 +874,7 @@
                     <div class="card-header">
                         <h2>个性化</h2>
                         <span class="subtitle">Appearance & Themes</span>
-                        <div style="flex: 1;"></div>
-                        <button class="btn secondary icon-only theme-redeem-help-btn"
-                            onclick="app.openRedeemCodeModal()" title="兑换主题" aria-label="兑换主题">
-                            <i class="ri-question-line"></i>
-                        </button>
+
                     </div>
                     <div style="padding: 20px;">
                         <label style="font-size: 12px; color: var(--text-sec); display: block; margin-bottom: 8px;">
@@ -965,10 +961,46 @@
                         </div>
                     </div>
                 </div>
+            </div>
 
+            <div class="settings-split-row">
+                <div class="card" id="cdk-redeem-card">
+                    <div class="card-header">
+                        <h2>CDK兑换</h2>
+                        <span class="subtitle">Redeem Code</span>
+                    </div>
+                    <div style="padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+                        <p style="font-size: 12px; color: var(--text-sec); margin: 0;">
+                            输入兑换码解锁主题或其他内容
+                        </p>
+                        <button class="btn feedback-outline full-width" onclick="app.openRedeemCodeModal()" style="width: 100%;">
+                            <i class="ri-gift-line"></i> CDK兑换
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card" id="update-check-card">
+                    <div class="card-header">
+                        <h2>更新检测</h2>
+                        <span class="subtitle">Update Check</span>
+                    </div>
+                    <div style="padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+                        <p style="font-size: 12px; color: var(--text-sec); margin: 0; display: flex; align-items: center; gap: 6px;">
+                            当前版本: <span id="current-version-display" style="font-weight: 600; color: var(--text-main);">--</span>
+                            <span id="update-status-badge" style="display: none; font-size: 11px; padding: 1px 8px; border-radius: 20px; font-weight: 500;"></span>
+                        </p>
+                        <button class="btn feedback-outline full-width" id="btn-check-update" onclick="app.checkForUpdate()" style="width: 100%;">
+                            <i class="ri-refresh-line"></i> 检查更新
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-split-row">
                 <div class="card" id="restore-card">
                     <div class="card-header">
                         <h2 style="color: var(--status-error);">还原</h2>
+                        <span class="subtitle">Restore</span>
                     </div>
                     <div style="padding: 20px; display: flex; flex-direction: column; gap: 12px;">
                         <p style="font-size: 12px; color: var(--text-sec); margin: 0;">
@@ -983,6 +1015,7 @@
                 <div class="card" id="feedback-card">
                     <div class="card-header">
                         <h2>反馈</h2>
+                        <span class="subtitle">Feedback</span>
                     </div>
                     <div style="padding: 20px; display: flex; flex-direction: column; gap: 12px;">
                         <p style="font-size: 12px; color: var(--text-sec); margin: 0;">
@@ -1105,26 +1138,41 @@
     </div>
 
     <div class="modal-overlay" id="modal-redeem-code">
-        <div class="modal-content" style="max-width: 440px;">
-            <h2 style="margin-top: 0; color: var(--text-main);">兑换</h2>
-            <p style="margin-bottom: 16px; color: var(--text-sec); font-size: 13px; line-height: 1.5;">
-                输入口令解锁对应内容
-            </p>
-            <div style="display: flex; flex-direction: column; gap: 8px;">
-                <label for="redeem-code-input" style="font-size: 12px; color: var(--text-sec);">兑换口令</label>
-                <input type="text" id="redeem-code-input" placeholder="请输入兑换口令" autocomplete="off"
-                    style="height: 42px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--bg-body); color: var(--text-main); padding: 0 12px; font-size: 14px;">
+        <div class="modal-content redeem-modal">
+            <!-- 关闭按钮 -->
+            <button class="redeem-modal-close" onclick="app.closeModal('modal-redeem-code')" aria-label="关闭">
+                <i class="ri-close-line"></i>
+            </button>
+
+            <!-- 图标装饰 -->
+            <div class="redeem-icon-area">
+                <div class="redeem-icon-circle">
+                    <i class="ri-gift-2-line"></i>
+                </div>
             </div>
-            <div class="modal-actions" style="margin-top: 20px;">
-                <button class="btn secondary" onclick="app.closeModal('modal-redeem-code')">取消</button>
-                <button class="btn primary" onclick="app.submitRedeemCode()">
-                    <i class="ri-check-line"></i> 确定
-                </button>
+
+            <!-- 标题与说明 -->
+            <h2 class="redeem-title">兑换中心</h2>
+            <p class="redeem-desc">输入口令或兑换码，解锁专属内容</p>
+
+            <!-- 输入区域 -->
+            <div class="redeem-input-group">
+                <div class="redeem-input-wrapper">
+                    <i class="ri-key-2-line redeem-input-icon"></i>
+                    <input type="text" id="redeem-code-input" class="redeem-input"
+                        placeholder="请输入兑换码" autocomplete="off" spellcheck="false">
+                </div>
             </div>
-            <div style="margin-top: 10px; text-align: right;">
-                <button class="btn secondary" onclick="app.resetUnlockedThemes()"
-                    style="padding: 0; border: none; background: transparent; color: var(--text-sec); font-size: 12px;">
-                    重置已解锁主题
+
+            <!-- 操作按钮 -->
+            <button class="btn primary redeem-submit-btn" onclick="app.submitRedeemCode()">
+                <i class="ri-arrow-right-line"></i> 立即兑换
+            </button>
+
+            <!-- 底部链接 -->
+            <div class="redeem-footer">
+                <button class="redeem-footer-link" onclick="app.resetUnlockedThemes()">
+                    <i class="ri-refresh-line"></i> 重置已解锁主题
                 </button>
             </div>
         </div>
