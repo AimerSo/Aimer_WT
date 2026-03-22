@@ -318,6 +318,9 @@ const app = {
             case 'redeem_stats':
                 if (typeof redeemModule !== 'undefined') redeemModule.initStats();
                 break;
+            case 'redeem_detail':
+                if (typeof redeemModule !== 'undefined') redeemModule.initDetail();
+                break;
             case 'announcement':
                 this.initAnnouncement();
                 break;
@@ -3546,6 +3549,48 @@ const app = {
         setTimeout(() => {
             this.renderUserDetailView(user);
         }, 100);
+    },
+
+    getCachedUserByMachineId(machineId) {
+        if (!machineId) return null;
+        const pools = [
+            this.state.latestUsersData || [],
+            this.state.dashboardData?.recent_users || []
+        ];
+        for (const pool of pools) {
+            const matched = (pool || []).find((user) => {
+                const hwid = user?.hwid || user?.hwid_hash || user?.machine_id || user?.uid || '';
+                return hwid === machineId;
+            });
+            if (matched) return matched;
+        }
+        return null;
+    },
+
+    async fetchUserByMachineId(machineId) {
+        const normalizedId = String(machineId || '').trim();
+        if (!normalizedId) return null;
+
+        try {
+            const response = await fetch(`${this.config.apiBase}/admin/user?machine_id=${encodeURIComponent(normalizedId)}`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.user) return data.user;
+            }
+        } catch (error) {
+            console.warn('获取用户详情失败:', error);
+        }
+
+        return this.getCachedUserByMachineId(normalizedId);
+    },
+
+    async openUserDetailByMachineId(machineId) {
+        const user = await this.fetchUserByMachineId(machineId);
+        if (!user) {
+            this.showAlert('未找到对应用户', 'warning');
+            return;
+        }
+        this.openUserDetail(user);
     },
 
     /**

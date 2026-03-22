@@ -822,15 +822,22 @@ func handleAIQuota(c *gin.Context) {
 	remaining := limiter.Remaining(machineID)
 	limit := limiter.getUserLimit(machineID)
 	bonus := limiter.getBonusCredits(machineID)
+	used := limiter.todayUsed(machineID)
+
+	dailyRemaining := limit - used
+	if dailyRemaining < 0 {
+		dailyRemaining = 0
+	}
 
 	// 计算今天午夜（下次刷新时间）
 	now := time.Now()
 	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
 
 	c.JSON(200, gin.H{
-		"remaining":     remaining,
-		"limit":         limit,
-		"bonus_credits": bonus,
-		"reset_at":      midnight.Format(time.RFC3339),
+		"remaining":       remaining,
+		"daily_remaining": dailyRemaining,
+		"limit":           limit,
+		"bonus_credits":   bonus,
+		"reset_at":        midnight.Format(time.RFC3339),
 	})
 }

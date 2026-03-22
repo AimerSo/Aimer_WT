@@ -78,6 +78,30 @@ func intValue(raw any) (int, bool) {
 	}
 }
 
+func serializeTelemetryUser(record TelemetryRecord) map[string]any {
+	return map[string]any{
+		"id":                record.ID,
+		"uid":               record.MachineID,
+		"hwid":              record.MachineID,
+		"machine_id":        record.MachineID,
+		"alias":             record.Alias,
+		"version":           record.Version,
+		"os":                record.OS,
+		"os_version":        record.OSVersion,
+		"os_build":          record.OSRelease,
+		"arch":              record.Arch,
+		"screen_resolution": record.ScreenRes,
+		"python_version":    record.PythonVersion,
+		"locale":            record.Locale,
+		"is_starred":        record.IsStarred,
+		"is_admin":          record.IsAdmin,
+		"tags":              record.Tags,
+		"updated_at":        record.LastSeenAt.Format("2006-01-02 15:04:05"),
+		"created_at":        record.CreatedAt.Format("2006-01-02 15:04:05"),
+		"minutes_ago":       int(time.Since(record.LastSeenAt).Minutes()),
+	}
+}
+
 func initRouter(r *gin.Engine) {
 	// CORS 中间件：允许 pywebview 前端跨域访问 AI 端点
 	r.Use(func(c *gin.Context) {
@@ -221,26 +245,7 @@ func initRouter(r *gin.Engine) {
 
 				stats.RecentUsers = make([]map[string]any, len(recentRecs))
 				for i, r := range recentRecs {
-					stats.RecentUsers[i] = map[string]any{
-						"id":                r.ID,
-						"uid":               r.MachineID,
-						"hwid":              r.MachineID,
-						"alias":             r.Alias,
-						"version":           r.Version,
-						"os":                r.OS,
-						"os_version":        r.OSVersion,
-						"os_build":          r.OSRelease,
-						"arch":              r.Arch,
-						"screen_resolution": r.ScreenRes,
-						"python_version":    r.PythonVersion,
-						"locale":            r.Locale,
-						"is_starred":        r.IsStarred,
-						"is_admin":          r.IsAdmin,
-						"tags":              r.Tags,
-						"updated_at":        r.LastSeenAt.Format("2006-01-02 15:04:05"),
-						"created_at":        r.CreatedAt.Format("2006-01-02 15:04:05"),
-						"minutes_ago":       int(time.Since(r.LastSeenAt).Minutes()),
-					}
+					stats.RecentUsers[i] = serializeTelemetryUser(r)
 				}
 
 				getAllOptions := func(field string) []map[string]any {
@@ -290,6 +295,26 @@ func initRouter(r *gin.Engine) {
 					}
 				}
 				c.JSON(200, resp)
+			})
+
+			admin.GET("/user", func(c *gin.Context) {
+				machineID := strings.TrimSpace(c.Query("machine_id"))
+				if machineID == "" {
+					c.JSON(400, gin.H{"error": "缺少 machine_id"})
+					return
+				}
+
+				var user TelemetryRecord
+				if err := db.Where("machine_id = ?", machineID).First(&user).Error; err != nil {
+					if err == gorm.ErrRecordNotFound {
+						c.JSON(404, gin.H{"error": "用户不存在"})
+						return
+					}
+					c.JSON(500, gin.H{"error": "查询失败"})
+					return
+				}
+
+				c.JSON(200, gin.H{"user": serializeTelemetryUser(user)})
 			})
 
 			admin.GET("/export", func(c *gin.Context) {

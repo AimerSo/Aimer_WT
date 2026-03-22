@@ -104,6 +104,10 @@
                         <input type="text" class="input" style="width: 100%;" id="redeemPopupTitle" placeholder="留空则用默标题" oninput="redeemModule.updatePreview()">
                     </div>
                     <div class="form-group">
+                        <label>弹窗副标题</label>
+                        <input type="text" class="input" style="width: 100%;" id="redeemPopupSubtitle" placeholder="留空则用默认（如 · 感谢支持 ·）" oninput="redeemModule.updatePreview()">
+                    </div>
+                    <div class="form-group">
                         <label>弹窗样式</label>
                         <select class="input" style="width: 100%;" id="redeemPopupStyleSelect" onchange="redeemModule.updatePreview()">
                             <option value="default">跟随预设类型</option>
@@ -126,6 +130,16 @@
                             <option value="mic">🎙️ 麦克风</option>
                             <option value="users">👥 用户组</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label>图标颜色</label>
+                        <div class="color-picker-group">
+                            <input type="color" class="color-input" id="redeemPopupIconColor" value="#64748b" oninput="redeemModule.updatePreview()">
+                            <span class="color-hex-label" id="redeemPopupIconColorLabel">#64748b</span>
+                            <button class="btn color-reset-btn" type="button" onclick="redeemModule.resetIconColor()" title="恢复默认颜色">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                            </button>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>确认按钮文字</label>

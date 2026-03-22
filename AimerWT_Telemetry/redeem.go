@@ -232,6 +232,9 @@ func executeRedeemPayload(store *gorm.DB, machineID string, redeemCode *RedeemCo
 		"title":          title,
 		"message":        resultMsg,
 		"popup_style":    redeemCode.PopupStyle,
+		"popup_subtitle": redeemCode.PopupSubtitle,
+		"popup_logo":     redeemCode.PopupLogo,
+		"popup_icon_color": redeemCode.PopupIconColor,
 		"theme_unlocked": themeUnlocked,
 	}
 	if themeUnlocked {
@@ -281,15 +284,18 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 		// 生成兑换码（单个或批量）
 		redeem.POST("", func(c *gin.Context) {
 			var req struct {
-				Type         string `json:"type"`
-				Payload      string `json:"payload"`
-				MaxUses      int    `json:"max_uses"`
-				Count        int    `json:"count"`
-				Note         string `json:"note"`
-				ExpireIn     int    `json:"expire_in"`
-				PopupTitle   string `json:"popup_title"`
-				PopupMessage string `json:"popup_message"`
-				PopupStyle   string `json:"popup_style"`
+				Type           string `json:"type"`
+				Payload        string `json:"payload"`
+				MaxUses        int    `json:"max_uses"`
+				Count          int    `json:"count"`
+				Note           string `json:"note"`
+				ExpireIn       int    `json:"expire_in"`
+				PopupTitle     string `json:"popup_title"`
+				PopupMessage   string `json:"popup_message"`
+				PopupStyle     string `json:"popup_style"`
+				PopupSubtitle  string `json:"popup_subtitle"`
+				PopupLogo      string `json:"popup_logo"`
+				PopupIconColor string `json:"popup_icon_color"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				c.JSON(400, gin.H{"error": "参数错误"})
@@ -322,15 +328,18 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 			created := make([]RedeemCode, 0, req.Count)
 			for i := 0; i < req.Count; i++ {
 				codeTemplate := RedeemCode{
-					Type:         req.Type,
-					Payload:      req.Payload,
-					MaxUses:      req.MaxUses,
-					IsActive:     true,
-					Note:         req.Note,
-					ExpiresAt:    expiresAt,
-					PopupTitle:   req.PopupTitle,
-					PopupMessage: req.PopupMessage,
-					PopupStyle:   req.PopupStyle,
+					Type:           req.Type,
+					Payload:        req.Payload,
+					MaxUses:        req.MaxUses,
+					IsActive:       true,
+					Note:           req.Note,
+					ExpiresAt:      expiresAt,
+					PopupTitle:     req.PopupTitle,
+					PopupMessage:   req.PopupMessage,
+					PopupStyle:     req.PopupStyle,
+					PopupSubtitle:  req.PopupSubtitle,
+					PopupLogo:      req.PopupLogo,
+					PopupIconColor: req.PopupIconColor,
 				}
 
 				var createdCode RedeemCode
@@ -364,14 +373,17 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 		redeem.PUT("/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			var req struct {
-				IsActive     *bool   `json:"is_active"`
-				Note         *string `json:"note"`
-				MaxUses      *int    `json:"max_uses"`
-				Payload      *string `json:"payload"`
-				Type         *string `json:"type"`
-				PopupTitle   *string `json:"popup_title"`
-				PopupMessage *string `json:"popup_message"`
-				PopupStyle   *string `json:"popup_style"`
+				IsActive       *bool   `json:"is_active"`
+				Note           *string `json:"note"`
+				MaxUses        *int    `json:"max_uses"`
+				Payload        *string `json:"payload"`
+				Type           *string `json:"type"`
+				PopupTitle     *string `json:"popup_title"`
+				PopupMessage   *string `json:"popup_message"`
+				PopupStyle     *string `json:"popup_style"`
+				PopupSubtitle  *string `json:"popup_subtitle"`
+				PopupLogo      *string `json:"popup_logo"`
+				PopupIconColor *string `json:"popup_icon_color"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				c.JSON(400, gin.H{"error": "参数错误"})
@@ -412,6 +424,15 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 			}
 			if req.PopupStyle != nil {
 				updates["popup_style"] = *req.PopupStyle
+			}
+			if req.PopupSubtitle != nil {
+				updates["popup_subtitle"] = *req.PopupSubtitle
+			}
+			if req.PopupLogo != nil {
+				updates["popup_logo"] = *req.PopupLogo
+			}
+			if req.PopupIconColor != nil {
+				updates["popup_icon_color"] = *req.PopupIconColor
 			}
 			if len(updates) > 0 {
 				db.Model(&code).Updates(updates)

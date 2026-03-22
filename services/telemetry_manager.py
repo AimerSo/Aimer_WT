@@ -32,8 +32,6 @@ import requests
 _PLACEHOLDER_REPORT_URLS = {
     "https://api.example.com/telemetry",
     "http://api.example.com/telemetry",
-    "https://example.com/telemetry",
-    "http://example.com/telemetry",
 }
 
 

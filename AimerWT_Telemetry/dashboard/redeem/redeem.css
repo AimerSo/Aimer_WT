@@ -994,21 +994,31 @@
     flex-shrink: 0;
 }
 
-/* 详情区块 */
+/* 详情区块（panel风格） */
 .rs-info-section {
-    margin-bottom: 24px;
+    margin-bottom: 20px;
+    background: var(--card, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+    transition: box-shadow 0.2s;
+}
+
+.rs-info-section:hover {
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
 }
 
 .rs-info-section-title {
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted, #94a3b8);
-    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text, #1e293b);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border, #e5e7eb);
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 
 .rs-info-grid {
@@ -1141,29 +1151,80 @@
 
 /* 详情使用记录 */
 .rs-detail-records {
-    margin-top: 8px;
+    margin-top: 4px;
 }
 
 .rs-detail-record-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--border, #f1f5f9);
-    font-size: 12px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    background: var(--bg, #f8fafc);
+    border-radius: 10px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.rs-detail-record-item:hover {
+    background: var(--primary-soft, rgba(37, 99, 235, 0.08));
+    transform: translateX(2px);
 }
 
 .rs-detail-record-item:last-child {
-    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.rs-detail-record-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.rs-detail-record-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #3b82f6, #06b6d4);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.rs-detail-record-info {
+    min-width: 0;
 }
 
 .rs-detail-record-user {
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text, #1e293b);
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rs-detail-record-user:hover {
+    color: var(--primary, #3b82f6);
+}
+
+.rs-detail-record-mid {
+    font-size: 11px;
+    color: var(--text-muted, #94a3b8);
+    font-family: monospace;
 }
 
 .rs-detail-record-time {
+    font-size: 12px;
     color: var(--text-muted, #94a3b8);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 /* 列表入场动画 */
@@ -1174,4 +1235,497 @@
 
 .rs-code-card {
     animation: rsCardIn 0.3s ease-out backwards;
+}
+
+/* 统计卡片选中态 */
+.rs-stat-card.rs-stat-active {
+    border-color: var(--accent-color, var(--primary));
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1), 0 4px 16px rgba(0, 0, 0, 0.06);
+    transform: translateY(-2px);
+}
+
+.rs-stat-card.rs-stat-active::before {
+    opacity: 1;
+    height: 4px;
+}
+
+/* ─── 使用记录卡片列表 ─── */
+.rs-records-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.rs-record-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 20px;
+    background: var(--bg-card, #fff);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 12px;
+    transition: all 0.2s;
+    animation: rsCardIn 0.3s ease-out backwards;
+}
+
+.rs-record-card:hover {
+    border-color: var(--primary, #3b82f6);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.06);
+}
+
+.rs-record-code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--text, #1e293b);
+    min-width: 150px;
+    flex-shrink: 0;
+}
+
+.rs-record-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.rs-record-user {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text, #1e293b);
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.rs-record-user:hover {
+    color: var(--primary, #3b82f6);
+}
+
+.rs-record-hwid {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-muted, #94a3b8);
+}
+
+.rs-record-time {
+    font-size: 12px;
+    color: var(--text-muted, #94a3b8);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+
+
+/* 使用记录里的用户别名链接 */
+.rs-record-alias-link {
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.rs-record-alias-link:hover {
+    color: var(--primary, #3b82f6);
+}
+
+/* 颜色选择器组 */
+.color-picker-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.color-input {
+    width: 40px;
+    height: 34px;
+    padding: 2px;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+    cursor: pointer;
+    background: var(--bg-card, #fff);
+    transition: border-color 0.2s;
+}
+
+.color-input:hover {
+    border-color: var(--primary, #3b82f6);
+}
+
+.color-input::-webkit-color-swatch-wrapper {
+    padding: 2px;
+}
+
+.color-input::-webkit-color-swatch {
+    border: none;
+    border-radius: 4px;
+}
+
+.color-hex-label {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    color: var(--text-muted, #94a3b8);
+    letter-spacing: 0.5px;
+    min-width: 60px;
+}
+
+.color-reset-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0 !important;
+    min-width: unset !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.color-reset-btn:hover {
+    opacity: 1;
+}
+
+/* ═══════════════════════════════════════════════
+   兑换码详情页 (rd-*) 专属样式
+   ═══════════════════════════════════════════════ */
+
+/* 顶栏标题组 */
+.rd-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    justify-content: center;
+}
+
+.rd-title-code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text, #1e293b);
+}
+
+.rd-title-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 12px;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+
+.rd-title-status.rd-dot-active { color: #059669; background: rgba(16, 185, 129, 0.1); }
+.rd-title-status.rd-dot-used { color: #d97706; background: rgba(245, 158, 11, 0.1); }
+.rd-title-status.rd-dot-expired { color: #dc2626; background: rgba(239, 68, 68, 0.1); }
+.rd-title-status.rd-dot-disabled { color: #64748b; background: rgba(100, 116, 139, 0.1); }
+
+/* 双栏网格 */
+.rd-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+}
+
+@media (max-width: 960px) {
+    .rd-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.rd-col {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* 详情页卡片 */
+.rd-card {
+    background: var(--card, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+    transition: box-shadow 0.2s;
+}
+
+.rd-card:hover {
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+}
+
+.rd-card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text, #1e293b);
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rd-card-title svg {
+    color: var(--text-muted, #94a3b8);
+    flex-shrink: 0;
+}
+
+/* 信息网格 */
+.rd-info-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.rd-info-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+    font-size: 13px;
+}
+
+.rd-info-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.rd-info-row:first-child {
+    padding-top: 0;
+}
+
+.rd-info-label {
+    min-width: 90px;
+    color: var(--text-muted, #94a3b8);
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.rd-info-value {
+    color: var(--text, #1e293b);
+    word-break: break-all;
+    flex: 1;
+}
+
+.rd-info-value.rd-mono {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+}
+
+/* 类型标签 */
+.rd-type-tag {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--bg, #f1f5f9);
+    border: 1px solid var(--border, #e2e8f0);
+    color: var(--text-secondary, #475569);
+}
+
+/* 状态胶囊 */
+.rd-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 20px;
+}
+
+.rd-status-pill.rd-dot-active { color: #059669; background: rgba(16, 185, 129, 0.1); }
+.rd-status-pill.rd-dot-used { color: #d97706; background: rgba(245, 158, 11, 0.1); }
+.rd-status-pill.rd-dot-expired { color: #dc2626; background: rgba(239, 68, 68, 0.1); }
+.rd-status-pill.rd-dot-disabled { color: #64748b; background: rgba(100, 116, 139, 0.1); }
+
+/* 永不过期标签 */
+.rd-tag-forever {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    background: rgba(16, 185, 129, 0.08);
+    color: #059669;
+}
+
+/* 奖励列表 */
+.rd-reward-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.rd-reward-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg, #f8fafc);
+    border-radius: 12px;
+    font-size: 13px;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.rd-reward-chip:hover {
+    transform: translateX(2px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.rd-reward-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.rd-reward-icon.rd-reward-theme { background: rgba(139, 92, 246, 0.1); }
+.rd-reward-icon.rd-reward-bonus { background: rgba(59, 130, 246, 0.1); }
+.rd-reward-icon.rd-reward-tag { background: rgba(16, 185, 129, 0.1); }
+
+.rd-reward-text {
+    font-weight: 500;
+    color: var(--text, #1e293b);
+}
+
+/* 使用情况区 */
+.rd-usage-section {
+    padding: 4px 0;
+}
+
+.rd-usage-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-secondary, #475569);
+}
+
+.rd-usage-text strong {
+    color: var(--text, #1e293b);
+    font-weight: 700;
+}
+
+.rd-usage-pct {
+    font-weight: 600;
+    color: var(--primary, #3b82f6);
+    font-size: 14px;
+}
+
+.rd-progress-track {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--bg, #e2e8f0);
+    overflow: hidden;
+}
+
+.rd-progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--primary, #3b82f6), #60a5fa);
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.rd-progress-fill.full {
+    background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+/* 表单区 */
+.rd-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.rd-form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.rd-form-row-inline {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.rd-form-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #94a3b8);
+    letter-spacing: 0.3px;
+}
+
+.rd-input {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    border: 1px solid var(--border, #e2e8f0);
+    background: var(--bg, #f8fafc);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.rd-input:focus {
+    border-color: var(--primary, #3b82f6);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    outline: none;
+}
+
+.rd-input-short {
+    max-width: 140px;
+}
+
+.rd-textarea {
+    min-height: 80px;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+/* 详情页底部保存栏 */
+.rd-save-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 6px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border, #e2e8f0);
+}
+
+/* 详情页操作按钮变体 */
+.rd-btn-danger {
+    color: var(--text, #475569);
+}
+
+.rd-btn-danger:hover {
+    color: #fff !important;
+    background: var(--danger, #ef4444) !important;
+    border-color: var(--danger, #ef4444) !important;
+}
+
+/* 入场动画 */
+.rd-card {
+    animation: rdCardFadeIn 0.35s ease-out backwards;
+}
+
+.rd-card:nth-child(1) { animation-delay: 0s; }
+.rd-card:nth-child(2) { animation-delay: 0.05s; }
+.rd-card:nth-child(3) { animation-delay: 0.1s; }
+.rd-card:nth-child(4) { animation-delay: 0.15s; }
+
+@keyframes rdCardFadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
 }

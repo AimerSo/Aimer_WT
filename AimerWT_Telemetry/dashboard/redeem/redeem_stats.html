@@ -43,37 +43,9 @@
             <div class="rs-codes-grid" id="statsCodesBody"></div>
         </div>
 
-        <!-- 使用记录面板 -->
+        <!-- 使用记录面板（卡片式） -->
         <div id="statsRecordsPanel" style="display: none;">
-            <div class="table-container rs-records-table-wrap">
-                <table class="table rs-records-table" id="statsRecordsTable">
-                    <thead>
-                        <tr>
-                            <th>兑换码</th>
-                            <th>用户</th>
-                            <th>HWID</th>
-                            <th>使用时间</th>
-                        </tr>
-                    </thead>
-                    <tbody id="statsRecordsBody"></tbody>
-                </table>
-            </div>
+            <div class="rs-records-list" id="statsRecordsBody"></div>
         </div>
-    </div>
-</div>
-
-<!-- 码详情侧面板 -->
-<div class="rs-detail-overlay" id="rsDetailOverlay" onclick="redeemModule.closeDetail()"></div>
-<div class="rs-detail-panel" id="rsDetailPanel">
-    <div class="rs-detail-header">
-        <h3 id="redeemDetailTitle">兑换码详情</h3>
-        <button class="btn-icon rs-detail-close" onclick="redeemModule.closeDetail()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-    </div>
-    <div class="rs-detail-body" id="redeemDetailBody"></div>
-    <div class="rs-detail-footer">
-        <button class="btn" onclick="redeemModule.closeDetail()">关闭</button>
-        <button class="btn primary" id="redeemDetailSaveBtn" onclick="redeemModule.saveDetail()" style="display:none;">保存修改</button>
     </div>
 </div>

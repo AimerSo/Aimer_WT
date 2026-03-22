@@ -1,0 +1,2126 @@
+diff --git a/AimerWT_Telemetry/ai_proxy.go b/AimerWT_Telemetry/ai_proxy.go
+index 1261690..6ef1b7e 100644
+--- a/AimerWT_Telemetry/ai_proxy.go
++++ b/AimerWT_Telemetry/ai_proxy.go
+@@ -822,15 +822,22 @@ func handleAIQuota(c *gin.Context) {
+ 	remaining := limiter.Remaining(machineID)
+ 	limit := limiter.getUserLimit(machineID)
+ 	bonus := limiter.getBonusCredits(machineID)
++	used := limiter.todayUsed(machineID)
++
++	dailyRemaining := limit - used
++	if dailyRemaining < 0 {
++		dailyRemaining = 0
++	}
+ 
+ 	// 计算今天午夜（下次刷新时间）
+ 	now := time.Now()
+ 	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+ 
+ 	c.JSON(200, gin.H{
+-		"remaining":     remaining,
+-		"limit":         limit,
+-		"bonus_credits": bonus,
+-		"reset_at":      midnight.Format(time.RFC3339),
++		"remaining":       remaining,
++		"daily_remaining": dailyRemaining,
++		"limit":           limit,
++		"bonus_credits":   bonus,
++		"reset_at":        midnight.Format(time.RFC3339),
+ 	})
+ }
+diff --git a/AimerWT_Telemetry/dashboard/index.html b/AimerWT_Telemetry/dashboard/index.html
+index 770b771..1fa49cd 100644
+--- a/AimerWT_Telemetry/dashboard/index.html
++++ b/AimerWT_Telemetry/dashboard/index.html
+@@ -252,6 +252,17 @@
+                         </div>
+                         <span>兑换码统计</span>
+                     </div>
++                    <div class="submenu-item" data-view="redeem_detail" onclick="app.switchView('redeem_detail', this); event.stopPropagation();">
++                        <div class="submenu-icon">
++                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
++                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
++                                <polyline points="14 2 14 8 20 8"></polyline>
++                                <line x1="16" y1="13" x2="8" y2="13"></line>
++                                <line x1="16" y1="17" x2="8" y2="17"></line>
++                            </svg>
++                        </div>
++                        <span>兑换码详情</span>
++                    </div>
+                 </div>
+                 <div class="menu-item" data-view="app_browser" onclick="app.switchView('app_browser', this)">
+                     <div class="menu-icon">
+diff --git a/AimerWT_Telemetry/dashboard/js/app.js b/AimerWT_Telemetry/dashboard/js/app.js
+index 4f7a6ca..79cce1a 100644
+--- a/AimerWT_Telemetry/dashboard/js/app.js
++++ b/AimerWT_Telemetry/dashboard/js/app.js
+@@ -318,6 +318,9 @@ const app = {
+             case 'redeem_stats':
+                 if (typeof redeemModule !== 'undefined') redeemModule.initStats();
+                 break;
++            case 'redeem_detail':
++                if (typeof redeemModule !== 'undefined') redeemModule.initDetail();
++                break;
+             case 'announcement':
+                 this.initAnnouncement();
+                 break;
+@@ -3548,6 +3551,48 @@ const app = {
+         }, 100);
+     },
+ 
++    getCachedUserByMachineId(machineId) {
++        if (!machineId) return null;
++        const pools = [
++            this.state.latestUsersData || [],
++            this.state.dashboardData?.recent_users || []
++        ];
++        for (const pool of pools) {
++            const matched = (pool || []).find((user) => {
++                const hwid = user?.hwid || user?.hwid_hash || user?.machine_id || user?.uid || '';
++                return hwid === machineId;
++            });
++            if (matched) return matched;
++        }
++        return null;
++    },
++
++    async fetchUserByMachineId(machineId) {
++        const normalizedId = String(machineId || '').trim();
++        if (!normalizedId) return null;
++
++        try {
++            const response = await fetch(`${this.config.apiBase}/admin/user?machine_id=${encodeURIComponent(normalizedId)}`);
++            if (response.ok) {
++                const data = await response.json();
++                if (data.user) return data.user;
++            }
++        } catch (error) {
++            console.warn('获取用户详情失败:', error);
++        }
++
++        return this.getCachedUserByMachineId(normalizedId);
++    },
++
++    async openUserDetailByMachineId(machineId) {
++        const user = await this.fetchUserByMachineId(machineId);
++        if (!user) {
++            this.showAlert('未找到对应用户', 'warning');
++            return;
++        }
++        this.openUserDetail(user);
++    },
++
+     /**
+      * 渲染用户详情页面（完整版）
+      */
+diff --git a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_1.html b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_1.html
+index 906ac0b..37e0700 100644
+--- a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_1.html
++++ b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_1.html
+@@ -3,7 +3,7 @@
+     <div style="height:4px; background:linear-gradient(90deg,#94a3b8,#cbd5e1);"></div>
+     <div style="padding:32px 28px 28px; text-align:center;">
+         <div style="margin:0 auto 20px; width:48px; height:48px; border-radius:12px; border:1.5px solid #cbd5e1; display:flex; align-items:center; justify-content:center;">
+-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
++            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="{{ICON_COLOR}}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                 <polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/>
+                 <line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/>
+                 <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>
+@@ -11,7 +11,7 @@
+         </div>
+         <div style="font-size:18px; font-weight:700; color:#1e293b; margin-bottom:6px;">{{TITLE}}</div>
+         <div style="font-size:12px; color:#94a3b8; margin-bottom:4px; letter-spacing:0.5px;">SUPPORTER · LEVEL 1</div>
+-        <div style="font-size:13px; color:#94a3b8; margin-bottom:20px; letter-spacing:1px;">· 感谢支持 ·</div>
++        <div style="font-size:13px; color:#94a3b8; margin-bottom:20px; letter-spacing:1px;">{{SUBTITLE}}</div>
+         <div style="background:#f8fafc; border-radius:10px; padding:14px 16px; text-align:left; margin-bottom:20px;">
+             {{REWARDS}}
+         </div>
+diff --git a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_2.html b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_2.html
+index 1b7ca1e..ea29b8b 100644
+--- a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_2.html
++++ b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_2.html
+@@ -3,13 +3,13 @@
+     <div style="height:4px; background:linear-gradient(90deg,#0d9488,#2dd4bf);"></div>
+     <div style="padding:32px 28px 28px; text-align:center;">
+         <div style="margin:0 auto 20px; width:52px; height:52px; border-radius:14px; border:1.5px solid #99f6e4; background:rgba(13,148,136,0.04); display:flex; align-items:center; justify-content:center;">
+-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#0d9488" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
++            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{{ICON_COLOR}}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+             </svg>
+         </div>
+         <div style="font-size:19px; font-weight:700; color:#0f172a; margin-bottom:6px;">{{TITLE}}</div>
+         <div style="font-size:12px; color:#0d9488; margin-bottom:4px; letter-spacing:0.5px; font-weight:500;">SUPPORTER · LEVEL 2</div>
+-        <div style="font-size:13px; color:#0d9488; margin-bottom:20px; letter-spacing:1px;">· 感谢支持 ·</div>
++        <div style="font-size:13px; color:#0d9488; margin-bottom:20px; letter-spacing:1px;">{{SUBTITLE}}</div>
+         <div style="background:#f0fdfa; border:1px solid #ccfbf1; border-radius:10px; padding:14px 16px; text-align:left; margin-bottom:20px;">
+             {{REWARDS}}
+         </div>
+diff --git a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_3.html b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_3.html
+index 3b2c2ed..d25da20 100644
+--- a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_3.html
++++ b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_3.html
+@@ -3,13 +3,13 @@
+     <div style="height:3px; background:linear-gradient(90deg,#d4a574,#e8c9a0,#d4a574);"></div>
+     <div style="padding:36px 30px 30px; text-align:center;">
+         <div style="margin:0 auto 22px; width:56px; height:56px; border-radius:16px; border:1.5px solid rgba(212,165,116,0.35); background:rgba(212,165,116,0.1); display:flex; align-items:center; justify-content:center;">
+-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#e8c9a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
++            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="{{ICON_COLOR}}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                 <path d="M2 4l3 12h14l3-12-6 7-4-9-4 9-6-7z"/><path d="M3 20h18"/>
+             </svg>
+         </div>
+         <div style="font-size:20px; font-weight:700; color:#fdf4e7; margin-bottom:6px;">{{TITLE}}</div>
+         <div style="font-size:12px; color:#d4a574; margin-bottom:4px; letter-spacing:1px; font-weight:600;">SUPPORTER · LEVEL 3</div>
+-        <div style="font-size:13px; color:#e8c9a0; margin-bottom:22px; letter-spacing:1px;">· 感谢支持 ·</div>
++        <div style="font-size:13px; color:#e8c9a0; margin-bottom:22px; letter-spacing:1px;">{{SUBTITLE}}</div>
+         <div style="background:rgba(212,165,116,0.1); border:1px solid rgba(212,165,116,0.2); border-radius:12px; padding:16px 18px; text-align:left; margin-bottom:22px; color:#f5e6d3;">
+             {{REWARDS}}
+         </div>
+diff --git a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_4.html b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_4.html
+index 7ef4807..4a46fe9 100644
+--- a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_4.html
++++ b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_sponsor_4.html
+@@ -5,7 +5,7 @@
+         <!-- 微光背景 -->
+         <div style="position:absolute; top:0; left:50%; transform:translateX(-50%); width:200px; height:120px; background:radial-gradient(ellipse,rgba(251,191,36,0.1),transparent 70%); pointer-events:none;"></div>
+         <div style="margin:0 auto 24px; width:60px; height:60px; border-radius:16px; border:1.5px solid rgba(251,191,36,0.35); background:rgba(251,191,36,0.08); display:flex; align-items:center; justify-content:center; position:relative;">
+-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fde68a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
++            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="{{ICON_COLOR}}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                 <path d="M6 9H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2"/>
+                 <path d="M18 9h2a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-2"/>
+                 <path d="M6 3h12v7a6 6 0 0 1-12 0V3z"/>
+@@ -14,7 +14,7 @@
+         </div>
+         <div style="font-size:22px; font-weight:700; color:#fef9c3; margin-bottom:6px; letter-spacing:0.3px;">{{TITLE}}</div>
+         <div style="font-size:11px; color:#fbbf24; margin-bottom:4px; letter-spacing:2px; font-weight:700; text-transform:uppercase;">Supporter · Level 4</div>
+-        <div style="font-size:13px; color:#fbbf24; margin-bottom:24px; letter-spacing:1px;">· 感谢支持 ·</div>
++        <div style="font-size:13px; color:#fbbf24; margin-bottom:24px; letter-spacing:1px;">{{SUBTITLE}}</div>
+         <div style="background:rgba(251,191,36,0.06); border:1px solid rgba(251,191,36,0.15); border-radius:14px; padding:18px 20px; text-align:left; margin-bottom:24px; color:#fef3c7;">
+             {{REWARDS}}
+         </div>
+diff --git a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_streamer.html b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_streamer.html
+index ac41029..0e6d198 100644
+--- a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_streamer.html
++++ b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_streamer.html
+@@ -3,7 +3,7 @@
+     <div style="height:3px; background:linear-gradient(90deg,#fbbf24,#fcd34d,#fbbf24);"></div>
+     <div style="padding:32px 28px 28px; text-align:center;">
+         <div style="margin:0 auto 20px; width:52px; height:52px; border-radius:14px; border:1.5px solid rgba(251,191,36,0.3); background:rgba(251,191,36,0.08); display:flex; align-items:center; justify-content:center;">
+-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fcd34d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
++            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{{ICON_COLOR}}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                 <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                 <line x1="12" y1="19" x2="12" y2="22"/>
+@@ -12,7 +12,7 @@
+         </div>
+         <div style="font-size:19px; font-weight:700; color:#fefce8; margin-bottom:6px;">{{TITLE}}</div>
+         <div style="font-size:12px; color:#fcd34d; margin-bottom:4px; letter-spacing:1px; font-weight:600;">STREAMER EXCLUSIVE</div>
+-        <div style="font-size:13px; color:#fde68a; margin-bottom:20px; letter-spacing:1px;">· 专属福利 ·</div>
++        <div style="font-size:13px; color:#fde68a; margin-bottom:20px; letter-spacing:1px;">{{SUBTITLE}}</div>
+         <div style="background:rgba(251,191,36,0.08); border:1px solid rgba(251,191,36,0.18); border-radius:10px; padding:14px 16px; text-align:left; margin-bottom:20px; color:#fef3c7;">
+             {{REWARDS}}
+         </div>
+diff --git a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_streamer_share.html b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_streamer_share.html
+index 0df82d3..d2595f1 100644
+--- a/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_streamer_share.html
++++ b/AimerWT_Telemetry/dashboard/redeem/popup_styles/style_streamer_share.html
+@@ -3,7 +3,7 @@
+     <div style="height:3px; background:linear-gradient(90deg,#fcd34d,#fde68a,#fcd34d);"></div>
+     <div style="padding:32px 28px 28px; text-align:center;">
+         <div style="margin:0 auto 20px; width:52px; height:52px; border-radius:14px; border:1.5px solid rgba(253,224,71,0.2); background:rgba(253,224,71,0.06); display:flex; align-items:center; justify-content:center;">
+-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fde68a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
++            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{{ICON_COLOR}}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                 <circle cx="9" cy="7" r="4"/>
+                 <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+@@ -12,7 +12,7 @@
+         </div>
+         <div style="font-size:19px; font-weight:700; color:#fefce8; margin-bottom:6px;">{{TITLE}}</div>
+         <div style="font-size:12px; color:#fde68a; margin-bottom:4px; letter-spacing:1px; font-weight:600;">STREAMER SHARE</div>
+-        <div style="font-size:13px; color:#fef3c7; margin-bottom:20px; letter-spacing:1px;">· 分享福利 ·</div>
++        <div style="font-size:13px; color:#fef3c7; margin-bottom:20px; letter-spacing:1px;">{{SUBTITLE}}</div>
+         <div style="background:rgba(253,224,71,0.06); border:1px solid rgba(253,224,71,0.15); border-radius:10px; padding:14px 16px; text-align:left; margin-bottom:20px; color:#fef3c7;">
+             {{REWARDS}}
+         </div>
+diff --git a/AimerWT_Telemetry/dashboard/redeem/redeem.css b/AimerWT_Telemetry/dashboard/redeem/redeem.css
+index 3b8163e..92ab9b2 100644
+--- a/AimerWT_Telemetry/dashboard/redeem/redeem.css
++++ b/AimerWT_Telemetry/dashboard/redeem/redeem.css
+@@ -994,21 +994,31 @@
+     flex-shrink: 0;
+ }
+ 
+-/* 详情区块 */
++/* 详情区块（panel风格） */
+ .rs-info-section {
+-    margin-bottom: 24px;
++    margin-bottom: 20px;
++    background: var(--card, #fff);
++    border: 1px solid var(--border, #e5e7eb);
++    border-radius: 16px;
++    padding: 20px;
++    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
++    transition: box-shadow 0.2s;
++}
++
++.rs-info-section:hover {
++    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+ }
+ 
+ .rs-info-section-title {
+-    font-size: 12px;
+-    font-weight: 600;
+-    text-transform: uppercase;
+-    letter-spacing: 0.5px;
+-    color: var(--text-muted, #94a3b8);
+-    margin-bottom: 12px;
++    font-size: 14px;
++    font-weight: 700;
++    color: var(--text, #1e293b);
++    margin-bottom: 16px;
++    padding-bottom: 10px;
++    border-bottom: 1px solid var(--border, #e5e7eb);
+     display: flex;
+     align-items: center;
+-    gap: 6px;
++    gap: 8px;
+ }
+ 
+ .rs-info-grid {
+@@ -1141,29 +1151,80 @@
+ 
+ /* 详情使用记录 */
+ .rs-detail-records {
+-    margin-top: 8px;
++    margin-top: 4px;
+ }
+ 
+ .rs-detail-record-item {
+     display: flex;
+     align-items: center;
+     justify-content: space-between;
+-    padding: 8px 0;
+-    border-bottom: 1px solid var(--border, #f1f5f9);
+-    font-size: 12px;
++    padding: 10px 12px;
++    margin-bottom: 6px;
++    background: var(--bg, #f8fafc);
++    border-radius: 10px;
++    font-size: 13px;
++    cursor: pointer;
++    transition: all 0.15s;
++}
++
++.rs-detail-record-item:hover {
++    background: var(--primary-soft, rgba(37, 99, 235, 0.08));
++    transform: translateX(2px);
+ }
+ 
+ .rs-detail-record-item:last-child {
+-    border-bottom: none;
++    margin-bottom: 0;
++}
++
++.rs-detail-record-left {
++    display: flex;
++    align-items: center;
++    gap: 10px;
++    min-width: 0;
++}
++
++.rs-detail-record-avatar {
++    width: 30px;
++    height: 30px;
++    border-radius: 8px;
++    background: linear-gradient(135deg, #3b82f6, #06b6d4);
++    color: #fff;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    font-size: 12px;
++    font-weight: 700;
++    flex-shrink: 0;
++}
++
++.rs-detail-record-info {
++    min-width: 0;
+ }
+ 
+ .rs-detail-record-user {
+-    font-weight: 500;
++    font-weight: 600;
+     color: var(--text, #1e293b);
++    font-size: 13px;
++    white-space: nowrap;
++    overflow: hidden;
++    text-overflow: ellipsis;
++}
++
++.rs-detail-record-user:hover {
++    color: var(--primary, #3b82f6);
++}
++
++.rs-detail-record-mid {
++    font-size: 11px;
++    color: var(--text-muted, #94a3b8);
++    font-family: monospace;
+ }
+ 
+ .rs-detail-record-time {
++    font-size: 12px;
+     color: var(--text-muted, #94a3b8);
++    white-space: nowrap;
++    flex-shrink: 0;
+ }
+ 
+ /* 列表入场动画 */
+@@ -1175,3 +1236,496 @@
+ .rs-code-card {
+     animation: rsCardIn 0.3s ease-out backwards;
+ }
++
++/* 统计卡片选中态 */
++.rs-stat-card.rs-stat-active {
++    border-color: var(--accent-color, var(--primary));
++    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1), 0 4px 16px rgba(0, 0, 0, 0.06);
++    transform: translateY(-2px);
++}
++
++.rs-stat-card.rs-stat-active::before {
++    opacity: 1;
++    height: 4px;
++}
++
++/* ─── 使用记录卡片列表 ─── */
++.rs-records-list {
++    display: flex;
++    flex-direction: column;
++    gap: 6px;
++}
++
++.rs-record-card {
++    display: flex;
++    align-items: center;
++    gap: 16px;
++    padding: 14px 20px;
++    background: var(--bg-card, #fff);
++    border: 1px solid var(--border, #e2e8f0);
++    border-radius: 12px;
++    transition: all 0.2s;
++    animation: rsCardIn 0.3s ease-out backwards;
++}
++
++.rs-record-card:hover {
++    border-color: var(--primary, #3b82f6);
++    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.06);
++}
++
++.rs-record-code {
++    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
++    font-size: 13px;
++    font-weight: 600;
++    letter-spacing: 1px;
++    color: var(--text, #1e293b);
++    min-width: 150px;
++    flex-shrink: 0;
++}
++
++.rs-record-info {
++    display: flex;
++    align-items: center;
++    gap: 12px;
++    flex: 1;
++    min-width: 0;
++}
++
++.rs-record-user {
++    font-size: 13px;
++    font-weight: 500;
++    color: var(--text, #1e293b);
++    cursor: pointer;
++    transition: color 0.15s;
++}
++
++.rs-record-user:hover {
++    color: var(--primary, #3b82f6);
++}
++
++.rs-record-hwid {
++    font-family: monospace;
++    font-size: 11px;
++    color: var(--text-muted, #94a3b8);
++}
++
++.rs-record-time {
++    font-size: 12px;
++    color: var(--text-muted, #94a3b8);
++    flex-shrink: 0;
++    white-space: nowrap;
++}
++
++
++
++/* 使用记录里的用户别名链接 */
++.rs-record-alias-link {
++    cursor: pointer;
++    transition: color 0.15s;
++}
++
++.rs-record-alias-link:hover {
++    color: var(--primary, #3b82f6);
++}
++
++/* 颜色选择器组 */
++.color-picker-group {
++    display: flex;
++    align-items: center;
++    gap: 10px;
++}
++
++.color-input {
++    width: 40px;
++    height: 34px;
++    padding: 2px;
++    border: 1px solid var(--border, #e2e8f0);
++    border-radius: 8px;
++    cursor: pointer;
++    background: var(--bg-card, #fff);
++    transition: border-color 0.2s;
++}
++
++.color-input:hover {
++    border-color: var(--primary, #3b82f6);
++}
++
++.color-input::-webkit-color-swatch-wrapper {
++    padding: 2px;
++}
++
++.color-input::-webkit-color-swatch {
++    border: none;
++    border-radius: 4px;
++}
++
++.color-hex-label {
++    font-family: 'SF Mono', 'Fira Code', monospace;
++    font-size: 12px;
++    color: var(--text-muted, #94a3b8);
++    letter-spacing: 0.5px;
++    min-width: 60px;
++}
++
++.color-reset-btn {
++    width: 30px;
++    height: 30px;
++    padding: 0 !important;
++    min-width: unset !important;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    border-radius: 8px;
++    opacity: 0.7;
++    transition: opacity 0.2s;
++}
++
++.color-reset-btn:hover {
++    opacity: 1;
++}
++
++/* ═══════════════════════════════════════════════
++   兑换码详情页 (rd-*) 专属样式
++   ═══════════════════════════════════════════════ */
++
++/* 顶栏标题组 */
++.rd-title-group {
++    display: flex;
++    align-items: center;
++    gap: 10px;
++    flex: 1;
++    justify-content: center;
++}
++
++.rd-title-code {
++    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
++    font-size: 16px;
++    font-weight: 700;
++    letter-spacing: 2px;
++    color: var(--text, #1e293b);
++}
++
++.rd-title-status {
++    display: inline-flex;
++    align-items: center;
++    gap: 5px;
++    font-size: 12px;
++    font-weight: 600;
++    padding: 3px 12px;
++    border-radius: 20px;
++    white-space: nowrap;
++}
++
++.rd-title-status.rd-dot-active { color: #059669; background: rgba(16, 185, 129, 0.1); }
++.rd-title-status.rd-dot-used { color: #d97706; background: rgba(245, 158, 11, 0.1); }
++.rd-title-status.rd-dot-expired { color: #dc2626; background: rgba(239, 68, 68, 0.1); }
++.rd-title-status.rd-dot-disabled { color: #64748b; background: rgba(100, 116, 139, 0.1); }
++
++/* 双栏网格 */
++.rd-grid {
++    display: grid;
++    grid-template-columns: 1fr 1fr;
++    gap: 20px;
++    align-items: start;
++}
++
++@media (max-width: 960px) {
++    .rd-grid {
++        grid-template-columns: 1fr;
++    }
++}
++
++.rd-col {
++    min-width: 0;
++    display: flex;
++    flex-direction: column;
++    gap: 16px;
++}
++
++/* 详情页卡片 */
++.rd-card {
++    background: var(--card, #fff);
++    border: 1px solid var(--border, #e5e7eb);
++    border-radius: 16px;
++    padding: 22px;
++    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
++    transition: box-shadow 0.2s;
++}
++
++.rd-card:hover {
++    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
++}
++
++.rd-card-title {
++    font-size: 14px;
++    font-weight: 700;
++    color: var(--text, #1e293b);
++    margin-bottom: 16px;
++    padding-bottom: 12px;
++    border-bottom: 1px solid var(--border, #e5e7eb);
++    display: flex;
++    align-items: center;
++    gap: 8px;
++}
++
++.rd-card-title svg {
++    color: var(--text-muted, #94a3b8);
++    flex-shrink: 0;
++}
++
++/* 信息网格 */
++.rd-info-grid {
++    display: flex;
++    flex-direction: column;
++    gap: 0;
++}
++
++.rd-info-row {
++    display: flex;
++    align-items: center;
++    padding: 10px 0;
++    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
++    font-size: 13px;
++}
++
++.rd-info-row:last-child {
++    border-bottom: none;
++    padding-bottom: 0;
++}
++
++.rd-info-row:first-child {
++    padding-top: 0;
++}
++
++.rd-info-label {
++    min-width: 90px;
++    color: var(--text-muted, #94a3b8);
++    font-weight: 500;
++    flex-shrink: 0;
++}
++
++.rd-info-value {
++    color: var(--text, #1e293b);
++    word-break: break-all;
++    flex: 1;
++}
++
++.rd-info-value.rd-mono {
++    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
++    font-size: 14px;
++    font-weight: 600;
++    letter-spacing: 1.5px;
++}
++
++/* 类型标签 */
++.rd-type-tag {
++    display: inline-block;
++    padding: 2px 10px;
++    border-radius: 8px;
++    font-size: 12px;
++    font-weight: 600;
++    background: var(--bg, #f1f5f9);
++    border: 1px solid var(--border, #e2e8f0);
++    color: var(--text-secondary, #475569);
++}
++
++/* 状态胶囊 */
++.rd-status-pill {
++    display: inline-flex;
++    align-items: center;
++    gap: 5px;
++    font-size: 12px;
++    font-weight: 600;
++    padding: 2px 10px;
++    border-radius: 20px;
++}
++
++.rd-status-pill.rd-dot-active { color: #059669; background: rgba(16, 185, 129, 0.1); }
++.rd-status-pill.rd-dot-used { color: #d97706; background: rgba(245, 158, 11, 0.1); }
++.rd-status-pill.rd-dot-expired { color: #dc2626; background: rgba(239, 68, 68, 0.1); }
++.rd-status-pill.rd-dot-disabled { color: #64748b; background: rgba(100, 116, 139, 0.1); }
++
++/* 永不过期标签 */
++.rd-tag-forever {
++    display: inline-block;
++    padding: 2px 8px;
++    border-radius: 6px;
++    font-size: 12px;
++    font-weight: 500;
++    background: rgba(16, 185, 129, 0.08);
++    color: #059669;
++}
++
++/* 奖励列表 */
++.rd-reward-list {
++    display: flex;
++    flex-direction: column;
++    gap: 8px;
++}
++
++.rd-reward-chip {
++    display: flex;
++    align-items: center;
++    gap: 10px;
++    padding: 10px 14px;
++    background: var(--bg, #f8fafc);
++    border-radius: 12px;
++    font-size: 13px;
++    transition: transform 0.15s, box-shadow 0.15s;
++}
++
++.rd-reward-chip:hover {
++    transform: translateX(2px);
++    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
++}
++
++.rd-reward-icon {
++    width: 30px;
++    height: 30px;
++    border-radius: 8px;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    font-size: 14px;
++    flex-shrink: 0;
++}
++
++.rd-reward-icon.rd-reward-theme { background: rgba(139, 92, 246, 0.1); }
++.rd-reward-icon.rd-reward-bonus { background: rgba(59, 130, 246, 0.1); }
++.rd-reward-icon.rd-reward-tag { background: rgba(16, 185, 129, 0.1); }
++
++.rd-reward-text {
++    font-weight: 500;
++    color: var(--text, #1e293b);
++}
++
++/* 使用情况区 */
++.rd-usage-section {
++    padding: 4px 0;
++}
++
++.rd-usage-header {
++    display: flex;
++    justify-content: space-between;
++    align-items: center;
++    margin-bottom: 8px;
++    font-size: 13px;
++    color: var(--text-secondary, #475569);
++}
++
++.rd-usage-text strong {
++    color: var(--text, #1e293b);
++    font-weight: 700;
++}
++
++.rd-usage-pct {
++    font-weight: 600;
++    color: var(--primary, #3b82f6);
++    font-size: 14px;
++}
++
++.rd-progress-track {
++    height: 8px;
++    border-radius: 4px;
++    background: var(--bg, #e2e8f0);
++    overflow: hidden;
++}
++
++.rd-progress-fill {
++    height: 100%;
++    border-radius: 4px;
++    background: linear-gradient(90deg, var(--primary, #3b82f6), #60a5fa);
++    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
++}
++
++.rd-progress-fill.full {
++    background: linear-gradient(90deg, #f59e0b, #fbbf24);
++}
++
++/* 表单区 */
++.rd-form-group {
++    display: flex;
++    flex-direction: column;
++    gap: 14px;
++}
++
++.rd-form-row {
++    display: flex;
++    flex-direction: column;
++    gap: 6px;
++}
++
++.rd-form-row-inline {
++    display: flex;
++    gap: 14px;
++    align-items: flex-start;
++}
++
++.rd-form-label {
++    font-size: 12px;
++    font-weight: 600;
++    color: var(--text-muted, #94a3b8);
++    letter-spacing: 0.3px;
++}
++
++.rd-input {
++    width: 100%;
++    padding: 8px 12px;
++    border-radius: 10px;
++    font-size: 13px;
++    border: 1px solid var(--border, #e2e8f0);
++    background: var(--bg, #f8fafc);
++    transition: border-color 0.2s, box-shadow 0.2s;
++}
++
++.rd-input:focus {
++    border-color: var(--primary, #3b82f6);
++    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
++    outline: none;
++}
++
++.rd-input-short {
++    max-width: 140px;
++}
++
++.rd-textarea {
++    min-height: 80px;
++    resize: vertical;
++    line-height: 1.5;
++}
++
++/* 详情页底部保存栏 */
++.rd-save-row {
++    display: flex;
++    justify-content: flex-end;
++    gap: 10px;
++    margin-top: 6px;
++    padding-top: 16px;
++    border-top: 1px solid var(--border, #e2e8f0);
++}
++
++/* 详情页操作按钮变体 */
++.rd-btn-danger {
++    color: var(--text, #475569);
++}
++
++.rd-btn-danger:hover {
++    color: #fff !important;
++    background: var(--danger, #ef4444) !important;
++    border-color: var(--danger, #ef4444) !important;
++}
++
++/* 入场动画 */
++.rd-card {
++    animation: rdCardFadeIn 0.35s ease-out backwards;
++}
++
++.rd-card:nth-child(1) { animation-delay: 0s; }
++.rd-card:nth-child(2) { animation-delay: 0.05s; }
++.rd-card:nth-child(3) { animation-delay: 0.1s; }
++.rd-card:nth-child(4) { animation-delay: 0.15s; }
++
++@keyframes rdCardFadeIn {
++    from { opacity: 0; transform: translateY(12px); }
++    to { opacity: 1; transform: translateY(0); }
++}
+diff --git a/AimerWT_Telemetry/dashboard/redeem/redeem_generate.html b/AimerWT_Telemetry/dashboard/redeem/redeem_generate.html
+index caeb562..1bdaa9a 100644
+--- a/AimerWT_Telemetry/dashboard/redeem/redeem_generate.html
++++ b/AimerWT_Telemetry/dashboard/redeem/redeem_generate.html
+@@ -103,6 +103,10 @@
+                         <label>自定义弹窗标题</label>
+                         <input type="text" class="input" style="width: 100%;" id="redeemPopupTitle" placeholder="留空则用默标题" oninput="redeemModule.updatePreview()">
+                     </div>
++                    <div class="form-group">
++                        <label>弹窗副标题</label>
++                        <input type="text" class="input" style="width: 100%;" id="redeemPopupSubtitle" placeholder="留空则用默认（如 · 感谢支持 ·）" oninput="redeemModule.updatePreview()">
++                    </div>
+                     <div class="form-group">
+                         <label>弹窗样式</label>
+                         <select class="input" style="width: 100%;" id="redeemPopupStyleSelect" onchange="redeemModule.updatePreview()">
+@@ -127,6 +131,16 @@
+                             <option value="users">👥 用户组</option>
+                         </select>
+                     </div>
++                    <div class="form-group">
++                        <label>图标颜色</label>
++                        <div class="color-picker-group">
++                            <input type="color" class="color-input" id="redeemPopupIconColor" value="#64748b" oninput="redeemModule.updatePreview()">
++                            <span class="color-hex-label" id="redeemPopupIconColorLabel">#64748b</span>
++                            <button class="btn color-reset-btn" type="button" onclick="redeemModule.resetIconColor()" title="恢复默认颜色">
++                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
++                            </button>
++                        </div>
++                    </div>
+                     <div class="form-group">
+                         <label>确认按钮文字</label>
+                         <input type="text" class="input" style="width: 100%;" id="redeemPopupButton" placeholder="留空则用默认文字" oninput="redeemModule.updatePreview()">
+diff --git a/AimerWT_Telemetry/dashboard/redeem/redeem_module.js b/AimerWT_Telemetry/dashboard/redeem/redeem_module.js
+index 5e78dc2..6ca7d8a 100644
+--- a/AimerWT_Telemetry/dashboard/redeem/redeem_module.js
++++ b/AimerWT_Telemetry/dashboard/redeem/redeem_module.js
+@@ -35,6 +35,26 @@ const redeemModule = {
+         'users': '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+     },
+ 
++    _defaultSubtitleMap: {
++        'sponsor_1': '· 感谢支持 ·',
++        'sponsor_2': '· 感谢支持 ·',
++        'sponsor_3': '· 感谢支持 ·',
++        'sponsor_4': '· 感谢支持 ·',
++        'streamer': '· 专属福利 ·',
++        'streamer_share': '· 分享福利 ·',
++        'custom': '· 感谢支持 ·',
++    },
++
++    _defaultIconColorMap: {
++        'sponsor_1': '#64748b',
++        'sponsor_2': '#0d9488',
++        'sponsor_3': '#e8c9a0',
++        'sponsor_4': '#fde68a',
++        'streamer': '#fcd34d',
++        'streamer_share': '#fde68a',
++        'custom': '#64748b',
++    },
++
+     // ─────────── 预设类型定义（与后端 redeemPresets 映射） ───────────
+ 
+     // 主题文件名 → 中文显示名
+@@ -279,6 +299,10 @@ const redeemModule = {
+             document.getElementById('redeemPopupTitle').value = savedDefaults.popup_title || '';
+             document.getElementById('redeemPopupButton').value = savedDefaults.popup_button || '';
+             document.getElementById('redeemPopupMessage').value = savedDefaults.popup_message || '';
++            const subtitleEl = document.getElementById('redeemPopupSubtitle');
++            if (subtitleEl) subtitleEl.value = savedDefaults.popup_subtitle || '';
++            const iconColorEl = document.getElementById('redeemPopupIconColor');
++            if (iconColorEl) iconColorEl.value = savedDefaults.popup_icon_color || this._defaultIconColorMap[presetType] || '#64748b';
+             const styleSelect = document.getElementById('redeemPopupStyleSelect');
+             if (styleSelect) styleSelect.value = savedDefaults.popup_style_select || 'default';
+             const logoSelect = document.getElementById('redeemPopupLogo');
+@@ -307,6 +331,10 @@ const redeemModule = {
+             document.getElementById('redeemPopupTitle').value = '';
+             document.getElementById('redeemPopupButton').value = '';
+             document.getElementById('redeemPopupMessage').value = '';
++            const subtitleEl2 = document.getElementById('redeemPopupSubtitle');
++            if (subtitleEl2) subtitleEl2.value = '';
++            const iconColorEl2 = document.getElementById('redeemPopupIconColor');
++            if (iconColorEl2) iconColorEl2.value = this._defaultIconColorMap[presetType] || '#64748b';
+             const styleSelect = document.getElementById('redeemPopupStyleSelect');
+             if (styleSelect) styleSelect.value = 'default';
+             const logoSelect = document.getElementById('redeemPopupLogo');
+@@ -320,6 +348,10 @@ const redeemModule = {
+             document.getElementById('redeemPopupTitle').value = '';
+             document.getElementById('redeemPopupButton').value = '';
+             document.getElementById('redeemPopupMessage').value = '';
++            const subtitleEl3 = document.getElementById('redeemPopupSubtitle');
++            if (subtitleEl3) subtitleEl3.value = '';
++            const iconColorEl3 = document.getElementById('redeemPopupIconColor');
++            if (iconColorEl3) iconColorEl3.value = '#64748b';
+             const styleSelect = document.getElementById('redeemPopupStyleSelect');
+             if (styleSelect) styleSelect.value = 'default';
+             const logoSelect = document.getElementById('redeemPopupLogo');
+@@ -400,6 +432,15 @@ const redeemModule = {
+             ? `<div style="font-size:13px; line-height:1.6; white-space:pre-line;">${customMsg}</div>`
+             : rewardItemsHtml;
+ 
++        const customSubtitle = document.getElementById('redeemPopupSubtitle')?.value?.trim() || '';
++        const displaySubtitle = customSubtitle || this._defaultSubtitleMap[presetType] || '· 感谢支持 ·';
++
++        const iconColorEl = document.getElementById('redeemPopupIconColor');
++        const defaultColor = this._defaultIconColorMap[presetType] || '#64748b';
++        const displayIconColor = iconColorEl?.value || defaultColor;
++        const colorLabel = document.getElementById('redeemPopupIconColorLabel');
++        if (colorLabel) colorLabel.textContent = displayIconColor;
++
+         // 按钮文字：优先使用自定义，否则用默认值
+         const customButton = document.getElementById('redeemPopupButton')?.value?.trim() || '';
+         const defaultButtons = {
+@@ -414,7 +455,11 @@ const redeemModule = {
+             const res = await fetch(`redeem/popup_styles/${styleName}.html?t=${Date.now()}`);
+             if (res.ok) this._popupStyleCache[styleName] = await res.text();
+             let html = this._popupStyleCache[styleName] || '';
+-            html = html.replace('{{TITLE}}', displayTitle).replace('{{REWARDS}}', displayRewards).replace('{{BUTTON}}', displayButton);
++            html = html.replace('{{TITLE}}', displayTitle)
++                       .replace('{{REWARDS}}', displayRewards)
++                       .replace('{{BUTTON}}', displayButton)
++                       .replace('{{SUBTITLE}}', displaySubtitle)
++                       .replace('{{ICON_COLOR}}', displayIconColor);
+ 
+             // Logo 替换：如果用户选择了自定义 Logo→替换模板中的 SVG
+             const logoVal = document.getElementById('redeemPopupLogo')?.value || 'default';
+@@ -425,7 +470,8 @@ const redeemModule = {
+             // 主播分享文案替换：将“分享福利”替换为“来自xxx的分享”
+             const streamerId = document.getElementById('redeemStreamerId')?.value?.trim() || '';
+             if (streamerId && (presetType === 'streamer_share' || styleName === 'style_streamer_share')) {
+-                html = html.replace('· 分享福利 ·', `· 来自${streamerId}的分享 ·`);
++                const currentSubtitle = customSubtitle || this._defaultSubtitleMap['streamer_share'];
++                html = html.replace(currentSubtitle, `· 来自${streamerId}的分享 ·`);
+             }
+ 
+             frame.innerHTML = html;
+@@ -454,6 +500,10 @@ const redeemModule = {
+         document.getElementById('redeemPopupMessage').value = '';
+         const btnEl = document.getElementById('redeemPopupButton');
+         if (btnEl) btnEl.value = '';
++        const subtitleEl = document.getElementById('redeemPopupSubtitle');
++        if (subtitleEl) subtitleEl.value = '';
++        const iconColorEl = document.getElementById('redeemPopupIconColor');
++        if (iconColorEl) iconColorEl.value = '#64748b';
+         const styleSelect = document.getElementById('redeemPopupStyleSelect');
+         if (styleSelect) styleSelect.value = 'default';
+         const logoSelect = document.getElementById('redeemPopupLogo');
+@@ -527,7 +577,10 @@ const redeemModule = {
+                     expire_in: expireIn, note,
+                     popup_title: popupTitle,
+                     popup_message: popupMessage,
+-                    popup_style: popupStyle
++                    popup_style: popupStyle,
++                    popup_subtitle: document.getElementById('redeemPopupSubtitle')?.value?.trim() || '',
++                    popup_logo: document.getElementById('redeemPopupLogo')?.value || 'default',
++                    popup_icon_color: document.getElementById('redeemPopupIconColor')?.value || ''
+                 })
+             });
+ 
+@@ -736,7 +789,7 @@ const redeemModule = {
+                 ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4" y1="4" x2="20" y2="20"/></svg>'
+                 : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+ 
+-            return `<div class="rs-code-card status-${code.status}" onclick="redeemModule.showDetail(${code.id})" style="animation-delay: ${idx * 0.03}s">
++            return `<div class="rs-code-card status-${code.status}" onclick="redeemModule.showCodeDetailPage(${code.id})" style="animation-delay: ${idx * 0.03}s">
+                 <div class="rs-code-main">
+                     <span class="rs-code-text">${code.code}</span>
+                     <div class="rs-code-meta">
+@@ -794,23 +847,31 @@ const redeemModule = {
+             const records = data.records || [];
+ 
+             if (records.length === 0) {
+-                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 40px;">暂无使用记录</td></tr>';
++                tbody.innerHTML = `<div class="rs-empty">
++                    <div class="rs-empty-icon">📝</div>
++                    <div class="rs-empty-text">暂无使用记录</div>
++                </div>`;
+                 return;
+             }
+ 
+-            tbody.innerHTML = records.map(r => {
++            tbody.innerHTML = records.map((r, idx) => {
+                 const hwid = r.machine_id || '-';
+                 const displayHwid = hwid.length > 12 ? hwid.substring(0, 6) + '...' + hwid.substring(hwid.length - 4) : hwid;
+                 const userDisplay = r.alias || displayHwid;
+-                return `<tr>
+-                    <td style="font-family: monospace; font-size: 13px; font-weight: 600;">${r.code}</td>
+-                    <td>${userDisplay}</td>
+-                    <td style="font-family: monospace; font-size: 12px;" title="${hwid}">${displayHwid}</td>
+-                    <td style="font-size: 12px; color: var(--text-muted);">${r.created_at || '-'}</td>
+-                </tr>`;
++                const encodedMachineId = encodeURIComponent(hwid);
++                return `<div class="rs-record-card" style="animation-delay: ${idx * 0.03}s;">
++                    <div class="rs-record-code">${this._escapeHtml(r.code || '-')}</div>
++                    <div class="rs-record-info">
++                        <span class="rs-record-user rs-record-alias-link"
++                              onclick="event.stopPropagation(); redeemModule.openRecordUser('${encodedMachineId}')"
++                              title="查看用户详情">${this._escapeHtml(userDisplay)}</span>
++                        <span class="rs-record-hwid" title="${this._escapeHtml(hwid)}">${this._escapeHtml(displayHwid)}</span>
++                    </div>
++                    <div class="rs-record-time">${this._escapeHtml(r.created_at || '-')}</div>
++                </div>`;
+             }).join('');
+         } catch {
+-            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--danger);">加载失败</td></tr>';
++            tbody.innerHTML = '<div style="text-align: center; color: var(--danger); padding: 32px;">加载失败</div>';
+         }
+     },
+ 
+@@ -818,140 +879,7 @@ const redeemModule = {
+ 
+     /** 展示兑换码详情（侧面板） */
+     showDetail(codeId) {
+-        const code = this._allCodes.find(c => c.id === codeId);
+-        if (!code) return;
+-        this._editingCodeId = codeId;
+-
+-        const typeLabels = {};
+-        this._presets.forEach(p => { typeLabels[p.type] = p.label; });
+-
+-        const rewards = this.parsePayloadRewards(code.payload);
+-        const rewardListHtml = rewards.map(r => {
+-            const iconClass = r.type === 'theme' ? 'theme' : (r.type === 'tag' ? 'tag' : 'bonus');
+-            return `<div class="rs-reward-item">
+-                <span class="rs-reward-icon ${iconClass}">${this._escapeHtml(r.icon)}</span>
+-                <span>${this._escapeHtml(r.text)}</span>
+-            </div>`;
+-        }).join('');
+-
+-        const safeCode = this._escapeHtml(code.code);
+-        const safeTheme = this._escapeHtml(this._parseField(code.payload, 'theme'));
+-        const safeTag = this._escapeHtml(this._parseField(code.payload, 'tag'));
+-        const safeNote = this._escapeHtml(code.note || '-');
+-        const safePopupTitle = this._escapeHtml(code.popup_title || '');
+-        const safePopupMessage = this._escapeHtml(code.popup_message || '');
+-        const safeCreatedAt = this._escapeHtml((code.created_at || '').replace('T', ' ').substring(0, 19));
+-        const safeExpiresAt = this._escapeHtml(code.expires_at ? code.expires_at.replace('T', ' ').substring(0, 19) : '永不过期');
+-
+-        const statusTextMap = {
+-            'active': '✅ 可用', 'used': '⚠️ 已用完', 'expired': '⏰ 已过期', 'disabled': '🚫 已停用',
+-        };
+-        const statusClassMap = {
+-            'active': 's-active', 'used': 's-used', 'expired': 's-expired', 'disabled': 's-disabled',
+-        };
+-
+-        const usagePct = code.max_uses > 0 ? Math.min(100, (code.used_count / code.max_uses) * 100) : 0;
+-        const isFull = code.max_uses > 0 && code.used_count >= code.max_uses;
+-        const usageText = code.max_uses > 0 ? `${code.used_count} / ${code.max_uses}` : `${code.used_count} / ∞`;
+-
+-        const body = document.getElementById('redeemDetailBody');
+-        body.innerHTML = `
+-            <!-- 基础信息 -->
+-            <div class="rs-info-section">
+-                <div class="rs-info-section-title">📋 基础信息</div>
+-                <div class="rs-info-grid">
+-                    <div class="rs-info-label">兑换码</div>
+-                    <div class="rs-info-value mono" onclick="navigator.clipboard.writeText('${code.code}'); app.showAlert('已复制', 'success');" title="点击复制">${safeCode}</div>
+-
+-                    <div class="rs-info-label">类型</div>
+-                    <div class="rs-info-value"><span class="rs-type-badge">${this._escapeHtml(typeLabels[code.type] || code.type)}</span></div>
+-
+-                    <div class="rs-info-label">状态</div>
+-                    <div class="rs-info-value"><span class="rs-status-dot ${statusClassMap[code.status] || ''}">${statusTextMap[code.status] || code.status}</span></div>
+-
+-                    <div class="rs-info-label">使用次数</div>
+-                    <div class="rs-info-value">
+-                        <div class="rs-detail-progress">
+-                            <div class="rs-detail-progress-bar"><div class="rs-detail-progress-fill${isFull ? ' full' : ''}" style="width:${usagePct}%"></div></div>
+-                            <span class="rs-detail-progress-text">${usageText}</span>
+-                        </div>
+-                    </div>
+-
+-                    <div class="rs-info-label">创建时间</div>
+-                    <div class="rs-info-value">${safeCreatedAt}</div>
+-
+-                    <div class="rs-info-label">过期时间</div>
+-                    <div class="rs-info-value">${safeExpiresAt}</div>
+-
+-                    <div class="rs-info-label">备注</div>
+-                    <div class="rs-info-value">${safeNote}</div>
+-                </div>
+-            </div>
+-
+-            <!-- 奖励内容 -->
+-            <div class="rs-info-section">
+-                <div class="rs-info-section-title">🎁 奖励内容</div>
+-                <div class="rs-reward-list">${rewardListHtml}</div>
+-            </div>
+-
+-            <!-- 编辑奖励参数 -->
+-            <div class="rs-info-section">
+-                <div class="rs-info-section-title">✏️ 编辑奖励参数</div>
+-                <div class="rs-edit-section">
+-                    <div class="rs-edit-row">
+-                        <div class="rs-edit-label"><span class="e-icon">🎨</span> 主题</div>
+-                        <input type="text" class="input" style="flex: 1;" id="detailPayloadTheme" value="${safeTheme}">
+-                    </div>
+-                    <div class="rs-edit-row">
+-                        <div class="rs-edit-label"><span class="e-icon">💬</span> AI额度</div>
+-                        <input type="number" class="input" style="flex: 1; max-width: 120px;" id="detailPayloadBonus" value="${this._parseField(code.payload, 'bonus') || 0}" min="0">
+-                    </div>
+-                    <div class="rs-edit-row">
+-                        <div class="rs-edit-label"><span class="e-icon">📈</span> 每日额度</div>
+-                        <input type="number" class="input" style="flex: 1; max-width: 120px;" id="detailPayloadDailyBonus" value="${this._parseField(code.payload, 'daily_limit_bonus') || 0}" min="0">
+-                    </div>
+-                    <div class="rs-edit-row">
+-                        <div class="rs-edit-label"><span class="e-icon">🏷️</span> 标签</div>
+-                        <input type="text" class="input" style="flex: 1;" id="detailPayloadTag" value="${safeTag}">
+-                    </div>
+-                </div>
+-            </div>
+-
+-            <!-- 自定义弹窗 -->
+-            <div class="rs-info-section">
+-                <div class="rs-info-section-title">🖼️ 自定义兑换弹窗</div>
+-                <div class="rs-edit-section">
+-                    <div class="rs-edit-row">
+-                        <div class="rs-edit-label">弹窗标题</div>
+-                        <input type="text" class="input" style="flex: 1;" id="detailPopupTitle" value="${safePopupTitle}" placeholder="留空则用默认">
+-                    </div>
+-                    <div class="rs-edit-row">
+-                        <div class="rs-edit-label">弹窗样式</div>
+-                        <select class="select" style="flex: 1;" id="detailPopupStyle">
+-                            ${this._getPopupStyleOptions(code.popup_style || 'default')}
+-                        </select>
+-                    </div>
+-                    <div style="margin-top: 12px;">
+-                        <div class="rs-edit-label" style="margin-bottom: 6px;">弹窗内容</div>
+-                        <textarea class="input" style="width: 100%; height: 60px; resize: vertical;" id="detailPopupMessage" placeholder="留空则自动生成">${safePopupMessage}</textarea>
+-                    </div>
+-                </div>
+-            </div>
+-
+-            <!-- 使用记录 -->
+-            <div class="rs-info-section">
+-                <div class="rs-info-section-title">📜 使用记录</div>
+-                <div class="rs-detail-records" id="detailRecordsList">加载中...</div>
+-            </div>`;
+-
+-        document.getElementById('redeemDetailSaveBtn').style.display = '';
+-
+-        // 打开侧面板
+-        document.getElementById('rsDetailOverlay').classList.add('show');
+-        document.getElementById('rsDetailPanel').classList.add('show');
+-
+-        // 异步加载该码的使用记录
+-        this._loadCodeRecords(code.code);
++        this.showCodeDetailPage(codeId);
+     },
+ 
+     /** 加载指定兑换码的使用记录 */
+@@ -969,8 +897,16 @@ const redeemModule = {
+             }
+             container.innerHTML = records.map(r => {
+                 const userDisplay = r.alias || (r.machine_id ? r.machine_id.substring(0, 8) + '...' : '-');
+-                return `<div class="rs-detail-record-item">
+-                    <span class="rs-detail-record-user">${this._escapeHtml(userDisplay)}</span>
++                const machineId = encodeURIComponent(r.machine_id || '');
++                const avatarText = this._escapeHtml((userDisplay || '?').substring(0, 1).toUpperCase());
++                return `<div class="rs-detail-record-item" onclick="redeemModule.openRecordUser('${machineId}')">
++                    <div class="rs-detail-record-left">
++                        <div class="rs-detail-record-avatar">${avatarText}</div>
++                        <div class="rs-detail-record-info">
++                            <div class="rs-detail-record-user">${this._escapeHtml(userDisplay)}</div>
++                            <div class="rs-detail-record-mid">${this._escapeHtml(r.machine_id || '-')}</div>
++                        </div>
++                    </div>
+                     <span class="rs-detail-record-time">${this._escapeHtml(r.created_at || '-')}</span>
+                 </div>`;
+             }).join('');
+@@ -985,8 +921,10 @@ const redeemModule = {
+ 
+     /** 关闭详情侧面板 */
+     closeDetail() {
+-        document.getElementById('rsDetailOverlay').classList.remove('show');
+-        document.getElementById('rsDetailPanel').classList.remove('show');
++        const overlay = document.getElementById('rsDetailOverlay');
++        const panel = document.getElementById('rsDetailPanel');
++        if (overlay) overlay.classList.remove('show');
++        if (panel) panel.classList.remove('show');
+         this._editingCodeId = null;
+     },
+ 
+@@ -1024,6 +962,344 @@ const redeemModule = {
+         } catch { app.showAlert('保存失败', 'danger'); }
+     },
+ 
++    // ═══════════════════════════════════════════════════
++    // 独立详情页（redeem_detail.html）
++    // ═══════════════════════════════════════════════════
++
++    async initDetail() {
++        const codeId = this._pendingDetailCodeId;
++        if (!codeId) {
++            document.getElementById('rdContent').innerHTML = '<div style="text-align:center;padding:80px;color:var(--text-muted);"><h3>未指定兑换码</h3><p>请从兑换码统计页面进入</p></div>';
++            return;
++        }
++        this._editingCodeId = codeId;
++        try {
++            await this._loadPresets();
++            await this._loadAllCodes();
++            const code = this._allCodes.find(c => c.id === codeId);
++            if (!code) {
++                document.getElementById('rdContent').innerHTML = '<div style="text-align:center;padding:80px;color:var(--text-muted);"><h3>兑换码不存在</h3></div>';
++                return;
++            }
++            this._renderFullDetailPage(code);
++        } catch (e) {
++            document.getElementById('rdContent').innerHTML = `<div style="text-align:center;padding:80px;color:var(--text-muted);"><h3>加载失败</h3><p>${e.message}</p></div>`;
++        }
++    },
++
++    showCodeDetailPage(codeId) {
++        this._pendingDetailCodeId = codeId;
++        app.switchView('redeem_detail', document.querySelector('[data-view="redeem_detail"]'));
++    },
++
++    _renderFullDetailPage(code) {
++        const typeLabels = {};
++        this._presets.forEach(p => { typeLabels[p.type] = p.label; });
++        const typeLabel = typeLabels[code.type] || code.type || '自定义';
++        const statusMap = { active: '可用', disabled: '已停用', expired: '已过期', used: '已用完' };
++        const statusLabel = statusMap[code.status] || code.status;
++        const statusDotClass = { active: 'rd-dot-active', disabled: 'rd-dot-disabled', expired: 'rd-dot-expired', used: 'rd-dot-used' }[code.status] || '';
++
++        const safeNote = this._escapeHtml(code.note || '');
++        const safePopupTitle = this._escapeHtml(code.popup_title || '');
++        const safePopupMessage = this._escapeHtml(code.popup_message || '');
++        const safePopupSubtitle = this._escapeHtml(code.popup_subtitle || '');
++        const safeTag = this._escapeHtml(this._parseField(code.payload, 'tag'));
++        const safeTheme = this._escapeHtml(this._parseField(code.payload, 'theme'));
++
++        const rewards = this.parsePayloadRewards(code.payload, false);
++        const usedPercent = code.max_uses > 0 ? Math.min(100, Math.round((code.used_count / code.max_uses) * 100)) : 0;
++        const isFull = code.max_uses > 0 && code.used_count >= code.max_uses;
++
++        // 顶栏信息
++        const codeDisplay = document.getElementById('rdCodeDisplay');
++        const statusBadge = document.getElementById('rdStatusBadge');
++        if (codeDisplay) codeDisplay.textContent = code.code;
++        if (statusBadge) {
++            statusBadge.className = `rd-title-status ${statusDotClass}`;
++            statusBadge.textContent = statusLabel;
++        }
++
++        const toggleBtn = document.getElementById('rdToggleBtn');
++        if (toggleBtn) {
++            toggleBtn.innerHTML = code.is_active
++                ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4" y1="4" x2="20" y2="20"/></svg> 停用'
++                : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> 启用';
++        }
++
++        // 奖励卡片
++        const rewardsHtml = rewards.map(r => {
++            const iconBg = { theme: 'rd-reward-theme', bonus: 'rd-reward-bonus', tag: 'rd-reward-tag' }[r.type] || 'rd-reward-bonus';
++            return `<div class="rd-reward-chip">
++                <span class="rd-reward-icon ${iconBg}">${r.icon}</span>
++                <span class="rd-reward-text">${r.text}</span>
++            </div>`;
++        }).join('');
++
++        // 信息行
++        const safeCreatedAt = (code.created_at || '').replace('T', ' ').substring(0, 19);
++        const safeExpiresAt = code.expires_at ? code.expires_at.replace('T', ' ').substring(0, 19) : '';
++
++        document.getElementById('rdContent').innerHTML = `
++            <div class="rd-grid">
++                <!-- 左栏：信息展示 -->
++                <div class="rd-col">
++                    <div class="rd-card">
++                        <div class="rd-card-title">
++                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
++                            基本信息
++                        </div>
++                        <div class="rd-info-grid">
++                            <div class="rd-info-row">
++                                <span class="rd-info-label">兑换码</span>
++                                <span class="rd-info-value rd-mono">${code.code}</span>
++                            </div>
++                            <div class="rd-info-row">
++                                <span class="rd-info-label">预设类型</span>
++                                <span class="rd-info-value"><span class="rd-type-tag">${typeLabel}</span></span>
++                            </div>
++                            <div class="rd-info-row">
++                                <span class="rd-info-label">当前状态</span>
++                                <span class="rd-info-value"><span class="rd-status-pill ${statusDotClass}">${statusLabel}</span></span>
++                            </div>
++                            <div class="rd-info-row">
++                                <span class="rd-info-label">创建时间</span>
++                                <span class="rd-info-value">${safeCreatedAt}</span>
++                            </div>
++                            <div class="rd-info-row">
++                                <span class="rd-info-label">过期时间</span>
++                                <span class="rd-info-value">${safeExpiresAt || '<span class="rd-tag-forever">永不过期</span>'}</span>
++                            </div>
++                            ${safeNote ? `<div class="rd-info-row">
++                                <span class="rd-info-label">备注</span>
++                                <span class="rd-info-value">${safeNote}</span>
++                            </div>` : ''}
++                        </div>
++                    </div>
++
++                    <div class="rd-card">
++                        <div class="rd-card-title">
++                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>
++                            奖励内容
++                        </div>
++                        <div class="rd-reward-list">
++                            ${rewardsHtml || '<div style="color:var(--text-muted); font-size:13px;">无奖励内容</div>'}
++                        </div>
++                    </div>
++
++                    <div class="rd-card">
++                        <div class="rd-card-title">
++                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
++                            使用情况
++                        </div>
++                        <div class="rd-usage-section">
++                            <div class="rd-usage-header">
++                                <span class="rd-usage-text">已使用 <strong>${code.used_count}</strong> / ${code.max_uses || '∞'}</span>
++                                <span class="rd-usage-pct">${usedPercent}%</span>
++                            </div>
++                            <div class="rd-progress-track">
++                                <div class="rd-progress-fill ${isFull ? 'full' : ''}" style="width:${usedPercent}%"></div>
++                            </div>
++                        </div>
++                    </div>
++
++                    <div class="rd-card">
++                        <div class="rd-card-title">
++                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
++                            使用记录
++                        </div>
++                        <div class="rs-detail-records" id="detailRecordsList">
++                            <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:13px;">加载中...</div>
++                        </div>
++                    </div>
++                </div>
++
++                <!-- 右栏：编辑表单 -->
++                <div class="rd-col">
++                    <div class="rd-card">
++                        <div class="rd-card-title">
++                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
++                            编辑基本信息
++                        </div>
++                        <div class="rd-form-group">
++                            <div class="rd-form-row">
++                                <label class="rd-form-label">备注</label>
++                                <input type="text" class="input rd-input" id="detailNote" value="${safeNote}" placeholder="备注说明">
++                            </div>
++                            <div class="rd-form-row">
++                                <label class="rd-form-label">最大使用次数</label>
++                                <input type="number" class="input rd-input rd-input-short" id="detailMaxUses" value="${code.max_uses || 0}" min="0">
++                            </div>
++                        </div>
++                    </div>
++
++                    <div class="rd-card">
++                        <div class="rd-card-title">
++                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
++                            编辑奖励参数
++                        </div>
++                        <div class="rd-form-group">
++                            <div class="rd-form-row">
++                                <label class="rd-form-label">主题</label>
++                                <input type="text" class="input rd-input" id="detailPayloadTheme" value="${safeTheme}" placeholder="如 supporter.json">
++                            </div>
++                            <div class="rd-form-row-inline">
++                                <div class="rd-form-row" style="flex:1;">
++                                    <label class="rd-form-label">AI永久额度</label>
++                                    <input type="number" class="input rd-input" id="detailPayloadBonus" value="${this._parseField(code.payload, 'bonus') || 0}" min="0">
++                                </div>
++                                <div class="rd-form-row" style="flex:1;">
++                                    <label class="rd-form-label">每日额度加成</label>
++                                    <input type="number" class="input rd-input" id="detailPayloadDailyBonus" value="${this._parseField(code.payload, 'daily_limit_bonus') || 0}" min="0">
++                                </div>
++                            </div>
++                            <div class="rd-form-row">
++                                <label class="rd-form-label">用户标签</label>
++                                <input type="text" class="input rd-input" id="detailPayloadTag" value="${safeTag}" placeholder="如 sponsor_1">
++                            </div>
++                        </div>
++                    </div>
++
++                    <div class="rd-card">
++                        <div class="rd-card-title">
++                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
++                            自定义兑换弹窗
++                        </div>
++                        <div class="rd-form-group">
++                            <div class="rd-form-row-inline">
++                                <div class="rd-form-row" style="flex:1;">
++                                    <label class="rd-form-label">弹窗标题</label>
++                                    <input type="text" class="input rd-input" id="detailPopupTitle" value="${safePopupTitle}" placeholder="留空则用默认">
++                                </div>
++                                <div class="rd-form-row" style="flex:1;">
++                                    <label class="rd-form-label">弹窗副标题</label>
++                                    <input type="text" class="input rd-input" id="detailPopupSubtitle" value="${safePopupSubtitle}" placeholder="留空则用默认">
++                                </div>
++                            </div>
++                            <div class="rd-form-row-inline">
++                                <div class="rd-form-row" style="flex:1;">
++                                    <label class="rd-form-label">弹窗样式</label>
++                                    <select class="select rd-input" id="detailPopupStyle">
++                                        ${this._getPopupStyleOptions(code.popup_style || 'default')}
++                                    </select>
++                                </div>
++                                <div class="rd-form-row" style="flex:0 0 auto;">
++                                    <label class="rd-form-label">图标颜色</label>
++                                    <div class="color-picker-group">
++                                        <input type="color" class="color-input" id="detailPopupIconColor" value="${code.popup_icon_color || this._defaultIconColorMap[code.type] || '#64748b'}" oninput="this.nextElementSibling.textContent=this.value">
++                                        <span class="color-hex-label">${code.popup_icon_color || this._defaultIconColorMap[code.type] || '#64748b'}</span>
++                                    </div>
++                                </div>
++                            </div>
++                            <div class="rd-form-row">
++                                <label class="rd-form-label">弹窗内容</label>
++                                <textarea class="input rd-input rd-textarea" id="detailPopupMessage" placeholder="留空则自动生成奖励描述">${safePopupMessage}</textarea>
++                            </div>
++                        </div>
++                        <div class="rd-save-row">
++                            <button class="btn" onclick="redeemModule.backToStats()">取消</button>
++                            <button class="btn primary" onclick="redeemModule.saveDetailPage()">
++                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
++                                保存修改
++                            </button>
++                        </div>
++                    </div>
++                </div>
++            </div>`;
++
++        this._loadCodeRecords(code.code);
++    },
++
++    async openRecordUser(encodedMachineId) {
++        const machineId = decodeURIComponent(encodedMachineId || '').trim();
++        if (!machineId) {
++            app.showAlert('缺少用户标识', 'warning');
++            return;
++        }
++        await app.openUserDetailByMachineId(machineId);
++    },
++
++    backToStats() {
++        this._pendingDetailCodeId = null;
++        this._editingCodeId = null;
++        app.switchView('redeem_stats', document.querySelector('[data-view="redeem_stats"]'));
++    },
++
++    copyDetailCode() {
++        const code = this._allCodes.find(c => c.id === this._editingCodeId);
++        if (!code) return;
++        navigator.clipboard.writeText(code.code).then(() => {
++            app.showAlert('已复制兑换码', 'success');
++        }).catch(() => {
++            app.showAlert('复制失败', 'danger');
++        });
++    },
++
++    async toggleDetailActive() {
++        const code = this._allCodes.find(c => c.id === this._editingCodeId);
++        if (!code) return;
++        const newActive = !code.is_active;
++        try {
++            const res = await fetch(`${app.config.apiBase}/admin/redeem/${this._editingCodeId}`, {
++                method: 'PUT',
++                headers: { 'Content-Type': 'application/json' },
++                body: JSON.stringify({ is_active: newActive })
++            });
++            if (res.ok) {
++                app.showAlert(newActive ? '已启用' : '已停用', 'success');
++                await this._loadAllCodes();
++                const updated = this._allCodes.find(c => c.id === this._editingCodeId);
++                if (updated) this._renderFullDetailPage(updated);
++            }
++        } catch { app.showAlert('操作失败', 'danger'); }
++    },
++
++    async deleteDetailCode() {
++        if (!confirm('确定要删除此兑换码？')) return;
++        try {
++            const res = await fetch(`${app.config.apiBase}/admin/redeem/${this._editingCodeId}`, { method: 'DELETE' });
++            if (res.ok) {
++                app.showAlert('已删除', 'success');
++                this.backToStats();
++            }
++        } catch { app.showAlert('删除失败', 'danger'); }
++    },
++
++    async saveDetailPage() {
++        if (!this._editingCodeId) return;
++        const theme = document.getElementById('detailPayloadTheme')?.value?.trim() || '';
++        const bonus = parseInt(document.getElementById('detailPayloadBonus')?.value) || 0;
++        const daily_limit_bonus = parseInt(document.getElementById('detailPayloadDailyBonus')?.value) || 0;
++        const tag = document.getElementById('detailPayloadTag')?.value?.trim() || '';
++        const payload = JSON.stringify({ theme, bonus, daily_limit_bonus, tag });
++        const note = document.getElementById('detailNote')?.value?.trim() || '';
++        const maxUses = parseInt(document.getElementById('detailMaxUses')?.value) || 0;
++        const popupTitle = document.getElementById('detailPopupTitle')?.value?.trim() || '';
++        const popupMessage = document.getElementById('detailPopupMessage')?.value?.trim() || '';
++        const popupStyle = document.getElementById('detailPopupStyle')?.value || 'default';
++        try {
++            const res = await fetch(`${app.config.apiBase}/admin/redeem/${this._editingCodeId}`, {
++                method: 'PUT',
++                headers: { 'Content-Type': 'application/json' },
++                body: JSON.stringify({
++                    payload, note, max_uses: maxUses,
++                    popup_title: popupTitle,
++                    popup_message: popupMessage,
++                    popup_style: popupStyle,
++                    popup_subtitle: document.getElementById('detailPopupSubtitle')?.value?.trim() || '',
++                    popup_icon_color: document.getElementById('detailPopupIconColor')?.value || ''
++                })
++            });
++            if (res.ok) {
++                app.showAlert('已保存', 'success');
++                await this._loadAllCodes();
++                const updated = this._allCodes.find(c => c.id === this._editingCodeId);
++                if (updated) this._renderFullDetailPage(updated);
++            } else throw new Error();
++        } catch { app.showAlert('保存失败', 'danger'); }
++    },
++
++
+     // ─────────── 通用操作 ───────────
+ 
+     async toggleActive(id, active) {
+@@ -1107,13 +1383,22 @@ const redeemModule = {
+             popup_message: document.getElementById('redeemPopupMessage')?.value?.trim() || '',
+             popup_style_select: document.getElementById('redeemPopupStyleSelect')?.value || 'default',
+             popup_logo: document.getElementById('redeemPopupLogo')?.value || 'default',
++            popup_subtitle: document.getElementById('redeemPopupSubtitle')?.value?.trim() || '',
++            popup_icon_color: document.getElementById('redeemPopupIconColor')?.value || '',
+             note_tag: document.getElementById('redeemNoteTag')?.value?.trim() || '',
+             streamer_id: document.getElementById('redeemStreamerId')?.value?.trim() || '',
+             reward_labels: this._collectRewardLabels() || {},
+         };
+     },
+ 
+-    /** 保存当前配置为该预设类型的默认值 */
++    resetIconColor() {
++        const presetType = this._getCurrentPresetType() || 'custom';
++        const defaultColor = this._defaultIconColorMap[presetType] || '#64748b';
++        const el = document.getElementById('redeemPopupIconColor');
++        if (el) el.value = defaultColor;
++        this.updatePreview();
++    },
++
+     savePresetDefaults() {
+         const presetType = this._getCurrentPresetType();
+         if (!presetType) {
+diff --git a/AimerWT_Telemetry/dashboard/redeem/redeem_stats.html b/AimerWT_Telemetry/dashboard/redeem/redeem_stats.html
+index 055dc9a..514059d 100644
+--- a/AimerWT_Telemetry/dashboard/redeem/redeem_stats.html
++++ b/AimerWT_Telemetry/dashboard/redeem/redeem_stats.html
+@@ -43,37 +43,9 @@
+             <div class="rs-codes-grid" id="statsCodesBody"></div>
+         </div>
+ 
+-        <!-- 使用记录面板 -->
++        <!-- 使用记录面板（卡片式） -->
+         <div id="statsRecordsPanel" style="display: none;">
+-            <div class="table-container rs-records-table-wrap">
+-                <table class="table rs-records-table" id="statsRecordsTable">
+-                    <thead>
+-                        <tr>
+-                            <th>兑换码</th>
+-                            <th>用户</th>
+-                            <th>HWID</th>
+-                            <th>使用时间</th>
+-                        </tr>
+-                    </thead>
+-                    <tbody id="statsRecordsBody"></tbody>
+-                </table>
+-            </div>
++            <div class="rs-records-list" id="statsRecordsBody"></div>
+         </div>
+     </div>
+ </div>
+-
+-<!-- 码详情侧面板 -->
+-<div class="rs-detail-overlay" id="rsDetailOverlay" onclick="redeemModule.closeDetail()"></div>
+-<div class="rs-detail-panel" id="rsDetailPanel">
+-    <div class="rs-detail-header">
+-        <h3 id="redeemDetailTitle">兑换码详情</h3>
+-        <button class="btn-icon rs-detail-close" onclick="redeemModule.closeDetail()">
+-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+-        </button>
+-    </div>
+-    <div class="rs-detail-body" id="redeemDetailBody"></div>
+-    <div class="rs-detail-footer">
+-        <button class="btn" onclick="redeemModule.closeDetail()">关闭</button>
+-        <button class="btn primary" id="redeemDetailSaveBtn" onclick="redeemModule.saveDetail()" style="display:none;">保存修改</button>
+-    </div>
+-</div>
+diff --git a/AimerWT_Telemetry/models.go b/AimerWT_Telemetry/models.go
+index be63ef7..696e03d 100644
+--- a/AimerWT_Telemetry/models.go
++++ b/AimerWT_Telemetry/models.go
+@@ -209,8 +209,11 @@ type RedeemCode struct {
+ 	Note         string     `gorm:"type:text" json:"note"`
+ 	PopupTitle   string     `gorm:"type:varchar(128)" json:"popup_title"`
+ 	PopupMessage string     `gorm:"type:text" json:"popup_message"`
+-	PopupStyle   string     `gorm:"type:varchar(32);default:'default'" json:"popup_style"`
+-	CreatedAt    time.Time  `gorm:"autoCreateTime" json:"created_at"`
++	PopupStyle     string     `gorm:"type:varchar(32);default:'default'" json:"popup_style"`
++	PopupSubtitle  string     `gorm:"type:varchar(128)" json:"popup_subtitle"`
++	PopupLogo      string     `gorm:"type:varchar(32)" json:"popup_logo"`
++	PopupIconColor string     `gorm:"type:varchar(16)" json:"popup_icon_color"`
++	CreatedAt      time.Time  `gorm:"autoCreateTime" json:"created_at"`
+ }
+ 
+ // RedeemRecord 兑换码使用记录表
+diff --git a/AimerWT_Telemetry/redeem.go b/AimerWT_Telemetry/redeem.go
+index 787bb1f..1c3a645 100644
+--- a/AimerWT_Telemetry/redeem.go
++++ b/AimerWT_Telemetry/redeem.go
+@@ -232,6 +232,9 @@ func executeRedeemPayload(store *gorm.DB, machineID string, redeemCode *RedeemCo
+ 		"title":          title,
+ 		"message":        resultMsg,
+ 		"popup_style":    redeemCode.PopupStyle,
++		"popup_subtitle": redeemCode.PopupSubtitle,
++		"popup_logo":     redeemCode.PopupLogo,
++		"popup_icon_color": redeemCode.PopupIconColor,
+ 		"theme_unlocked": themeUnlocked,
+ 	}
+ 	if themeUnlocked {
+@@ -281,15 +284,18 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
+ 		// 生成兑换码（单个或批量）
+ 		redeem.POST("", func(c *gin.Context) {
+ 			var req struct {
+-				Type         string `json:"type"`
+-				Payload      string `json:"payload"`
+-				MaxUses      int    `json:"max_uses"`
+-				Count        int    `json:"count"`
+-				Note         string `json:"note"`
+-				ExpireIn     int    `json:"expire_in"`
+-				PopupTitle   string `json:"popup_title"`
+-				PopupMessage string `json:"popup_message"`
+-				PopupStyle   string `json:"popup_style"`
++				Type           string `json:"type"`
++				Payload        string `json:"payload"`
++				MaxUses        int    `json:"max_uses"`
++				Count          int    `json:"count"`
++				Note           string `json:"note"`
++				ExpireIn       int    `json:"expire_in"`
++				PopupTitle     string `json:"popup_title"`
++				PopupMessage   string `json:"popup_message"`
++				PopupStyle     string `json:"popup_style"`
++				PopupSubtitle  string `json:"popup_subtitle"`
++				PopupLogo      string `json:"popup_logo"`
++				PopupIconColor string `json:"popup_icon_color"`
+ 			}
+ 			if err := c.ShouldBindJSON(&req); err != nil {
+ 				c.JSON(400, gin.H{"error": "参数错误"})
+@@ -322,15 +328,18 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
+ 			created := make([]RedeemCode, 0, req.Count)
+ 			for i := 0; i < req.Count; i++ {
+ 				codeTemplate := RedeemCode{
+-					Type:         req.Type,
+-					Payload:      req.Payload,
+-					MaxUses:      req.MaxUses,
+-					IsActive:     true,
+-					Note:         req.Note,
+-					ExpiresAt:    expiresAt,
+-					PopupTitle:   req.PopupTitle,
+-					PopupMessage: req.PopupMessage,
+-					PopupStyle:   req.PopupStyle,
++					Type:           req.Type,
++					Payload:        req.Payload,
++					MaxUses:        req.MaxUses,
++					IsActive:       true,
++					Note:           req.Note,
++					ExpiresAt:      expiresAt,
++					PopupTitle:     req.PopupTitle,
++					PopupMessage:   req.PopupMessage,
++					PopupStyle:     req.PopupStyle,
++					PopupSubtitle:  req.PopupSubtitle,
++					PopupLogo:      req.PopupLogo,
++					PopupIconColor: req.PopupIconColor,
+ 				}
+ 
+ 				var createdCode RedeemCode
+@@ -364,14 +373,17 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
+ 		redeem.PUT("/:id", func(c *gin.Context) {
+ 			id := c.Param("id")
+ 			var req struct {
+-				IsActive     *bool   `json:"is_active"`
+-				Note         *string `json:"note"`
+-				MaxUses      *int    `json:"max_uses"`
+-				Payload      *string `json:"payload"`
+-				Type         *string `json:"type"`
+-				PopupTitle   *string `json:"popup_title"`
+-				PopupMessage *string `json:"popup_message"`
+-				PopupStyle   *string `json:"popup_style"`
++				IsActive       *bool   `json:"is_active"`
++				Note           *string `json:"note"`
++				MaxUses        *int    `json:"max_uses"`
++				Payload        *string `json:"payload"`
++				Type           *string `json:"type"`
++				PopupTitle     *string `json:"popup_title"`
++				PopupMessage   *string `json:"popup_message"`
++				PopupStyle     *string `json:"popup_style"`
++				PopupSubtitle  *string `json:"popup_subtitle"`
++				PopupLogo      *string `json:"popup_logo"`
++				PopupIconColor *string `json:"popup_icon_color"`
+ 			}
+ 			if err := c.ShouldBindJSON(&req); err != nil {
+ 				c.JSON(400, gin.H{"error": "参数错误"})
+@@ -413,6 +425,15 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
+ 			if req.PopupStyle != nil {
+ 				updates["popup_style"] = *req.PopupStyle
+ 			}
++			if req.PopupSubtitle != nil {
++				updates["popup_subtitle"] = *req.PopupSubtitle
++			}
++			if req.PopupLogo != nil {
++				updates["popup_logo"] = *req.PopupLogo
++			}
++			if req.PopupIconColor != nil {
++				updates["popup_icon_color"] = *req.PopupIconColor
++			}
+ 			if len(updates) > 0 {
+ 				db.Model(&code).Updates(updates)
+ 			}
+diff --git a/AimerWT_Telemetry/router.go b/AimerWT_Telemetry/router.go
+index 02c66d5..d64bb0a 100644
+--- a/AimerWT_Telemetry/router.go
++++ b/AimerWT_Telemetry/router.go
+@@ -78,6 +78,30 @@ func intValue(raw any) (int, bool) {
+ 	}
+ }
+ 
++func serializeTelemetryUser(record TelemetryRecord) map[string]any {
++	return map[string]any{
++		"id":                record.ID,
++		"uid":               record.MachineID,
++		"hwid":              record.MachineID,
++		"machine_id":        record.MachineID,
++		"alias":             record.Alias,
++		"version":           record.Version,
++		"os":                record.OS,
++		"os_version":        record.OSVersion,
++		"os_build":          record.OSRelease,
++		"arch":              record.Arch,
++		"screen_resolution": record.ScreenRes,
++		"python_version":    record.PythonVersion,
++		"locale":            record.Locale,
++		"is_starred":        record.IsStarred,
++		"is_admin":          record.IsAdmin,
++		"tags":              record.Tags,
++		"updated_at":        record.LastSeenAt.Format("2006-01-02 15:04:05"),
++		"created_at":        record.CreatedAt.Format("2006-01-02 15:04:05"),
++		"minutes_ago":       int(time.Since(record.LastSeenAt).Minutes()),
++	}
++}
++
+ func initRouter(r *gin.Engine) {
+ 	// CORS 中间件：允许 pywebview 前端跨域访问 AI 端点
+ 	r.Use(func(c *gin.Context) {
+@@ -221,26 +245,7 @@ func initRouter(r *gin.Engine) {
+ 
+ 				stats.RecentUsers = make([]map[string]any, len(recentRecs))
+ 				for i, r := range recentRecs {
+-					stats.RecentUsers[i] = map[string]any{
+-						"id":                r.ID,
+-						"uid":               r.MachineID,
+-						"hwid":              r.MachineID,
+-						"alias":             r.Alias,
+-						"version":           r.Version,
+-						"os":                r.OS,
+-						"os_version":        r.OSVersion,
+-						"os_build":          r.OSRelease,
+-						"arch":              r.Arch,
+-						"screen_resolution": r.ScreenRes,
+-						"python_version":    r.PythonVersion,
+-						"locale":            r.Locale,
+-						"is_starred":        r.IsStarred,
+-						"is_admin":          r.IsAdmin,
+-						"tags":              r.Tags,
+-						"updated_at":        r.LastSeenAt.Format("2006-01-02 15:04:05"),
+-						"created_at":        r.CreatedAt.Format("2006-01-02 15:04:05"),
+-						"minutes_ago":       int(time.Since(r.LastSeenAt).Minutes()),
+-					}
++					stats.RecentUsers[i] = serializeTelemetryUser(r)
+ 				}
+ 
+ 				getAllOptions := func(field string) []map[string]any {
+@@ -292,6 +297,26 @@ func initRouter(r *gin.Engine) {
+ 				c.JSON(200, resp)
+ 			})
+ 
++			admin.GET("/user", func(c *gin.Context) {
++				machineID := strings.TrimSpace(c.Query("machine_id"))
++				if machineID == "" {
++					c.JSON(400, gin.H{"error": "缺少 machine_id"})
++					return
++				}
++
++				var user TelemetryRecord
++				if err := db.Where("machine_id = ?", machineID).First(&user).Error; err != nil {
++					if err == gorm.ErrRecordNotFound {
++						c.JSON(404, gin.H{"error": "用户不存在"})
++						return
++					}
++					c.JSON(500, gin.H{"error": "查询失败"})
++					return
++				}
++
++				c.JSON(200, gin.H{"user": serializeTelemetryUser(user)})
++			})
++
+ 			admin.GET("/export", func(c *gin.Context) {
+ 				c.Header("Content-Type", "text/csv")
+ 				c.Header("Content-Disposition", "attachment;filename=telemetry_export.csv")
+diff --git a/AimerWT_Telemetry/telemetry.db-shm b/AimerWT_Telemetry/telemetry.db-shm
+index 1ac5b79..2e3caea 100644
+Binary files a/AimerWT_Telemetry/telemetry.db-shm and b/AimerWT_Telemetry/telemetry.db-shm differ
+diff --git a/AimerWT_Telemetry/telemetry.db-wal b/AimerWT_Telemetry/telemetry.db-wal
+index 80fcb2a..293dd17 100644
+Binary files a/AimerWT_Telemetry/telemetry.db-wal and b/AimerWT_Telemetry/telemetry.db-wal differ
+diff --git a/services/telemetry_manager.py b/services/telemetry_manager.py
+index d40dc57..aaba650 100644
+--- a/services/telemetry_manager.py
++++ b/services/telemetry_manager.py
+@@ -32,8 +32,6 @@ import requests
+ _PLACEHOLDER_REPORT_URLS = {
+     "https://api.example.com/telemetry",
+     "http://api.example.com/telemetry",
+-    "https://example.com/telemetry",
+-    "http://example.com/telemetry",
+ }
+ 
+ 
+diff --git a/web/ai/ai_chat.css b/web/ai/ai_chat.css
+index 5ccc87f..d263332 100644
+--- a/web/ai/ai_chat.css
++++ b/web/ai/ai_chat.css
+@@ -303,7 +303,7 @@
+     padding-top: 16px;
+ }
+ 
+-/* 测试版标签 - 浅色文字 */
++/* 测试版标签 - 浅色文字，限额展开时隐藏 */
+ .ai-chat-beta-tag {
+     font-size: 12px;
+     color: var(--text-sec, #7F8C8D);
+@@ -311,6 +311,13 @@
+     font-weight: 400;
+     letter-spacing: 0.5px;
+     pointer-events: auto;
++    transition: opacity 0.25s ease;
++}
++
++.ai-chat-quota:hover ~ .ai-chat-beta-tag,
++.ai-chat-quota.expanded ~ .ai-chat-beta-tag {
++    opacity: 0;
++    pointer-events: none;
+ }
+ 
+ /* 消息区域 - 圆角设计 */
+@@ -1387,12 +1394,63 @@
+     border: 1px solid var(--border-color, rgba(0, 0, 0, 0.06));
+     z-index: 60;
+     pointer-events: auto;
+-    transition: all 0.3s ease;
++    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
++    overflow: hidden;
++    white-space: nowrap;
++    cursor: default;
++}
++
++/* compact / full 均使用 max-width + opacity 做过渡动画 */
++.ai-chat-quota .ai-quota-compact,
++.ai-chat-quota .ai-quota-full {
++    display: flex;
++    align-items: center;
++    overflow: hidden;
++    transition: max-width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
++                opacity 0.25s ease;
++}
++
++/* 缩进状态: compact 可见, full 隐藏 */
++.ai-chat-quota .ai-quota-compact {
++    max-width: 120px;
++    opacity: 1;
++    gap: 3px;
++}
++.ai-chat-quota .ai-quota-full {
++    max-width: 0;
++    opacity: 0;
++}
++
++/* 展开状态: full 可见, compact 隐藏 */
++.ai-chat-quota:hover .ai-quota-full,
++.ai-chat-quota.expanded .ai-quota-full {
++    max-width: 220px;
++    opacity: 1;
++    gap: 4px;
++}
++.ai-chat-quota:hover .ai-quota-compact,
++.ai-chat-quota.expanded .ai-quota-compact {
++    max-width: 0;
++    opacity: 0;
+ }
+ 
+-.ai-chat-quota i {
++.ai-chat-quota i.ri-sparkling-line {
+     font-size: 13px;
+     color: var(--primary, #FF9900);
++    flex-shrink: 0;
++}
++
++/* 永久额度数字 - 跟随主题色，淡化处理 */
++.ai-quota-bonus {
++    color: var(--primary, #FF9900);
++    opacity: 0.75;
++}
++
++/* 缩进态的 + 分隔符 */
++.ai-quota-plus {
++    color: var(--text-sec, #7F8C8D);
++    opacity: 0.5;
++    font-size: 10px;
+ }
+ 
+ .ai-chat-quota.low {
+@@ -1400,7 +1458,7 @@
+     color: #D97706;
+ }
+ 
+-.ai-chat-quota.low i {
++.ai-chat-quota.low i.ri-sparkling-line {
+     color: #D97706;
+ }
+ 
+@@ -1410,6 +1468,6 @@
+     background: rgba(239, 68, 68, 0.05);
+ }
+ 
+-.ai-chat-quota.empty i {
++.ai-chat-quota.empty i.ri-sparkling-line {
+     color: #DC2626;
+ }
+diff --git a/web/ai/ai_chat.js b/web/ai/ai_chat.js
+index 6cc5b8c..122172b 100644
+--- a/web/ai/ai_chat.js
++++ b/web/ai/ai_chat.js
+@@ -211,9 +211,10 @@ const AIChat = {
+             </div>
+             
+             <div class="ai-chat-header">
+-                <div class="ai-chat-quota" id="ai-chat-quota" title="每日 AI 对话次数" style="display: none;">
++                <div class="ai-chat-quota" id="ai-chat-quota" title="AI 对话次数" style="display: none;">
+                     <i class="ri-sparkling-line"></i>
+-                    <span id="ai-chat-quota-text">加载中...</span>
++                    <span class="ai-quota-compact" id="ai-quota-compact">--</span>
++                    <span class="ai-quota-full" id="ai-quota-full">加载中...</span>
+                 </div>
+                 <span class="ai-chat-beta-tag">不稳定测试版</span>
+             </div>
+@@ -429,8 +430,9 @@ const AIChat = {
+     // 从服务器获取并刷新限额显示
+     async _refreshQuota() {
+         const quotaEl = document.getElementById('ai-chat-quota');
+-        const textEl = document.getElementById('ai-chat-quota-text');
+-        if (!quotaEl || !textEl) return;
++        const compactEl = document.getElementById('ai-quota-compact');
++        const fullEl = document.getElementById('ai-quota-full');
++        if (!quotaEl || !compactEl || !fullEl) return;
+ 
+         const machineId = window._telemetryHWID || '';
+         if (!machineId) {
+@@ -441,7 +443,8 @@ const AIChat = {
+         try {
+             const serverUrl = this._getServerUrl();
+             if (!serverUrl) {
+-                textEl.textContent = '服务未配置';
++                compactEl.textContent = '--';
++                fullEl.textContent = '服务未配置';
+                 quotaEl.style.display = 'flex';
+                 return;
+             }
+@@ -457,22 +460,42 @@ const AIChat = {
+             const resp = await fetch(`${serverUrl}/api/ai/quota?machine_id=${encodeURIComponent(machineId)}`, { headers });
+             if (!resp.ok) throw new Error('请求失败');
+             const data = await resp.json();
+-            this._setQuotaDisplay(data.remaining);
++            const dailyRemaining = Math.max(0, Number(data.daily_remaining) || 0);
++            const bonus = Math.max(0, Number(data.bonus_credits) || 0);
++            this._setQuotaDisplay(dailyRemaining, bonus);
+         } catch (e) {
+-            textEl.textContent = '--';
++            compactEl.textContent = '--';
++            fullEl.textContent = '--';
+         }
+     },
+ 
+-    _setQuotaDisplay(remaining) {
++    _setQuotaDisplay(dailyRemaining, bonus) {
+         const quotaEl = document.getElementById('ai-chat-quota');
+-        const textEl = document.getElementById('ai-chat-quota-text');
+-        if (!quotaEl || !textEl) return;
++        const compactEl = document.getElementById('ai-quota-compact');
++        const fullEl = document.getElementById('ai-quota-full');
++        if (!quotaEl || !compactEl || !fullEl) return;
++
++        const daily = Math.max(0, Number(dailyRemaining) || 0);
++        const perm = Math.max(0, Number(bonus) || 0);
++        const total = daily + perm;
++
++        // 缩进态: 15 + 15 或 15
++        if (perm > 0) {
++            compactEl.innerHTML = `${daily} <span class="ai-quota-plus">+</span> <span class="ai-quota-bonus">${perm}</span>`;
++        } else {
++            compactEl.textContent = String(daily);
++        }
++
++        // 展开态: 剩余15次 永久额度15次
++        if (perm > 0) {
++            fullEl.innerHTML = `剩余${daily}次 <span class="ai-quota-bonus">永久额度${perm}次</span>`;
++        } else {
++            fullEl.textContent = `剩余 ${daily} 次`;
++        }
+ 
+-        const value = Math.max(0, Number(remaining) || 0);
+-        textEl.textContent = `剩余 ${value} 次`;
+         quotaEl.style.display = 'flex';
+-        quotaEl.classList.toggle('low', value <= 3 && value > 0);
+-        quotaEl.classList.toggle('empty', value === 0);
++        quotaEl.classList.toggle('low', total <= 3 && total > 0);
++        quotaEl.classList.toggle('empty', total === 0);
+     },
+ 
+     // 获取后端服务器地址（从 pywebview 注入的全局变量获取）
+@@ -517,7 +540,7 @@ const AIChat = {
+         if (AI_CONFIG.get('apiMode') === 'aimer_free') {
+             const quotaEl = document.getElementById('ai-chat-quota');
+             if (quotaEl && quotaEl.classList.contains('empty')) {
+-                AIChatMessages.addMessage('ai', '今日对话次数已用完啦~ 每天 0 点会刷新哦！ε٩(๑> ₃ <)۶з');
++                AIChatMessages.addMessage('ai', '对话次数已用完啦~ 每日额度每天 0 点会刷新哦！ε٩(๑> ₃ <)۶з');
+                 return;
+             }
+         }
+@@ -588,7 +611,7 @@ const AIChat = {
+                     return;
+                 }
+                 if (typeof chunk.quotaRemaining === 'number') {
+-                    this._setQuotaDisplay(chunk.quotaRemaining);
++                    this._refreshQuota();
+                 }
+                 if (chunk.usage) finalUsage = chunk.usage;
+                 if (chunk.done) {

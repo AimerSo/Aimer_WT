@@ -35,6 +35,26 @@ const redeemModule = {
         'users': '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
     },
 
+    _defaultSubtitleMap: {
+        'sponsor_1': '· 感谢支持 ·',
+        'sponsor_2': '· 感谢支持 ·',
+        'sponsor_3': '· 感谢支持 ·',
+        'sponsor_4': '· 感谢支持 ·',
+        'streamer': '· 专属福利 ·',
+        'streamer_share': '· 分享福利 ·',
+        'custom': '· 感谢支持 ·',
+    },
+
+    _defaultIconColorMap: {
+        'sponsor_1': '#64748b',
+        'sponsor_2': '#0d9488',
+        'sponsor_3': '#e8c9a0',
+        'sponsor_4': '#fde68a',
+        'streamer': '#fcd34d',
+        'streamer_share': '#fde68a',
+        'custom': '#64748b',
+    },
+
     // ─────────── 预设类型定义（与后端 redeemPresets 映射） ───────────
 
     // 主题文件名 → 中文显示名
@@ -279,6 +299,10 @@ const redeemModule = {
             document.getElementById('redeemPopupTitle').value = savedDefaults.popup_title || '';
             document.getElementById('redeemPopupButton').value = savedDefaults.popup_button || '';
             document.getElementById('redeemPopupMessage').value = savedDefaults.popup_message || '';
+            const subtitleEl = document.getElementById('redeemPopupSubtitle');
+            if (subtitleEl) subtitleEl.value = savedDefaults.popup_subtitle || '';
+            const iconColorEl = document.getElementById('redeemPopupIconColor');
+            if (iconColorEl) iconColorEl.value = savedDefaults.popup_icon_color || this._defaultIconColorMap[presetType] || '#64748b';
             const styleSelect = document.getElementById('redeemPopupStyleSelect');
             if (styleSelect) styleSelect.value = savedDefaults.popup_style_select || 'default';
             const logoSelect = document.getElementById('redeemPopupLogo');
@@ -307,6 +331,10 @@ const redeemModule = {
             document.getElementById('redeemPopupTitle').value = '';
             document.getElementById('redeemPopupButton').value = '';
             document.getElementById('redeemPopupMessage').value = '';
+            const subtitleEl2 = document.getElementById('redeemPopupSubtitle');
+            if (subtitleEl2) subtitleEl2.value = '';
+            const iconColorEl2 = document.getElementById('redeemPopupIconColor');
+            if (iconColorEl2) iconColorEl2.value = this._defaultIconColorMap[presetType] || '#64748b';
             const styleSelect = document.getElementById('redeemPopupStyleSelect');
             if (styleSelect) styleSelect.value = 'default';
             const logoSelect = document.getElementById('redeemPopupLogo');
@@ -320,6 +348,10 @@ const redeemModule = {
             document.getElementById('redeemPopupTitle').value = '';
             document.getElementById('redeemPopupButton').value = '';
             document.getElementById('redeemPopupMessage').value = '';
+            const subtitleEl3 = document.getElementById('redeemPopupSubtitle');
+            if (subtitleEl3) subtitleEl3.value = '';
+            const iconColorEl3 = document.getElementById('redeemPopupIconColor');
+            if (iconColorEl3) iconColorEl3.value = '#64748b';
             const styleSelect = document.getElementById('redeemPopupStyleSelect');
             if (styleSelect) styleSelect.value = 'default';
             const logoSelect = document.getElementById('redeemPopupLogo');
@@ -400,6 +432,15 @@ const redeemModule = {
             ? `<div style="font-size:13px; line-height:1.6; white-space:pre-line;">${customMsg}</div>`
             : rewardItemsHtml;
 
+        const customSubtitle = document.getElementById('redeemPopupSubtitle')?.value?.trim() || '';
+        const displaySubtitle = customSubtitle || this._defaultSubtitleMap[presetType] || '· 感谢支持 ·';
+
+        const iconColorEl = document.getElementById('redeemPopupIconColor');
+        const defaultColor = this._defaultIconColorMap[presetType] || '#64748b';
+        const displayIconColor = iconColorEl?.value || defaultColor;
+        const colorLabel = document.getElementById('redeemPopupIconColorLabel');
+        if (colorLabel) colorLabel.textContent = displayIconColor;
+
         // 按钮文字：优先使用自定义，否则用默认值
         const customButton = document.getElementById('redeemPopupButton')?.value?.trim() || '';
         const defaultButtons = {
@@ -414,7 +455,11 @@ const redeemModule = {
             const res = await fetch(`redeem/popup_styles/${styleName}.html?t=${Date.now()}`);
             if (res.ok) this._popupStyleCache[styleName] = await res.text();
             let html = this._popupStyleCache[styleName] || '';
-            html = html.replace('{{TITLE}}', displayTitle).replace('{{REWARDS}}', displayRewards).replace('{{BUTTON}}', displayButton);
+            html = html.replace('{{TITLE}}', displayTitle)
+                       .replace('{{REWARDS}}', displayRewards)
+                       .replace('{{BUTTON}}', displayButton)
+                       .replace('{{SUBTITLE}}', displaySubtitle)
+                       .replace('{{ICON_COLOR}}', displayIconColor);
 
             // Logo 替换：如果用户选择了自定义 Logo→替换模板中的 SVG
             const logoVal = document.getElementById('redeemPopupLogo')?.value || 'default';
@@ -425,7 +470,8 @@ const redeemModule = {
             // 主播分享文案替换：将“分享福利”替换为“来自xxx的分享”
             const streamerId = document.getElementById('redeemStreamerId')?.value?.trim() || '';
             if (streamerId && (presetType === 'streamer_share' || styleName === 'style_streamer_share')) {
-                html = html.replace('· 分享福利 ·', `· 来自${streamerId}的分享 ·`);
+                const currentSubtitle = customSubtitle || this._defaultSubtitleMap['streamer_share'];
+                html = html.replace(currentSubtitle, `· 来自${streamerId}的分享 ·`);
             }
 
             frame.innerHTML = html;
@@ -454,6 +500,10 @@ const redeemModule = {
         document.getElementById('redeemPopupMessage').value = '';
         const btnEl = document.getElementById('redeemPopupButton');
         if (btnEl) btnEl.value = '';
+        const subtitleEl = document.getElementById('redeemPopupSubtitle');
+        if (subtitleEl) subtitleEl.value = '';
+        const iconColorEl = document.getElementById('redeemPopupIconColor');
+        if (iconColorEl) iconColorEl.value = '#64748b';
         const styleSelect = document.getElementById('redeemPopupStyleSelect');
         if (styleSelect) styleSelect.value = 'default';
         const logoSelect = document.getElementById('redeemPopupLogo');
@@ -527,7 +577,10 @@ const redeemModule = {
                     expire_in: expireIn, note,
                     popup_title: popupTitle,
                     popup_message: popupMessage,
-                    popup_style: popupStyle
+                    popup_style: popupStyle,
+                    popup_subtitle: document.getElementById('redeemPopupSubtitle')?.value?.trim() || '',
+                    popup_logo: document.getElementById('redeemPopupLogo')?.value || 'default',
+                    popup_icon_color: document.getElementById('redeemPopupIconColor')?.value || ''
                 })
             });
 
@@ -736,7 +789,7 @@ const redeemModule = {
                 ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4" y1="4" x2="20" y2="20"/></svg>'
                 : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
 
-            return `<div class="rs-code-card status-${code.status}" onclick="redeemModule.showDetail(${code.id})" style="animation-delay: ${idx * 0.03}s">
+            return `<div class="rs-code-card status-${code.status}" onclick="redeemModule.showCodeDetailPage(${code.id})" style="animation-delay: ${idx * 0.03}s">
                 <div class="rs-code-main">
                     <span class="rs-code-text">${code.code}</span>
                     <div class="rs-code-meta">
@@ -794,23 +847,31 @@ const redeemModule = {
             const records = data.records || [];
 
             if (records.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 40px;">暂无使用记录</td></tr>';
+                tbody.innerHTML = `<div class="rs-empty">
+                    <div class="rs-empty-icon">📝</div>
+                    <div class="rs-empty-text">暂无使用记录</div>
+                </div>`;
                 return;
             }
 
-            tbody.innerHTML = records.map(r => {
+            tbody.innerHTML = records.map((r, idx) => {
                 const hwid = r.machine_id || '-';
                 const displayHwid = hwid.length > 12 ? hwid.substring(0, 6) + '...' + hwid.substring(hwid.length - 4) : hwid;
                 const userDisplay = r.alias || displayHwid;
-                return `<tr>
-                    <td style="font-family: monospace; font-size: 13px; font-weight: 600;">${r.code}</td>
-                    <td>${userDisplay}</td>
-                    <td style="font-family: monospace; font-size: 12px;" title="${hwid}">${displayHwid}</td>
-                    <td style="font-size: 12px; color: var(--text-muted);">${r.created_at || '-'}</td>
-                </tr>`;
+                const encodedMachineId = encodeURIComponent(hwid);
+                return `<div class="rs-record-card" style="animation-delay: ${idx * 0.03}s;">
+                    <div class="rs-record-code">${this._escapeHtml(r.code || '-')}</div>
+                    <div class="rs-record-info">
+                        <span class="rs-record-user rs-record-alias-link"
+                              onclick="event.stopPropagation(); redeemModule.openRecordUser('${encodedMachineId}')"
+                              title="查看用户详情">${this._escapeHtml(userDisplay)}</span>
+                        <span class="rs-record-hwid" title="${this._escapeHtml(hwid)}">${this._escapeHtml(displayHwid)}</span>
+                    </div>
+                    <div class="rs-record-time">${this._escapeHtml(r.created_at || '-')}</div>
+                </div>`;
             }).join('');
         } catch {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--danger);">加载失败</td></tr>';
+            tbody.innerHTML = '<div style="text-align: center; color: var(--danger); padding: 32px;">加载失败</div>';
         }
     },
 
@@ -818,140 +879,7 @@ const redeemModule = {
 
     /** 展示兑换码详情（侧面板） */
     showDetail(codeId) {
-        const code = this._allCodes.find(c => c.id === codeId);
-        if (!code) return;
-        this._editingCodeId = codeId;
-
-        const typeLabels = {};
-        this._presets.forEach(p => { typeLabels[p.type] = p.label; });
-
-        const rewards = this.parsePayloadRewards(code.payload);
-        const rewardListHtml = rewards.map(r => {
-            const iconClass = r.type === 'theme' ? 'theme' : (r.type === 'tag' ? 'tag' : 'bonus');
-            return `<div class="rs-reward-item">
-                <span class="rs-reward-icon ${iconClass}">${this._escapeHtml(r.icon)}</span>
-                <span>${this._escapeHtml(r.text)}</span>
-            </div>`;
-        }).join('');
-
-        const safeCode = this._escapeHtml(code.code);
-        const safeTheme = this._escapeHtml(this._parseField(code.payload, 'theme'));
-        const safeTag = this._escapeHtml(this._parseField(code.payload, 'tag'));
-        const safeNote = this._escapeHtml(code.note || '-');
-        const safePopupTitle = this._escapeHtml(code.popup_title || '');
-        const safePopupMessage = this._escapeHtml(code.popup_message || '');
-        const safeCreatedAt = this._escapeHtml((code.created_at || '').replace('T', ' ').substring(0, 19));
-        const safeExpiresAt = this._escapeHtml(code.expires_at ? code.expires_at.replace('T', ' ').substring(0, 19) : '永不过期');
-
-        const statusTextMap = {
-            'active': '✅ 可用', 'used': '⚠️ 已用完', 'expired': '⏰ 已过期', 'disabled': '🚫 已停用',
-        };
-        const statusClassMap = {
-            'active': 's-active', 'used': 's-used', 'expired': 's-expired', 'disabled': 's-disabled',
-        };
-
-        const usagePct = code.max_uses > 0 ? Math.min(100, (code.used_count / code.max_uses) * 100) : 0;
-        const isFull = code.max_uses > 0 && code.used_count >= code.max_uses;
-        const usageText = code.max_uses > 0 ? `${code.used_count} / ${code.max_uses}` : `${code.used_count} / ∞`;
-
-        const body = document.getElementById('redeemDetailBody');
-        body.innerHTML = `
-            <!-- 基础信息 -->
-            <div class="rs-info-section">
-                <div class="rs-info-section-title">📋 基础信息</div>
-                <div class="rs-info-grid">
-                    <div class="rs-info-label">兑换码</div>
-                    <div class="rs-info-value mono" onclick="navigator.clipboard.writeText('${code.code}'); app.showAlert('已复制', 'success');" title="点击复制">${safeCode}</div>
-
-                    <div class="rs-info-label">类型</div>
-                    <div class="rs-info-value"><span class="rs-type-badge">${this._escapeHtml(typeLabels[code.type] || code.type)}</span></div>
-
-                    <div class="rs-info-label">状态</div>
-                    <div class="rs-info-value"><span class="rs-status-dot ${statusClassMap[code.status] || ''}">${statusTextMap[code.status] || code.status}</span></div>
-
-                    <div class="rs-info-label">使用次数</div>
-                    <div class="rs-info-value">
-                        <div class="rs-detail-progress">
-                            <div class="rs-detail-progress-bar"><div class="rs-detail-progress-fill${isFull ? ' full' : ''}" style="width:${usagePct}%"></div></div>
-                            <span class="rs-detail-progress-text">${usageText}</span>
-                        </div>
-                    </div>
-
-                    <div class="rs-info-label">创建时间</div>
-                    <div class="rs-info-value">${safeCreatedAt}</div>
-
-                    <div class="rs-info-label">过期时间</div>
-                    <div class="rs-info-value">${safeExpiresAt}</div>
-
-                    <div class="rs-info-label">备注</div>
-                    <div class="rs-info-value">${safeNote}</div>
-                </div>
-            </div>
-
-            <!-- 奖励内容 -->
-            <div class="rs-info-section">
-                <div class="rs-info-section-title">🎁 奖励内容</div>
-                <div class="rs-reward-list">${rewardListHtml}</div>
-            </div>
-
-            <!-- 编辑奖励参数 -->
-            <div class="rs-info-section">
-                <div class="rs-info-section-title">✏️ 编辑奖励参数</div>
-                <div class="rs-edit-section">
-                    <div class="rs-edit-row">
-                        <div class="rs-edit-label"><span class="e-icon">🎨</span> 主题</div>
-                        <input type="text" class="input" style="flex: 1;" id="detailPayloadTheme" value="${safeTheme}">
-                    </div>
-                    <div class="rs-edit-row">
-                        <div class="rs-edit-label"><span class="e-icon">💬</span> AI额度</div>
-                        <input type="number" class="input" style="flex: 1; max-width: 120px;" id="detailPayloadBonus" value="${this._parseField(code.payload, 'bonus') || 0}" min="0">
-                    </div>
-                    <div class="rs-edit-row">
-                        <div class="rs-edit-label"><span class="e-icon">📈</span> 每日额度</div>
-                        <input type="number" class="input" style="flex: 1; max-width: 120px;" id="detailPayloadDailyBonus" value="${this._parseField(code.payload, 'daily_limit_bonus') || 0}" min="0">
-                    </div>
-                    <div class="rs-edit-row">
-                        <div class="rs-edit-label"><span class="e-icon">🏷️</span> 标签</div>
-                        <input type="text" class="input" style="flex: 1;" id="detailPayloadTag" value="${safeTag}">
-                    </div>
-                </div>
-            </div>
-
-            <!-- 自定义弹窗 -->
-            <div class="rs-info-section">
-                <div class="rs-info-section-title">🖼️ 自定义兑换弹窗</div>
-                <div class="rs-edit-section">
-                    <div class="rs-edit-row">
-                        <div class="rs-edit-label">弹窗标题</div>
-                        <input type="text" class="input" style="flex: 1;" id="detailPopupTitle" value="${safePopupTitle}" placeholder="留空则用默认">
-                    </div>
-                    <div class="rs-edit-row">
-                        <div class="rs-edit-label">弹窗样式</div>
-                        <select class="select" style="flex: 1;" id="detailPopupStyle">
-                            ${this._getPopupStyleOptions(code.popup_style || 'default')}
-                        </select>
-                    </div>
-                    <div style="margin-top: 12px;">
-                        <div class="rs-edit-label" style="margin-bottom: 6px;">弹窗内容</div>
-                        <textarea class="input" style="width: 100%; height: 60px; resize: vertical;" id="detailPopupMessage" placeholder="留空则自动生成">${safePopupMessage}</textarea>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 使用记录 -->
-            <div class="rs-info-section">
-                <div class="rs-info-section-title">📜 使用记录</div>
-                <div class="rs-detail-records" id="detailRecordsList">加载中...</div>
-            </div>`;
-
-        document.getElementById('redeemDetailSaveBtn').style.display = '';
-
-        // 打开侧面板
-        document.getElementById('rsDetailOverlay').classList.add('show');
-        document.getElementById('rsDetailPanel').classList.add('show');
-
-        // 异步加载该码的使用记录
-        this._loadCodeRecords(code.code);
+        this.showCodeDetailPage(codeId);
     },
 
     /** 加载指定兑换码的使用记录 */
@@ -969,8 +897,16 @@ const redeemModule = {
             }
             container.innerHTML = records.map(r => {
                 const userDisplay = r.alias || (r.machine_id ? r.machine_id.substring(0, 8) + '...' : '-');
-                return `<div class="rs-detail-record-item">
-                    <span class="rs-detail-record-user">${this._escapeHtml(userDisplay)}</span>
+                const machineId = encodeURIComponent(r.machine_id || '');
+                const avatarText = this._escapeHtml((userDisplay || '?').substring(0, 1).toUpperCase());
+                return `<div class="rs-detail-record-item" onclick="redeemModule.openRecordUser('${machineId}')">
+                    <div class="rs-detail-record-left">
+                        <div class="rs-detail-record-avatar">${avatarText}</div>
+                        <div class="rs-detail-record-info">
+                            <div class="rs-detail-record-user">${this._escapeHtml(userDisplay)}</div>
+                            <div class="rs-detail-record-mid">${this._escapeHtml(r.machine_id || '-')}</div>
+                        </div>
+                    </div>
                     <span class="rs-detail-record-time">${this._escapeHtml(r.created_at || '-')}</span>
                 </div>`;
             }).join('');
@@ -985,8 +921,10 @@ const redeemModule = {
 
     /** 关闭详情侧面板 */
     closeDetail() {
-        document.getElementById('rsDetailOverlay').classList.remove('show');
-        document.getElementById('rsDetailPanel').classList.remove('show');
+        const overlay = document.getElementById('rsDetailOverlay');
+        const panel = document.getElementById('rsDetailPanel');
+        if (overlay) overlay.classList.remove('show');
+        if (panel) panel.classList.remove('show');
         this._editingCodeId = null;
     },
 
@@ -1023,6 +961,344 @@ const redeemModule = {
             } else throw new Error();
         } catch { app.showAlert('保存失败', 'danger'); }
     },
+
+    // ═══════════════════════════════════════════════════
+    // 独立详情页（redeem_detail.html）
+    // ═══════════════════════════════════════════════════
+
+    async initDetail() {
+        const codeId = this._pendingDetailCodeId;
+        if (!codeId) {
+            document.getElementById('rdContent').innerHTML = '<div style="text-align:center;padding:80px;color:var(--text-muted);"><h3>未指定兑换码</h3><p>请从兑换码统计页面进入</p></div>';
+            return;
+        }
+        this._editingCodeId = codeId;
+        try {
+            await this._loadPresets();
+            await this._loadAllCodes();
+            const code = this._allCodes.find(c => c.id === codeId);
+            if (!code) {
+                document.getElementById('rdContent').innerHTML = '<div style="text-align:center;padding:80px;color:var(--text-muted);"><h3>兑换码不存在</h3></div>';
+                return;
+            }
+            this._renderFullDetailPage(code);
+        } catch (e) {
+            document.getElementById('rdContent').innerHTML = `<div style="text-align:center;padding:80px;color:var(--text-muted);"><h3>加载失败</h3><p>${e.message}</p></div>`;
+        }
+    },
+
+    showCodeDetailPage(codeId) {
+        this._pendingDetailCodeId = codeId;
+        app.switchView('redeem_detail', document.querySelector('[data-view="redeem_detail"]'));
+    },
+
+    _renderFullDetailPage(code) {
+        const typeLabels = {};
+        this._presets.forEach(p => { typeLabels[p.type] = p.label; });
+        const typeLabel = typeLabels[code.type] || code.type || '自定义';
+        const statusMap = { active: '可用', disabled: '已停用', expired: '已过期', used: '已用完' };
+        const statusLabel = statusMap[code.status] || code.status;
+        const statusDotClass = { active: 'rd-dot-active', disabled: 'rd-dot-disabled', expired: 'rd-dot-expired', used: 'rd-dot-used' }[code.status] || '';
+
+        const safeNote = this._escapeHtml(code.note || '');
+        const safePopupTitle = this._escapeHtml(code.popup_title || '');
+        const safePopupMessage = this._escapeHtml(code.popup_message || '');
+        const safePopupSubtitle = this._escapeHtml(code.popup_subtitle || '');
+        const safeTag = this._escapeHtml(this._parseField(code.payload, 'tag'));
+        const safeTheme = this._escapeHtml(this._parseField(code.payload, 'theme'));
+
+        const rewards = this.parsePayloadRewards(code.payload, false);
+        const usedPercent = code.max_uses > 0 ? Math.min(100, Math.round((code.used_count / code.max_uses) * 100)) : 0;
+        const isFull = code.max_uses > 0 && code.used_count >= code.max_uses;
+
+        // 顶栏信息
+        const codeDisplay = document.getElementById('rdCodeDisplay');
+        const statusBadge = document.getElementById('rdStatusBadge');
+        if (codeDisplay) codeDisplay.textContent = code.code;
+        if (statusBadge) {
+            statusBadge.className = `rd-title-status ${statusDotClass}`;
+            statusBadge.textContent = statusLabel;
+        }
+
+        const toggleBtn = document.getElementById('rdToggleBtn');
+        if (toggleBtn) {
+            toggleBtn.innerHTML = code.is_active
+                ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4" y1="4" x2="20" y2="20"/></svg> 停用'
+                : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> 启用';
+        }
+
+        // 奖励卡片
+        const rewardsHtml = rewards.map(r => {
+            const iconBg = { theme: 'rd-reward-theme', bonus: 'rd-reward-bonus', tag: 'rd-reward-tag' }[r.type] || 'rd-reward-bonus';
+            return `<div class="rd-reward-chip">
+                <span class="rd-reward-icon ${iconBg}">${r.icon}</span>
+                <span class="rd-reward-text">${r.text}</span>
+            </div>`;
+        }).join('');
+
+        // 信息行
+        const safeCreatedAt = (code.created_at || '').replace('T', ' ').substring(0, 19);
+        const safeExpiresAt = code.expires_at ? code.expires_at.replace('T', ' ').substring(0, 19) : '';
+
+        document.getElementById('rdContent').innerHTML = `
+            <div class="rd-grid">
+                <!-- 左栏：信息展示 -->
+                <div class="rd-col">
+                    <div class="rd-card">
+                        <div class="rd-card-title">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            基本信息
+                        </div>
+                        <div class="rd-info-grid">
+                            <div class="rd-info-row">
+                                <span class="rd-info-label">兑换码</span>
+                                <span class="rd-info-value rd-mono">${code.code}</span>
+                            </div>
+                            <div class="rd-info-row">
+                                <span class="rd-info-label">预设类型</span>
+                                <span class="rd-info-value"><span class="rd-type-tag">${typeLabel}</span></span>
+                            </div>
+                            <div class="rd-info-row">
+                                <span class="rd-info-label">当前状态</span>
+                                <span class="rd-info-value"><span class="rd-status-pill ${statusDotClass}">${statusLabel}</span></span>
+                            </div>
+                            <div class="rd-info-row">
+                                <span class="rd-info-label">创建时间</span>
+                                <span class="rd-info-value">${safeCreatedAt}</span>
+                            </div>
+                            <div class="rd-info-row">
+                                <span class="rd-info-label">过期时间</span>
+                                <span class="rd-info-value">${safeExpiresAt || '<span class="rd-tag-forever">永不过期</span>'}</span>
+                            </div>
+                            ${safeNote ? `<div class="rd-info-row">
+                                <span class="rd-info-label">备注</span>
+                                <span class="rd-info-value">${safeNote}</span>
+                            </div>` : ''}
+                        </div>
+                    </div>
+
+                    <div class="rd-card">
+                        <div class="rd-card-title">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>
+                            奖励内容
+                        </div>
+                        <div class="rd-reward-list">
+                            ${rewardsHtml || '<div style="color:var(--text-muted); font-size:13px;">无奖励内容</div>'}
+                        </div>
+                    </div>
+
+                    <div class="rd-card">
+                        <div class="rd-card-title">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                            使用情况
+                        </div>
+                        <div class="rd-usage-section">
+                            <div class="rd-usage-header">
+                                <span class="rd-usage-text">已使用 <strong>${code.used_count}</strong> / ${code.max_uses || '∞'}</span>
+                                <span class="rd-usage-pct">${usedPercent}%</span>
+                            </div>
+                            <div class="rd-progress-track">
+                                <div class="rd-progress-fill ${isFull ? 'full' : ''}" style="width:${usedPercent}%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rd-card">
+                        <div class="rd-card-title">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            使用记录
+                        </div>
+                        <div class="rs-detail-records" id="detailRecordsList">
+                            <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:13px;">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右栏：编辑表单 -->
+                <div class="rd-col">
+                    <div class="rd-card">
+                        <div class="rd-card-title">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            编辑基本信息
+                        </div>
+                        <div class="rd-form-group">
+                            <div class="rd-form-row">
+                                <label class="rd-form-label">备注</label>
+                                <input type="text" class="input rd-input" id="detailNote" value="${safeNote}" placeholder="备注说明">
+                            </div>
+                            <div class="rd-form-row">
+                                <label class="rd-form-label">最大使用次数</label>
+                                <input type="number" class="input rd-input rd-input-short" id="detailMaxUses" value="${code.max_uses || 0}" min="0">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rd-card">
+                        <div class="rd-card-title">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+                            编辑奖励参数
+                        </div>
+                        <div class="rd-form-group">
+                            <div class="rd-form-row">
+                                <label class="rd-form-label">主题</label>
+                                <input type="text" class="input rd-input" id="detailPayloadTheme" value="${safeTheme}" placeholder="如 supporter.json">
+                            </div>
+                            <div class="rd-form-row-inline">
+                                <div class="rd-form-row" style="flex:1;">
+                                    <label class="rd-form-label">AI永久额度</label>
+                                    <input type="number" class="input rd-input" id="detailPayloadBonus" value="${this._parseField(code.payload, 'bonus') || 0}" min="0">
+                                </div>
+                                <div class="rd-form-row" style="flex:1;">
+                                    <label class="rd-form-label">每日额度加成</label>
+                                    <input type="number" class="input rd-input" id="detailPayloadDailyBonus" value="${this._parseField(code.payload, 'daily_limit_bonus') || 0}" min="0">
+                                </div>
+                            </div>
+                            <div class="rd-form-row">
+                                <label class="rd-form-label">用户标签</label>
+                                <input type="text" class="input rd-input" id="detailPayloadTag" value="${safeTag}" placeholder="如 sponsor_1">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rd-card">
+                        <div class="rd-card-title">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                            自定义兑换弹窗
+                        </div>
+                        <div class="rd-form-group">
+                            <div class="rd-form-row-inline">
+                                <div class="rd-form-row" style="flex:1;">
+                                    <label class="rd-form-label">弹窗标题</label>
+                                    <input type="text" class="input rd-input" id="detailPopupTitle" value="${safePopupTitle}" placeholder="留空则用默认">
+                                </div>
+                                <div class="rd-form-row" style="flex:1;">
+                                    <label class="rd-form-label">弹窗副标题</label>
+                                    <input type="text" class="input rd-input" id="detailPopupSubtitle" value="${safePopupSubtitle}" placeholder="留空则用默认">
+                                </div>
+                            </div>
+                            <div class="rd-form-row-inline">
+                                <div class="rd-form-row" style="flex:1;">
+                                    <label class="rd-form-label">弹窗样式</label>
+                                    <select class="select rd-input" id="detailPopupStyle">
+                                        ${this._getPopupStyleOptions(code.popup_style || 'default')}
+                                    </select>
+                                </div>
+                                <div class="rd-form-row" style="flex:0 0 auto;">
+                                    <label class="rd-form-label">图标颜色</label>
+                                    <div class="color-picker-group">
+                                        <input type="color" class="color-input" id="detailPopupIconColor" value="${code.popup_icon_color || this._defaultIconColorMap[code.type] || '#64748b'}" oninput="this.nextElementSibling.textContent=this.value">
+                                        <span class="color-hex-label">${code.popup_icon_color || this._defaultIconColorMap[code.type] || '#64748b'}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="rd-form-row">
+                                <label class="rd-form-label">弹窗内容</label>
+                                <textarea class="input rd-input rd-textarea" id="detailPopupMessage" placeholder="留空则自动生成奖励描述">${safePopupMessage}</textarea>
+                            </div>
+                        </div>
+                        <div class="rd-save-row">
+                            <button class="btn" onclick="redeemModule.backToStats()">取消</button>
+                            <button class="btn primary" onclick="redeemModule.saveDetailPage()">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                                保存修改
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+
+        this._loadCodeRecords(code.code);
+    },
+
+    async openRecordUser(encodedMachineId) {
+        const machineId = decodeURIComponent(encodedMachineId || '').trim();
+        if (!machineId) {
+            app.showAlert('缺少用户标识', 'warning');
+            return;
+        }
+        await app.openUserDetailByMachineId(machineId);
+    },
+
+    backToStats() {
+        this._pendingDetailCodeId = null;
+        this._editingCodeId = null;
+        app.switchView('redeem_stats', document.querySelector('[data-view="redeem_stats"]'));
+    },
+
+    copyDetailCode() {
+        const code = this._allCodes.find(c => c.id === this._editingCodeId);
+        if (!code) return;
+        navigator.clipboard.writeText(code.code).then(() => {
+            app.showAlert('已复制兑换码', 'success');
+        }).catch(() => {
+            app.showAlert('复制失败', 'danger');
+        });
+    },
+
+    async toggleDetailActive() {
+        const code = this._allCodes.find(c => c.id === this._editingCodeId);
+        if (!code) return;
+        const newActive = !code.is_active;
+        try {
+            const res = await fetch(`${app.config.apiBase}/admin/redeem/${this._editingCodeId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: newActive })
+            });
+            if (res.ok) {
+                app.showAlert(newActive ? '已启用' : '已停用', 'success');
+                await this._loadAllCodes();
+                const updated = this._allCodes.find(c => c.id === this._editingCodeId);
+                if (updated) this._renderFullDetailPage(updated);
+            }
+        } catch { app.showAlert('操作失败', 'danger'); }
+    },
+
+    async deleteDetailCode() {
+        if (!confirm('确定要删除此兑换码？')) return;
+        try {
+            const res = await fetch(`${app.config.apiBase}/admin/redeem/${this._editingCodeId}`, { method: 'DELETE' });
+            if (res.ok) {
+                app.showAlert('已删除', 'success');
+                this.backToStats();
+            }
+        } catch { app.showAlert('删除失败', 'danger'); }
+    },
+
+    async saveDetailPage() {
+        if (!this._editingCodeId) return;
+        const theme = document.getElementById('detailPayloadTheme')?.value?.trim() || '';
+        const bonus = parseInt(document.getElementById('detailPayloadBonus')?.value) || 0;
+        const daily_limit_bonus = parseInt(document.getElementById('detailPayloadDailyBonus')?.value) || 0;
+        const tag = document.getElementById('detailPayloadTag')?.value?.trim() || '';
+        const payload = JSON.stringify({ theme, bonus, daily_limit_bonus, tag });
+        const note = document.getElementById('detailNote')?.value?.trim() || '';
+        const maxUses = parseInt(document.getElementById('detailMaxUses')?.value) || 0;
+        const popupTitle = document.getElementById('detailPopupTitle')?.value?.trim() || '';
+        const popupMessage = document.getElementById('detailPopupMessage')?.value?.trim() || '';
+        const popupStyle = document.getElementById('detailPopupStyle')?.value || 'default';
+        try {
+            const res = await fetch(`${app.config.apiBase}/admin/redeem/${this._editingCodeId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    payload, note, max_uses: maxUses,
+                    popup_title: popupTitle,
+                    popup_message: popupMessage,
+                    popup_style: popupStyle,
+                    popup_subtitle: document.getElementById('detailPopupSubtitle')?.value?.trim() || '',
+                    popup_icon_color: document.getElementById('detailPopupIconColor')?.value || ''
+                })
+            });
+            if (res.ok) {
+                app.showAlert('已保存', 'success');
+                await this._loadAllCodes();
+                const updated = this._allCodes.find(c => c.id === this._editingCodeId);
+                if (updated) this._renderFullDetailPage(updated);
+            } else throw new Error();
+        } catch { app.showAlert('保存失败', 'danger'); }
+    },
+
 
     // ─────────── 通用操作 ───────────
 
@@ -1107,13 +1383,22 @@ const redeemModule = {
             popup_message: document.getElementById('redeemPopupMessage')?.value?.trim() || '',
             popup_style_select: document.getElementById('redeemPopupStyleSelect')?.value || 'default',
             popup_logo: document.getElementById('redeemPopupLogo')?.value || 'default',
+            popup_subtitle: document.getElementById('redeemPopupSubtitle')?.value?.trim() || '',
+            popup_icon_color: document.getElementById('redeemPopupIconColor')?.value || '',
             note_tag: document.getElementById('redeemNoteTag')?.value?.trim() || '',
             streamer_id: document.getElementById('redeemStreamerId')?.value?.trim() || '',
             reward_labels: this._collectRewardLabels() || {},
         };
     },
 
-    /** 保存当前配置为该预设类型的默认值 */
+    resetIconColor() {
+        const presetType = this._getCurrentPresetType() || 'custom';
+        const defaultColor = this._defaultIconColorMap[presetType] || '#64748b';
+        const el = document.getElementById('redeemPopupIconColor');
+        if (el) el.value = defaultColor;
+        this.updatePreview();
+    },
+
     savePresetDefaults() {
         const presetType = this._getCurrentPresetType();
         if (!presetType) {

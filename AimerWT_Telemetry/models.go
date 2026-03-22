@@ -209,8 +209,11 @@ type RedeemCode struct {
 	Note         string     `gorm:"type:text" json:"note"`
 	PopupTitle   string     `gorm:"type:varchar(128)" json:"popup_title"`
 	PopupMessage string     `gorm:"type:text" json:"popup_message"`
-	PopupStyle   string     `gorm:"type:varchar(32);default:'default'" json:"popup_style"`
-	CreatedAt    time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	PopupStyle     string     `gorm:"type:varchar(32);default:'default'" json:"popup_style"`
+	PopupSubtitle  string     `gorm:"type:varchar(128)" json:"popup_subtitle"`
+	PopupLogo      string     `gorm:"type:varchar(32)" json:"popup_logo"`
+	PopupIconColor string     `gorm:"type:varchar(16)" json:"popup_icon_color"`
+	CreatedAt      time.Time  `gorm:"autoCreateTime" json:"created_at"`
 }
 
 // RedeemRecord 兑换码使用记录表

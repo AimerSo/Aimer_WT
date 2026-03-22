@@ -1,0 +1,37 @@
+<div class="view-container active">
+    <div class="app">
+        <!-- 顶部工具栏 -->
+        <div class="topbar">
+            <button class="btn" onclick="redeemModule.backToStats()" style="gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                返回列表
+            </button>
+            <div class="rd-title-group" id="rdTitleGroup">
+                <span class="rd-title-code" id="rdCodeDisplay"></span>
+                <span class="rd-title-status" id="rdStatusBadge"></span>
+            </div>
+            <div class="top-actions" style="display: flex; align-items: center; gap: 8px;">
+                <button class="btn" onclick="redeemModule.copyDetailCode()" title="复制兑换码" style="gap: 5px;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    复制
+                </button>
+                <button class="btn" id="rdToggleBtn" onclick="redeemModule.toggleDetailActive()" title="启用/停用" style="gap: 5px;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4" y1="4" x2="20" y2="20"/></svg>
+                    停用
+                </button>
+                <button class="btn rd-btn-danger" id="rdDeleteBtn" onclick="redeemModule.deleteDetailCode()" title="删除" style="gap: 5px;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    删除
+                </button>
+            </div>
+        </div>
+
+        <!-- 详情内容区 -->
+        <div id="rdContent">
+            <div style="text-align: center; padding: 80px; color: var(--text-muted);">
+                <div style="font-size: 32px; margin-bottom: 16px;">⏳</div>
+                <div style="font-size: 14px;">加载中...</div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -211,9 +211,10 @@ const AIChat = {
             </div>
             
             <div class="ai-chat-header">
-                <div class="ai-chat-quota" id="ai-chat-quota" title="每日 AI 对话次数" style="display: none;">
+                <div class="ai-chat-quota" id="ai-chat-quota" title="AI 对话次数" style="display: none;">
                     <i class="ri-sparkling-line"></i>
-                    <span id="ai-chat-quota-text">加载中...</span>
+                    <span class="ai-quota-compact" id="ai-quota-compact">--</span>
+                    <span class="ai-quota-full" id="ai-quota-full">加载中...</span>
                 </div>
                 <span class="ai-chat-beta-tag">不稳定测试版</span>
             </div>
@@ -429,8 +430,9 @@ const AIChat = {
     // 从服务器获取并刷新限额显示
     async _refreshQuota() {
         const quotaEl = document.getElementById('ai-chat-quota');
-        const textEl = document.getElementById('ai-chat-quota-text');
-        if (!quotaEl || !textEl) return;
+        const compactEl = document.getElementById('ai-quota-compact');
+        const fullEl = document.getElementById('ai-quota-full');
+        if (!quotaEl || !compactEl || !fullEl) return;
 
         const machineId = window._telemetryHWID || '';
         if (!machineId) {
@@ -441,7 +443,8 @@ const AIChat = {
         try {
             const serverUrl = this._getServerUrl();
             if (!serverUrl) {
-                textEl.textContent = '服务未配置';
+                compactEl.textContent = '--';
+                fullEl.textContent = '服务未配置';
                 quotaEl.style.display = 'flex';
                 return;
             }
@@ -457,22 +460,42 @@ const AIChat = {
             const resp = await fetch(`${serverUrl}/api/ai/quota?machine_id=${encodeURIComponent(machineId)}`, { headers });
             if (!resp.ok) throw new Error('请求失败');
             const data = await resp.json();
-            this._setQuotaDisplay(data.remaining);
+            const dailyRemaining = Math.max(0, Number(data.daily_remaining) || 0);
+            const bonus = Math.max(0, Number(data.bonus_credits) || 0);
+            this._setQuotaDisplay(dailyRemaining, bonus);
         } catch (e) {
-            textEl.textContent = '--';
+            compactEl.textContent = '--';
+            fullEl.textContent = '--';
         }
     },
 
-    _setQuotaDisplay(remaining) {
+    _setQuotaDisplay(dailyRemaining, bonus) {
         const quotaEl = document.getElementById('ai-chat-quota');
-        const textEl = document.getElementById('ai-chat-quota-text');
-        if (!quotaEl || !textEl) return;
+        const compactEl = document.getElementById('ai-quota-compact');
+        const fullEl = document.getElementById('ai-quota-full');
+        if (!quotaEl || !compactEl || !fullEl) return;
 
-        const value = Math.max(0, Number(remaining) || 0);
-        textEl.textContent = `剩余 ${value} 次`;
+        const daily = Math.max(0, Number(dailyRemaining) || 0);
+        const perm = Math.max(0, Number(bonus) || 0);
+        const total = daily + perm;
+
+        // 缩进态: 15 + 15 或 15
+        if (perm > 0) {
+            compactEl.innerHTML = `${daily} <span class="ai-quota-plus">+</span> <span class="ai-quota-bonus">${perm}</span>`;
+        } else {
+            compactEl.textContent = String(daily);
+        }
+
+        // 展开态: 剩余15次 永久额度15次
+        if (perm > 0) {
+            fullEl.innerHTML = `剩余${daily}次 <span class="ai-quota-bonus">永久额度${perm}次</span>`;
+        } else {
+            fullEl.textContent = `剩余 ${daily} 次`;
+        }
+
         quotaEl.style.display = 'flex';
-        quotaEl.classList.toggle('low', value <= 3 && value > 0);
-        quotaEl.classList.toggle('empty', value === 0);
+        quotaEl.classList.toggle('low', total <= 3 && total > 0);
+        quotaEl.classList.toggle('empty', total === 0);
     },
 
     // 获取后端服务器地址（从 pywebview 注入的全局变量获取）
@@ -517,7 +540,7 @@ const AIChat = {
         if (AI_CONFIG.get('apiMode') === 'aimer_free') {
             const quotaEl = document.getElementById('ai-chat-quota');
             if (quotaEl && quotaEl.classList.contains('empty')) {
-                AIChatMessages.addMessage('ai', '今日对话次数已用完啦~ 每天 0 点会刷新哦！ε٩(๑> ₃ <)۶з');
+                AIChatMessages.addMessage('ai', '对话次数已用完啦~ 每日额度每天 0 点会刷新哦！ε٩(๑> ₃ <)۶з');
                 return;
             }
         }
@@ -588,7 +611,7 @@ const AIChat = {
                     return;
                 }
                 if (typeof chunk.quotaRemaining === 'number') {
-                    this._setQuotaDisplay(chunk.quotaRemaining);
+                    this._refreshQuota();
                 }
                 if (chunk.usage) finalUsage = chunk.usage;
                 if (chunk.done) {
