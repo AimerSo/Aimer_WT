@@ -90,6 +90,15 @@
                     <label>备注（可选）</label>
                     <input type="text" class="input" style="width: 100%;" id="redeemGenNote" placeholder="备注说明...">
                 </div>
+                <div class="form-group">
+                    <label>自定义类别（可选）</label>
+                    <input type="text" class="input" style="width: 100%;" id="redeemCustomType" placeholder="留空则使用预设类别">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">填写后将创建独立分类</div>
+                </div>
+                <div class="form-group">
+                    <label>类别备注（可选）</label>
+                    <input type="text" class="input" style="width: 100%;" id="redeemCategoryNote" placeholder="方便记住类别用途">
+                </div>
             </div>
 
             <!-- 自定义弹窗设置 -->
@@ -169,6 +178,10 @@
                     <button class="btn" onclick="redeemModule.savePresetDefaults()" title="将当前配置保存为该预设的默认值">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                         保存为默认预设
+                    </button>
+                    <button class="btn" onclick="redeemModule.saveAsNewPreset()" title="将当前配置另存为一个新的预设类型">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        另存为新预设
                     </button>
                     <button class="btn" onclick="redeemModule.restorePresetDefaults()" title="恢复该预设的出厂默认配置">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>

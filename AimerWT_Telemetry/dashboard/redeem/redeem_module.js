@@ -13,6 +13,9 @@ const redeemModule = {
     _popupStyleCache: {},
     _pendingRewardLabels: null,
     _searchKeyword: '',
+    _selectedCodeIds: new Set(),
+    _customPresets: [],
+    _categoryNotes: {},
 
     // 预设类型 → 弹窗样式文件映射
     _popupStyleMap: {
@@ -229,13 +232,28 @@ const redeemModule = {
         } catch {}
     },
 
-    /** 渲染预设类型卡片 */
+    /** 渲染预设类型卡片（优先使用 localStorage 中的自定义配置） */
     _renderPresetGrid() {
         const grid = document.getElementById('redeemPresetGrid');
         if (!grid) return;
 
+        // 加载自定义预设和分类备注
+        this._loadCustomPresets();
+        this._loadCategoryNotes();
+
         const cards = this._presets.map((p, idx) => {
-            const rewards = this.parsePayloadRewards(p.payload);
+            // 优先从 localStorage 读取用户保存的自定义默认值
+            const savedDefaults = this._loadSavedDefaults(p.type);
+            let displayPayload = p.payload;
+            if (savedDefaults) {
+                displayPayload = JSON.stringify({
+                    theme: savedDefaults.theme || '',
+                    bonus: savedDefaults.bonus || 0,
+                    daily_limit_bonus: savedDefaults.daily_limit_bonus || 0,
+                    tag: savedDefaults.tag || ''
+                });
+            }
+            const rewards = this.parsePayloadRewards(displayPayload);
             const rewardHtml = rewards.map(r =>
                 `<div class="preset-reward-item">
                     <div class="reward-icon ${r.type}">${r.icon}</div>
@@ -247,6 +265,23 @@ const redeemModule = {
                 <div class="preset-name">${p.label}</div>
                 <div class="preset-type">${p.type}</div>
                 <div class="preset-rewards">${rewardHtml}</div>
+            </div>`;
+        }).join('');
+
+        // 自定义预设卡片（用户创建的额外预设）
+        const customPresetCards = this._customPresets.map((cp, idx) => {
+            const rewards = this.parsePayloadRewards(JSON.stringify(cp.payload));
+            const rewardHtml = rewards.map(r =>
+                `<div class="preset-reward-item">
+                    <div class="reward-icon ${r.type}">${r.icon}</div>
+                    <span>${r.text}</span>
+                </div>`
+            ).join('');
+            return `<div class="redeem-preset-card" data-idx="cp_${idx}" onclick="redeemModule.selectPreset('cp_${idx}')">
+                <div class="preset-name">${this._escapeHtml(cp.name)}</div>
+                <div class="preset-type">${this._escapeHtml(cp.type)}</div>
+                <div class="preset-rewards">${rewardHtml}</div>
+                <button class="preset-delete-btn" onclick="event.stopPropagation(); redeemModule.deleteCustomPreset(${idx})" title="删除此预设">✕</button>
             </div>`;
         }).join('');
 
@@ -262,7 +297,7 @@ const redeemModule = {
             </div>
         </div>`;
 
-        grid.innerHTML = cards + customCard;
+        grid.innerHTML = cards + customPresetCards + customCard;
     },
 
     /** 选中预设类型 */
@@ -280,7 +315,11 @@ const redeemModule = {
 
         // 获取预设类型名
         let presetType = 'custom';
-        if (idx !== 'custom') {
+        if (typeof idx === 'string' && idx.startsWith('cp_')) {
+            const cpIdx = parseInt(idx.replace('cp_', ''));
+            const cp = this._customPresets[cpIdx];
+            if (cp) presetType = cp.type;
+        } else if (idx !== 'custom') {
             const preset = this._presets[idx];
             if (preset) presetType = preset.type;
         }
@@ -314,7 +353,7 @@ const redeemModule = {
             if (streamerIdEl) streamerIdEl.value = savedDefaults.streamer_id || '';
             // 暂存自定义文案以供 _renderRewardLabelFields 回填
             this._pendingRewardLabels = savedDefaults.reward_labels || null;
-        } else if (idx !== 'custom') {
+        } else if (idx !== 'custom' && !(typeof idx === 'string' && idx.startsWith('cp_'))) {
             // 使用服务器预设默认值
             const preset = this._presets[idx];
             if (preset) {
@@ -552,7 +591,21 @@ const redeemModule = {
         if (streamerId) note = note ? `${note} [分享来源: ${streamerId}]` : `[分享来源: ${streamerId}]`;
 
         let type;
-        if (this._selectedPreset === 'custom') {
+        // 自定义类别输入框优先
+        const customTypeInput = document.getElementById('redeemCustomType')?.value?.trim() || '';
+        if (customTypeInput) {
+            type = customTypeInput;
+            // 处理类别备注
+            const categoryNote = document.getElementById('redeemCategoryNote')?.value?.trim() || '';
+            if (categoryNote) {
+                this._saveCategoryNote(type, categoryNote);
+                note = note ? `${note} [类别备注: ${categoryNote}]` : `[类别备注: ${categoryNote}]`;
+            }
+        } else if (typeof this._selectedPreset === 'string' && this._selectedPreset.startsWith('cp_')) {
+            const cpIdx = parseInt(this._selectedPreset.replace('cp_', ''));
+            const cp = this._customPresets[cpIdx];
+            type = cp ? cp.type : 'custom';
+        } else if (this._selectedPreset === 'custom') {
             type = 'custom';
         } else {
             const preset = this._presets[this._selectedPreset];
@@ -635,8 +688,10 @@ const redeemModule = {
     async initStats() {
         this._statsTab = 'codes';
         this._searchKeyword = '';
+        this._selectedCodeIds.clear();
         await this._loadPresets();
         await this._loadAllCodes();
+        this._loadCategoryNotes();
         this._renderStatsCards();
         this._renderCategoryTabs();
         this._renderFilteredCodes();
@@ -701,7 +756,7 @@ const redeemModule = {
         ).join('');
     },
 
-    /** 渲染分类标签栏 */
+    /** 渲染分类标签栏（含备注tooltip + 导出按钮） */
     _renderCategoryTabs() {
         const container = document.getElementById('redeemCategoryTabs');
         if (!container) return;
@@ -714,6 +769,8 @@ const redeemModule = {
         const typeLabels = {};
         this._presets.forEach(p => { typeLabels[p.type] = p.label; });
 
+        this._loadCategoryNotes();
+
         const allTab = `<div class="rs-cat-tab ${this._currentCategory === 'all' ? 'active' : ''}"
             onclick="redeemModule.filterByCategory('all')">
             全部 <span class="tab-count">${this._allCodes.length}</span>
@@ -722,9 +779,18 @@ const redeemModule = {
         const typeTabs = Object.keys(typeCounts).map(type => {
             const label = typeLabels[type] || type;
             const isActive = this._currentCategory === type;
+            const noteText = this._categoryNotes[type] || '';
+            const noteTooltip = noteText ? ` title="备注: ${this._escapeHtml(noteText)}"` : '';
+            const noteIcon = noteText ? '<span class="rs-cat-note-dot"></span>' : '';
             return `<div class="rs-cat-tab ${isActive ? 'active' : ''}"
-                onclick="redeemModule.filterByCategory('${type}')">
-                ${label} <span class="tab-count">${typeCounts[type]}</span>
+                onclick="redeemModule.filterByCategory('${type}')"${noteTooltip}>
+                ${label} ${noteIcon} <span class="tab-count">${typeCounts[type]}</span>
+                <button class="rs-cat-action-btn" onclick="event.stopPropagation(); redeemModule.editCategoryNote('${type}')" title="编辑备注">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="rs-cat-action-btn" onclick="event.stopPropagation(); redeemModule.exportCodesForDistribution('${type}')" title="导出该类别">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </button>
             </div>`;
         }).join('');
 
@@ -790,6 +856,7 @@ const redeemModule = {
                 : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
 
             return `<div class="rs-code-card status-${code.status}" onclick="redeemModule.showCodeDetailPage(${code.id})" style="animation-delay: ${idx * 0.03}s">
+                <input type="checkbox" class="rs-code-checkbox" data-id="${code.id}" ${this._selectedCodeIds.has(code.id) ? 'checked' : ''} onclick="event.stopPropagation(); redeemModule.toggleSelectCode(${code.id}, event)">
                 <div class="rs-code-main">
                     <span class="rs-code-text">${code.code}</span>
                     <div class="rs-code-meta">
@@ -1335,6 +1402,52 @@ const redeemModule = {
 
     /** 导出兑换码为 CSV */
     exportCodes() {
+        this._exportCodesAs('csv');
+    },
+
+    /** 导出当前分类的兑换码为适合分发的文本格式 */
+    exportCodesForDistribution(category) {
+        const targetCategory = category || this._currentCategory;
+        const codes = targetCategory === 'all'
+            ? this._allCodes
+            : this._allCodes.filter(c => c.type === targetCategory);
+
+        if (codes.length === 0) { app.showAlert('没有可导出的数据', 'warning'); return; }
+
+        const typeLabels = {};
+        this._presets.forEach(p => { typeLabels[p.type] = p.label; });
+        const categoryLabel = typeLabels[targetCategory] || targetCategory || '全部';
+
+        // 获取该类别的备注
+        this._loadCategoryNotes();
+        const categoryNote = this._categoryNotes[targetCategory] || '';
+
+        // 获取奖励内容描述（取第一个码的 payload）
+        const sampleCode = codes[0];
+        const rewards = this.parsePayloadRewards(sampleCode.payload);
+        const rewardText = rewards.map(r => r.icon + ' ' + r.text).join(' · ');
+
+        // 构建分发格式
+        const activeCodes = codes.filter(c => c.status === 'active');
+        let content = `【类别名称】${categoryLabel}\n`;
+        if (categoryNote) content += `【备注】${categoryNote}\n`;
+        content += `【奖励内容】${rewardText}\n`;
+        content += `【总数/可用】${codes.length} 个 / ${activeCodes.length} 个可用\n`;
+        content += `──────────────────\n`;
+        content += activeCodes.map(c => c.code).join('\n');
+        content += '\n';
+
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `兑换码_${categoryLabel}_${new Date().toISOString().slice(0, 10)}.txt`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+        app.showAlert(`已导出 ${activeCodes.length} 个可用码`, 'success');
+    },
+
+    /** 导出指定格式 */
+    _exportCodesAs(format) {
         const codes = this._currentCategory === 'all'
             ? this._allCodes
             : this._allCodes.filter(c => c.type === this._currentCategory);
@@ -1355,7 +1468,124 @@ const redeemModule = {
         link.download = `redeem_codes_${new Date().toISOString().slice(0, 10)}.csv`;
         link.click();
         URL.revokeObjectURL(link.href);
-        app.showAlert('导出成功', 'success');
+        app.showAlert('CSV 导出成功', 'success');
+    },
+
+    // ═══════════════════════════════════════════════════
+    // 批量操作
+    // ═══════════════════════════════════════════════════
+
+    /** 切换单个兑换码的选中状态 */
+    toggleSelectCode(id, event) {
+        if (event) event.stopPropagation();
+        if (this._selectedCodeIds.has(id)) {
+            this._selectedCodeIds.delete(id);
+        } else {
+            this._selectedCodeIds.add(id);
+        }
+        this._updateBatchUI();
+    },
+
+    /** 全选/取消全选当前显示的兑换码 */
+    toggleSelectAll() {
+        let codes = this._currentCategory === 'all'
+            ? this._allCodes
+            : this._allCodes.filter(c => c.type === this._currentCategory);
+        if (this._searchKeyword) {
+            const kw = this._searchKeyword;
+            codes = codes.filter(c =>
+                (c.code || '').toLowerCase().includes(kw) ||
+                (c.note || '').toLowerCase().includes(kw) ||
+                (c.type || '').toLowerCase().includes(kw)
+            );
+        }
+        const allIds = codes.map(c => c.id);
+        const allSelected = allIds.every(id => this._selectedCodeIds.has(id));
+        if (allSelected) {
+            allIds.forEach(id => this._selectedCodeIds.delete(id));
+        } else {
+            allIds.forEach(id => this._selectedCodeIds.add(id));
+        }
+        this._updateBatchUI();
+    },
+
+    /** 清空选择 */
+    clearSelection() {
+        this._selectedCodeIds.clear();
+        this._updateBatchUI();
+    },
+
+    /** 更新批量操作 UI 状态（checkbox + 顶部工具栏） */
+    _updateBatchUI() {
+        // 更新所有 checkbox
+        document.querySelectorAll('.rs-code-checkbox').forEach(cb => {
+            const id = parseInt(cb.dataset.id);
+            cb.checked = this._selectedCodeIds.has(id);
+        });
+        // 更新批量操作栏
+        const batchBar = document.getElementById('rsBatchBar');
+        if (batchBar) {
+            const count = this._selectedCodeIds.size;
+            batchBar.style.display = count > 0 ? '' : 'none';
+            const countEl = document.getElementById('rsBatchCount');
+            if (countEl) countEl.textContent = count;
+        }
+        // 更新全选 checkbox
+        const selectAllCb = document.getElementById('rsSelectAll');
+        if (selectAllCb) {
+            let codes = this._currentCategory === 'all'
+                ? this._allCodes
+                : this._allCodes.filter(c => c.type === this._currentCategory);
+            const allIds = codes.map(c => c.id);
+            selectAllCb.checked = allIds.length > 0 && allIds.every(id => this._selectedCodeIds.has(id));
+        }
+    },
+
+    /** 批量删除 */
+    async batchDelete() {
+        const ids = [...this._selectedCodeIds];
+        if (ids.length === 0) return;
+        if (!confirm(`确定要删除选中的 ${ids.length} 个兑换码？`)) return;
+        try {
+            const res = await fetch(`${app.config.apiBase}/admin/redeem/batch/delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                app.showAlert(`已删除 ${data.deleted || ids.length} 个兑换码`, 'success');
+                this._selectedCodeIds.clear();
+                await this._loadAllCodes();
+                this._renderStatsCards();
+                this._renderCategoryTabs();
+                this._renderFilteredCodes();
+            } else throw new Error();
+        } catch { app.showAlert('批量删除失败', 'danger'); }
+    },
+
+    /** 批量启用/停用 */
+    async batchToggleActive(active) {
+        const ids = [...this._selectedCodeIds];
+        if (ids.length === 0) return;
+        const action = active ? '启用' : '停用';
+        if (!confirm(`确定要${action}选中的 ${ids.length} 个兑换码？`)) return;
+        try {
+            const res = await fetch(`${app.config.apiBase}/admin/redeem/batch`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids, is_active: active })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                app.showAlert(`已${action} ${data.updated || ids.length} 个兑换码`, 'success');
+                this._selectedCodeIds.clear();
+                await this._loadAllCodes();
+                this._renderStatsCards();
+                this._renderCategoryTabs();
+                this._renderFilteredCodes();
+            } else throw new Error();
+        } catch { app.showAlert(`批量${action}失败`, 'danger'); }
     },
 
     // ═══════════════════════════════════════════════════
@@ -1365,6 +1595,11 @@ const redeemModule = {
     /** 获取当前选中的预设类型名 */
     _getCurrentPresetType() {
         if (this._selectedPreset === null) return null;
+        if (typeof this._selectedPreset === 'string' && this._selectedPreset.startsWith('cp_')) {
+            const cpIdx = parseInt(this._selectedPreset.replace('cp_', ''));
+            const cp = this._customPresets[cpIdx];
+            return cp ? cp.type : null;
+        }
         if (this._selectedPreset === 'custom') return 'custom';
         const preset = this._presets[this._selectedPreset];
         return preset ? preset.type : null;
@@ -1408,6 +1643,11 @@ const redeemModule = {
         const data = this._collectFormData();
         const key = `redeem_preset_${presetType}`;
         localStorage.setItem(key, JSON.stringify(data));
+        // 刷新预设卡片以实时反映保存的配置
+        this._renderPresetGrid();
+        // 重新高亮当前选中的卡片
+        const card = document.querySelector(`.redeem-preset-card[data-idx="${this._selectedPreset}"]`);
+        if (card) card.classList.add('selected');
         app.showAlert(`已保存「${presetType}」的默认预设`, 'success');
     },
 
@@ -1420,6 +1660,8 @@ const redeemModule = {
         }
         const key = `redeem_preset_${presetType}`;
         localStorage.removeItem(key);
+        // 刷新卡片
+        this._renderPresetGrid();
         // 重新选中该预设以加载服务器默认值
         this.selectPreset(this._selectedPreset);
         app.showAlert(`已恢复「${presetType}」的默认配置`, 'success');
@@ -1432,5 +1674,100 @@ const redeemModule = {
             const saved = localStorage.getItem(key);
             return saved ? JSON.parse(saved) : null;
         } catch { return null; }
-    }
+    },
+
+    // ═══════════════════════════════════════════════════
+    // 自定义预设管理（localStorage 持久化）
+    // ═══════════════════════════════════════════════════
+
+    /** 从 localStorage 加载自定义预设列表 */
+    _loadCustomPresets() {
+        try {
+            const saved = localStorage.getItem('redeem_custom_presets');
+            this._customPresets = saved ? JSON.parse(saved) : [];
+        } catch { this._customPresets = []; }
+    },
+
+    /** 保存自定义预设列表到 localStorage */
+    _saveCustomPresets() {
+        localStorage.setItem('redeem_custom_presets', JSON.stringify(this._customPresets));
+    },
+
+    /** 另存为新预设 */
+    saveAsNewPreset() {
+        const name = prompt('请输入新预设的名称:');
+        if (!name || !name.trim()) return;
+        const formData = this._collectFormData();
+        const typeName = prompt('请输入类型标识（英文，用于分类）:', 'custom_' + Date.now().toString(36));
+        if (!typeName || !typeName.trim()) return;
+
+        this._loadCustomPresets();
+        this._customPresets.push({
+            name: name.trim(),
+            type: typeName.trim(),
+            payload: {
+                theme: formData.theme,
+                bonus: formData.bonus,
+                daily_limit_bonus: formData.daily_limit_bonus,
+                tag: formData.tag
+            },
+            max_uses: formData.max_uses,
+            formData: formData
+        });
+        this._saveCustomPresets();
+        // 同时保存为该类型的默认预设
+        const key = `redeem_preset_${typeName.trim()}`;
+        localStorage.setItem(key, JSON.stringify(formData));
+        this._renderPresetGrid();
+        app.showAlert(`已创建新预设「${name.trim()}」`, 'success');
+    },
+
+    /** 删除自定义预设 */
+    deleteCustomPreset(idx) {
+        if (!confirm('确定要删除此自定义预设？')) return;
+        this._loadCustomPresets();
+        const cp = this._customPresets[idx];
+        if (cp) {
+            localStorage.removeItem(`redeem_preset_${cp.type}`);
+        }
+        this._customPresets.splice(idx, 1);
+        this._saveCustomPresets();
+        this._renderPresetGrid();
+        app.showAlert('已删除自定义预设', 'success');
+    },
+
+    // ═══════════════════════════════════════════════════
+    // 分类备注管理（localStorage 持久化）
+    // ═══════════════════════════════════════════════════
+
+    /** 从 localStorage 加载分类备注 */
+    _loadCategoryNotes() {
+        try {
+            const saved = localStorage.getItem('redeem_category_notes');
+            this._categoryNotes = saved ? JSON.parse(saved) : {};
+        } catch { this._categoryNotes = {}; }
+    },
+
+    /** 保存单个分类的备注 */
+    _saveCategoryNote(type, note) {
+        this._loadCategoryNotes();
+        if (note) {
+            this._categoryNotes[type] = note;
+        } else {
+            delete this._categoryNotes[type];
+        }
+        localStorage.setItem('redeem_category_notes', JSON.stringify(this._categoryNotes));
+    },
+
+    /** 编辑分类备注 */
+    editCategoryNote(type) {
+        this._loadCategoryNotes();
+        const current = this._categoryNotes[type] || '';
+        const note = prompt(`编辑「${type}」类别的备注:`, current);
+        if (note === null) return;
+        this._saveCategoryNote(type, note.trim());
+        this._renderCategoryTabs();
+        app.showAlert(note.trim() ? '备注已保存' : '备注已清除', 'success');
+    },
 };
+

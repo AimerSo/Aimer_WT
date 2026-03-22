@@ -1729,3 +1729,160 @@
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* ============================================
+   批量操作栏
+   ============================================ */
+
+.rs-batch-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(59, 130, 246, 0.06);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-radius: 12px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    animation: batchBarSlideIn 0.2s ease-out;
+}
+
+@keyframes batchBarSlideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.rs-batch-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-secondary, #475569);
+}
+
+.rs-batch-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.rs-batch-btn {
+    padding: 5px 12px;
+    font-size: 12px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: unset;
+}
+
+.rs-batch-btn.danger {
+    color: var(--danger, #ef4444);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.rs-batch-btn.danger:hover {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: var(--danger, #ef4444);
+}
+
+.rs-select-all-cb {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--primary, #3b82f6);
+}
+
+/* 兑换码列表中的 checkbox */
+.rs-code-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--primary, #3b82f6);
+    flex-shrink: 0;
+    margin: 0;
+}
+
+/* ============================================
+   分类标签栏操作按钮
+   ============================================ */
+
+.rs-cat-tab {
+    position: relative;
+}
+
+.rs-cat-action-btn {
+    display: none;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    border-radius: 4px;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.5;
+    transition: opacity 0.15s, background 0.15s;
+    flex-shrink: 0;
+}
+
+.rs-cat-tab:hover .rs-cat-action-btn {
+    display: inline-flex;
+}
+
+.rs-cat-action-btn:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.rs-cat-tab.active .rs-cat-action-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* 分类备注标记点 */
+.rs-cat-note-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #f59e0b;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.rs-cat-tab.active .rs-cat-note-dot {
+    background: rgba(255, 255, 255, 0.7);
+}
+
+/* ============================================
+   自定义预设卡片删除按钮
+   ============================================ */
+
+.preset-delete-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    background: rgba(239, 68, 68, 0.08);
+    color: #ef4444;
+    border-radius: 50%;
+    font-size: 11px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.redeem-preset-card:hover .preset-delete-btn {
+    display: flex;
+}
+
+.preset-delete-btn:hover {
+    background: #ef4444;
+    color: #fff;
+}
+

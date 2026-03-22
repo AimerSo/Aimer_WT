@@ -11,8 +11,34 @@
                 <button class="btn rs-icon-btn" onclick="redeemModule.refreshStats()" title="刷新">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                 </button>
-                <button class="btn rs-icon-btn" onclick="redeemModule.exportCodes()" title="导出CSV">
+                <button class="btn rs-icon-btn" onclick="redeemModule.exportCodesForDistribution()" title="导出分发文本">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </button>
+                <button class="btn rs-icon-btn" onclick="redeemModule.exportCodes()" title="导出CSV">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- 批量操作栏（选中时显示） -->
+        <div class="rs-batch-bar" id="rsBatchBar" style="display: none;">
+            <div class="rs-batch-left">
+                <input type="checkbox" id="rsSelectAll" class="rs-select-all-cb" onclick="redeemModule.toggleSelectAll()">
+                <span>已选中 <strong id="rsBatchCount">0</strong> 个</span>
+                <button class="btn rs-batch-btn" onclick="redeemModule.clearSelection()">取消选择</button>
+            </div>
+            <div class="rs-batch-right">
+                <button class="btn rs-batch-btn" onclick="redeemModule.batchToggleActive(true)" title="批量启用">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    启用
+                </button>
+                <button class="btn rs-batch-btn" onclick="redeemModule.batchToggleActive(false)" title="批量停用">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4" y1="4" x2="20" y2="20"/></svg>
+                    停用
+                </button>
+                <button class="btn rs-batch-btn danger" onclick="redeemModule.batchDelete()" title="批量删除">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    删除
                 </button>
             </div>
         </div>

@@ -450,10 +450,51 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 			c.JSON(200, gin.H{"status": "success"})
 		})
 
+		// 批量删除兑换码
+		redeem.POST("/batch/delete", func(c *gin.Context) {
+			var req struct {
+				IDs []uint `json:"ids"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil || len(req.IDs) == 0 {
+				c.JSON(400, gin.H{"error": "参数错误"})
+				return
+			}
+			result := db.Where("id IN ?", req.IDs).Delete(&RedeemCode{})
+			if result.Error != nil {
+				c.JSON(500, gin.H{"error": "批量删除失败"})
+				return
+			}
+			log.Printf("[Redeem] 批量删除 %d 个兑换码", result.RowsAffected)
+			c.JSON(200, gin.H{"status": "success", "deleted": result.RowsAffected})
+		})
+
+		// 批量更新兑换码状态（启用/停用）
+		redeem.PUT("/batch", func(c *gin.Context) {
+			var req struct {
+				IDs      []uint `json:"ids"`
+				IsActive *bool  `json:"is_active"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil || len(req.IDs) == 0 || req.IsActive == nil {
+				c.JSON(400, gin.H{"error": "参数错误"})
+				return
+			}
+			result := db.Model(&RedeemCode{}).Where("id IN ?", req.IDs).Update("is_active", *req.IsActive)
+			if result.Error != nil {
+				c.JSON(500, gin.H{"error": "批量更新失败"})
+				return
+			}
+			action := "启用"
+			if !*req.IsActive {
+				action = "停用"
+			}
+			log.Printf("[Redeem] 批量%s %d 个兑换码", action, result.RowsAffected)
+			c.JSON(200, gin.H{"status": "success", "updated": result.RowsAffected})
+		})
+
 		// 使用记录查询
 		redeem.GET("/records", func(c *gin.Context) {
 			var records []RedeemRecord
-			db.Order("created_at DESC").Limit(200).Find(&records)
+			db.Order("created_at DESC").Limit(1000).Find(&records)
 
 			result := make([]map[string]interface{}, len(records))
 			for i, r := range records {
