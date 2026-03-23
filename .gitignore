@@ -92,6 +92,7 @@ web/redeem/redeem_codes.local.js
 AimerWT_Telemetry/*.exe
 AimerWT_Telemetry/*.exe~
 AimerWT_Telemetry/AimerWT_Telemetry_linux
+AimerWT_Telemetry/AimerWT_Telemetry
 
 # 遥测控制面板（本地开发工具，不上传）
 遥测控制/
@@ -110,5 +111,7 @@ AimerWT_Telemetry/router_test.go
 # 广告图片上传目录（运行时生成，不上传）
 AimerWT_Telemetry/uploads/
 
-# 遥测数据库（运行时生成，不上传）
+# 遥测数据库及 SQLite WAL 临时文件（运行时生成，不上传）
 AimerWT_Telemetry/telemetry.db
+AimerWT_Telemetry/telemetry.db-shm
+AimerWT_Telemetry/telemetry.db-wal
