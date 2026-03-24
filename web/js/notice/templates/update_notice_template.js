@@ -50,7 +50,7 @@
             '  </div>' +
             '  <div class="notice-react-content custom-scrollbar">' + bodyHtml + '</div>' +
             '  <div class="notice-react-footer">' +
-            '    <p>Aimer WT • 感谢支持，正在努力开发中！</p>' +
+            (helpers.buildReactionBarHtml ? helpers.buildReactionBarHtml(item.id) : '') +
             '    <button class="notice-react-ack" type="button" data-notice-close="1"><i class="ri-check-line"></i> 我已知晓</button>' +
             '  </div>' +
             '</div>';

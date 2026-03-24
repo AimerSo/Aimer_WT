@@ -731,6 +731,14 @@ class AppApi:
                     self._last_notice_items_state = notice_state
                     self._save_server_cache(notice_items=mapped)
 
+            # 6.5 公告表情反应摘要注入
+            notice_reactions = config.get("notice_reactions")
+            if isinstance(notice_reactions, list):
+                reactions_json = json.dumps(notice_reactions, ensure_ascii=False)
+                self._window.evaluate_js(
+                    f"(function(){{ window._noticeReactionsData = {reactions_json}; }})()"
+                )
+
             # 7. 项目状态远程控制
             project_status = config.get("project_status", "")
             project_last_update = config.get("project_last_update", "")

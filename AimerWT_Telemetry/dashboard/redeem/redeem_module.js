@@ -16,6 +16,14 @@ const redeemModule = {
     _selectedCodeIds: new Set(),
     _customPresets: [],
     _categoryNotes: {},
+    _presetGroups: [],
+    _presetGroupCollapsed: {},
+
+    // 默认分组定义（type → group 映射）
+    _defaultPresetGroups: [
+        { id: 'sponsor', name: '支持者系列', types: ['sponsor_1', 'sponsor_2', 'sponsor_3', 'sponsor_4'], color: '#ec4899' },
+        { id: 'streamer', name: '主播系列', types: ['streamer', 'streamer_share'], color: '#06b6d4' }
+    ],
 
     // 预设类型 → 弹窗样式文件映射
     _popupStyleMap: {
@@ -237,21 +245,23 @@ const redeemModule = {
         const grid = document.getElementById('redeemPresetGrid');
         if (!grid) return;
 
-        // 加载自定义预设和分类备注
         this._loadCustomPresets();
         this._loadCategoryNotes();
+        this._loadPresetGroups();
 
-        const cards = this._presets.map((p, idx) => {
-            // 优先从 localStorage 读取用户保存的自定义默认值
-            const savedDefaults = this._loadSavedDefaults(p.type);
-            let displayPayload = p.payload;
-            if (savedDefaults) {
-                displayPayload = JSON.stringify({
-                    theme: savedDefaults.theme || '',
-                    bonus: savedDefaults.bonus || 0,
-                    daily_limit_bonus: savedDefaults.daily_limit_bonus || 0,
-                    tag: savedDefaults.tag || ''
-                });
+        // 构建所有预设卡片 HTML 的辅助方法
+        const buildCard = (p, idx, isCustom = false) => {
+            let displayPayload = isCustom ? JSON.stringify(p.payload) : p.payload;
+            if (!isCustom) {
+                const savedDefaults = this._loadSavedDefaults(p.type);
+                if (savedDefaults) {
+                    displayPayload = JSON.stringify({
+                        theme: savedDefaults.theme || '',
+                        bonus: savedDefaults.bonus || 0,
+                        daily_limit_bonus: savedDefaults.daily_limit_bonus || 0,
+                        tag: savedDefaults.tag || ''
+                    });
+                }
             }
             const rewards = this.parsePayloadRewards(displayPayload);
             const rewardHtml = rewards.map(r =>
@@ -260,33 +270,93 @@ const redeemModule = {
                     <span>${r.text}</span>
                 </div>`
             ).join('');
-
-            return `<div class="redeem-preset-card" data-idx="${idx}" onclick="redeemModule.selectPreset(${idx})">
-                <div class="preset-name">${p.label}</div>
-                <div class="preset-type">${p.type}</div>
+            const dataIdx = isCustom ? `cp_${idx}` : idx;
+            const onclickVal = isCustom ? `redeemModule.selectPreset('cp_${idx}')` : `redeemModule.selectPreset(${idx})`;
+            const deleteBtn = isCustom ? `<button class="preset-delete-btn" onclick="event.stopPropagation(); redeemModule.deleteCustomPreset(${idx})" title="删除此预设">✕</button>` : '';
+            return `<div class="redeem-preset-card" data-idx="${dataIdx}" onclick="${onclickVal}">
+                <div class="preset-name">${this._escapeHtml(isCustom ? p.name : p.label)}</div>
+                <div class="preset-type">${this._escapeHtml(isCustom ? p.type : p.type)}</div>
                 <div class="preset-rewards">${rewardHtml}</div>
+                ${deleteBtn}
             </div>`;
-        }).join('');
+        };
 
-        // 自定义预设卡片（用户创建的额外预设）
-        const customPresetCards = this._customPresets.map((cp, idx) => {
-            const rewards = this.parsePayloadRewards(JSON.stringify(cp.payload));
-            const rewardHtml = rewards.map(r =>
-                `<div class="preset-reward-item">
-                    <div class="reward-icon ${r.type}">${r.icon}</div>
-                    <span>${r.text}</span>
-                </div>`
-            ).join('');
-            return `<div class="redeem-preset-card" data-idx="cp_${idx}" onclick="redeemModule.selectPreset('cp_${idx}')">
-                <div class="preset-name">${this._escapeHtml(cp.name)}</div>
-                <div class="preset-type">${this._escapeHtml(cp.type)}</div>
-                <div class="preset-rewards">${rewardHtml}</div>
-                <button class="preset-delete-btn" onclick="event.stopPropagation(); redeemModule.deleteCustomPreset(${idx})" title="删除此预设">✕</button>
+        // 分组索引：type → groupId
+        const typeToGroup = {};
+        this._presetGroups.forEach(g => {
+            (g.types || []).forEach(t => { typeToGroup[t] = g.id; });
+        });
+
+        // 收集各组的卡片
+        const groupCards = {};
+        this._presetGroups.forEach(g => { groupCards[g.id] = []; });
+        const ungrouped = [];
+
+        // 后端预设
+        this._presets.forEach((p, idx) => {
+            const gid = typeToGroup[p.type];
+            const html = buildCard(p, idx, false);
+            if (gid && groupCards[gid]) {
+                groupCards[gid].push(html);
+            } else {
+                ungrouped.push(html);
+            }
+        });
+
+        // 自定义预设
+        this._customPresets.forEach((cp, idx) => {
+            const gid = typeToGroup[cp.type];
+            const html = buildCard(cp, idx, true);
+            if (gid && groupCards[gid]) {
+                groupCards[gid].push(html);
+            } else {
+                ungrouped.push(html);
+            }
+        });
+
+        // 渲染分组
+        let html = '';
+        this._presetGroups.forEach(g => {
+            const cards = groupCards[g.id] || [];
+            if (cards.length === 0) return;
+            const collapsed = this._presetGroupCollapsed[g.id];
+            const chevronIcon = collapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line';
+            html += `<div class="preset-group-section">
+                <div class="preset-group-header" onclick="redeemModule.togglePresetGroup('${g.id}')">
+                    <i class="${chevronIcon} preset-group-chevron"></i>
+                    <span class="preset-group-dot" style="background:${g.color || '#94a3b8'}"></span>
+                    <span class="preset-group-name" id="pgName_${g.id}">${this._escapeHtml(g.name)}</span>
+                    <span class="preset-group-count">${cards.length}</span>
+                    <div class="preset-group-actions">
+                        <button class="preset-group-action-btn" onclick="event.stopPropagation(); redeemModule.startRenameGroup('${g.id}')" title="重命名"><i class="ri-pencil-line"></i></button>
+                        <button class="preset-group-action-btn danger" onclick="event.stopPropagation(); redeemModule.deletePresetGroup('${g.id}')" title="删除分组"><i class="ri-delete-bin-line"></i></button>
+                    </div>
+                </div>
+                <div class="redeem-preset-grid preset-group-grid" style="${collapsed ? 'display:none;' : ''}">
+                    ${cards.join('')}
+                </div>
             </div>`;
-        }).join('');
+        });
 
-        // 自定义卡片
-        const customCard = `<div class="redeem-preset-card" data-idx="custom" onclick="redeemModule.selectPreset('custom')" style="border-style: dashed;">
+        // 未分组
+        if (ungrouped.length > 0) {
+            const collapsed = this._presetGroupCollapsed['__ungrouped'];
+            const chevronIcon = collapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line';
+            html += `<div class="preset-group-section">
+                <div class="preset-group-header" onclick="redeemModule.togglePresetGroup('__ungrouped')">
+                    <i class="${chevronIcon} preset-group-chevron"></i>
+                    <span class="preset-group-dot" style="background:#94a3b8"></span>
+                    <span class="preset-group-name">其他</span>
+                    <span class="preset-group-count">${ungrouped.length}</span>
+                </div>
+                <div class="redeem-preset-grid preset-group-grid" style="${collapsed ? 'display:none;' : ''}">
+                    ${ungrouped.join('')}
+                </div>
+            </div>`;
+        }
+
+        // 自定义卡片（始终显示在最后）
+        html += `<div style="margin-top:8px;"><div class="redeem-preset-grid"><div class="redeem-preset-card" data-idx="custom" onclick="redeemModule.selectPreset('custom')" style="border-style: dashed;">
             <div class="preset-name">✨ 自定义</div>
             <div class="preset-type">custom</div>
             <div class="preset-rewards">
@@ -295,9 +365,9 @@ const redeemModule = {
                     <span>自由配置所有参数</span>
                 </div>
             </div>
-        </div>`;
+        </div></div></div>`;
 
-        grid.innerHTML = cards + customPresetCards + customCard;
+        grid.innerHTML = html;
     },
 
     /** 选中预设类型 */
@@ -1768,6 +1838,231 @@ const redeemModule = {
         this._saveCategoryNote(type, note.trim());
         this._renderCategoryTabs();
         app.showAlert(note.trim() ? '备注已保存' : '备注已清除', 'success');
+    },
+
+    // ═══════════════════════════════════════════════════
+    // 预设分组管理（localStorage 持久化）
+    // ═══════════════════════════════════════════════════
+
+    /** 从 localStorage 加载分组配置，首次使用默认分组 */
+    _loadPresetGroups() {
+        try {
+            const saved = localStorage.getItem('redeem_preset_groups');
+            if (saved) {
+                this._presetGroups = JSON.parse(saved);
+            } else {
+                this._presetGroups = JSON.parse(JSON.stringify(this._defaultPresetGroups));
+            }
+        } catch {
+            this._presetGroups = JSON.parse(JSON.stringify(this._defaultPresetGroups));
+        }
+        // 折叠状态
+        try {
+            const saved = localStorage.getItem('redeem_preset_group_collapsed');
+            this._presetGroupCollapsed = saved ? JSON.parse(saved) : {};
+        } catch { this._presetGroupCollapsed = {}; }
+    },
+
+    /** 保存分组配置到 localStorage */
+    _savePresetGroups() {
+        localStorage.setItem('redeem_preset_groups', JSON.stringify(this._presetGroups));
+    },
+
+    /** 保存折叠状态 */
+    _saveGroupCollapsed() {
+        localStorage.setItem('redeem_preset_group_collapsed', JSON.stringify(this._presetGroupCollapsed));
+    },
+
+    /** 折叠/展开分组 */
+    togglePresetGroup(groupId) {
+        this._presetGroupCollapsed[groupId] = !this._presetGroupCollapsed[groupId];
+        this._saveGroupCollapsed();
+        this._renderPresetGrid();
+    },
+
+    /** 编辑分组（弹窗操作菜单） */
+    editPresetGroup(groupId) {
+        this._loadPresetGroups();
+        const group = this._presetGroups.find(g => g.id === groupId);
+        if (!group) return;
+
+        const action = prompt(
+            `分组「${group.name}」操作：\n1. 重命名\n2. 删除分组\n3. 取消\n\n请输入数字:`,
+            '1'
+        );
+        if (!action) return;
+
+        switch (action.trim()) {
+            case '1':
+                this.renamePresetGroup(groupId);
+                break;
+            case '2':
+                this.deletePresetGroup(groupId);
+                break;
+        }
+    },
+
+    /** 在分组标题旁 inline 重命名（双击或按钮触发） */
+    startRenameGroup(groupId) {
+        this._loadPresetGroups();
+        const group = this._presetGroups.find(g => g.id === groupId);
+        if (!group) return;
+
+        const nameEl = document.getElementById(`pgName_${groupId}`);
+        if (!nameEl) return;
+
+        const oldName = group.name;
+        nameEl.innerHTML = `<input type="text" class="preset-group-rename-input" value="${this._escapeHtml(oldName)}" 
+            onclick="event.stopPropagation()" 
+            onkeydown="if(event.key==='Enter'){redeemModule.confirmRenameGroup('${groupId}',this.value);} if(event.key==='Escape'){redeemModule._renderPresetGrid();}"
+            onblur="redeemModule.confirmRenameGroup('${groupId}',this.value)">`;
+        const input = nameEl.querySelector('input');
+        if (input) { input.focus(); input.select(); }
+    },
+
+    /** 确认 inline 重命名 */
+    confirmRenameGroup(groupId, newName) {
+        if (!newName || !newName.trim()) {
+            this._renderPresetGrid();
+            return;
+        }
+        this._loadPresetGroups();
+        const group = this._presetGroups.find(g => g.id === groupId);
+        if (!group) return;
+        group.name = newName.trim();
+        this._savePresetGroups();
+        this._renderPresetGrid();
+        app.showAlert(`分组已重命名为「${newName.trim()}」`, 'success');
+    },
+
+    /** 创建新分组 */
+    createPresetGroup() {
+        const name = prompt('请输入新分组的名称:');
+        if (!name || !name.trim()) return;
+        const id = 'group_' + Date.now().toString(36);
+        this._loadPresetGroups();
+        this._presetGroups.push({ id, name: name.trim(), types: [], color: '#' + Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0') });
+        this._savePresetGroups();
+        this._renderPresetGrid();
+        app.showAlert(`已创建分组「${name.trim()}」`, 'success');
+    },
+
+    /** 重命名分组（prompt 方式，作为后备） */
+    renamePresetGroup(groupId) {
+        this._loadPresetGroups();
+        const group = this._presetGroups.find(g => g.id === groupId);
+        if (!group) return;
+        const newName = prompt(`重命名分组「${group.name}」:`, group.name);
+        if (!newName || !newName.trim()) return;
+        group.name = newName.trim();
+        this._savePresetGroups();
+        this._renderPresetGrid();
+        app.showAlert(`分组已重命名为「${newName.trim()}」`, 'success');
+    },
+
+    /** 删除分组（预设卡片回到未分组） */
+    deletePresetGroup(groupId) {
+        this._loadPresetGroups();
+        if (!confirm('确定要删除此分组？分组内的预设将移至「其他」。')) return;
+        this._presetGroups = this._presetGroups.filter(g => g.id !== groupId);
+        this._savePresetGroups();
+        this._renderPresetGrid();
+        app.showAlert('分组已删除', 'success');
+    },
+
+    /** 显示分组管理面板（弹窗） */
+    showGroupManager() {
+        this._loadPresetGroups();
+        const allTypes = this._presets.map(p => ({ type: p.type, label: p.label }));
+        this._customPresets.forEach(cp => {
+            if (!allTypes.find(t => t.type === cp.type)) {
+                allTypes.push({ type: cp.type, label: cp.name });
+            }
+        });
+
+        // 构建 type → 当前所属 group 映射
+        const typeToGroup = {};
+        this._presetGroups.forEach(g => {
+            (g.types || []).forEach(t => { typeToGroup[t] = g.id; });
+        });
+
+        let groupListHtml = this._presetGroups.map(g => {
+            const memberHtml = (g.types || []).map(t => {
+                const label = allTypes.find(at => at.type === t)?.label || t;
+                return `<span class="pgm-member">${this._escapeHtml(label)} <span class="pgm-member-remove" onclick="redeemModule._pgmRemoveType('${g.id}','${t}')">×</span></span>`;
+            }).join('');
+            return `<div class="pgm-group">
+                <div class="pgm-group-header">
+                    <span class="preset-group-dot" style="background:${g.color || '#94a3b8'}"></span>
+                    <span class="pgm-group-name">${this._escapeHtml(g.name)}</span>
+                    <button class="pgm-btn" onclick="redeemModule.renamePresetGroup('${g.id}'); redeemModule.showGroupManager();">重命名</button>
+                    <button class="pgm-btn danger" onclick="redeemModule.deletePresetGroup('${g.id}'); redeemModule._pgmClose();">删除</button>
+                </div>
+                <div class="pgm-members">${memberHtml || '<span style="color:var(--text-muted);font-size:11px;">空分组</span>'}</div>
+                <div class="pgm-add-row">
+                    <select class="input pgm-add-select" id="pgmAddSelect_${g.id}" style="font-size:11px;padding:3px 6px;">
+                        <option value="">添加预设到此组...</option>
+                        ${allTypes.filter(t => !typeToGroup[t.type] || typeToGroup[t.type] !== g.id).map(t =>
+                            `<option value="${t.type}">${this._escapeHtml(t.label)} (${t.type})</option>`
+                        ).join('')}
+                    </select>
+                    <button class="pgm-btn primary" onclick="redeemModule._pgmAddType('${g.id}')">添加</button>
+                </div>
+            </div>`;
+        }).join('');
+
+        const modalHtml = `
+            <div class="modal-mask show" id="pgmMask" onclick="redeemModule._pgmClose()"></div>
+            <div class="modal show" id="pgmModal" style="width:520px;">
+                <div class="modal-header">
+                    <h3>管理预设分组</h3>
+                    <button class="btn" onclick="redeemModule._pgmClose()" style="padding:4px 8px;">✕</button>
+                </div>
+                <div class="modal-body" style="max-height:60vh;overflow-y:auto;">
+                    ${groupListHtml}
+                    <button class="btn primary" onclick="redeemModule.createPresetGroup(); redeemModule.showGroupManager();" style="margin-top:12px;width:100%;">
+                        + 新建分组
+                    </button>
+                </div>
+            </div>`;
+
+        // 移除旧弹窗
+        this._pgmClose();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    },
+
+    /** 分组管理弹窗：关闭 */
+    _pgmClose() {
+        document.getElementById('pgmMask')?.remove();
+        document.getElementById('pgmModal')?.remove();
+        this._renderPresetGrid();
+    },
+
+    /** 分组管理弹窗：添加 type 到组 */
+    _pgmAddType(groupId) {
+        const select = document.getElementById(`pgmAddSelect_${groupId}`);
+        const type = select?.value;
+        if (!type) return;
+        // 从其他组移除
+        this._presetGroups.forEach(g => {
+            g.types = (g.types || []).filter(t => t !== type);
+        });
+        const group = this._presetGroups.find(g => g.id === groupId);
+        if (group) {
+            group.types.push(type);
+        }
+        this._savePresetGroups();
+        this.showGroupManager();
+    },
+
+    /** 分组管理弹窗：从组中移除 type */
+    _pgmRemoveType(groupId, type) {
+        const group = this._presetGroups.find(g => g.id === groupId);
+        if (group) {
+            group.types = (group.types || []).filter(t => t !== type);
+            this._savePresetGroups();
+            this.showGroupManager();
+        }
     },
 };
 

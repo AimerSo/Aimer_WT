@@ -263,6 +263,27 @@ const app = {
     },
 
     /**
+     * 处理社区菜单点击
+     */
+    handleCommunityMenuClick(menuItem) {
+        const isExpanded = menuItem.classList.contains('expanded');
+        const submenu = document.getElementById('communitySubmenu');
+
+        if (isExpanded) {
+            menuItem.classList.remove('expanded');
+            submenu.classList.remove('show');
+        } else {
+            menuItem.classList.add('expanded');
+            submenu.classList.add('show');
+
+            const firstSubmenuItem = submenu.querySelector('.submenu-item');
+            if (firstSubmenuItem) {
+                this.switchView('emoji_permission', firstSubmenuItem);
+            }
+        }
+    },
+
+    /**
      * 切换视图
      */
     async switchView(viewId, menuItem) {
@@ -347,6 +368,9 @@ const app = {
                 break;
             case 'ad_stats':
                 this.loadAdStats();
+                break;
+            case 'emoji_permission':
+                this.initEmojiPermission();
                 break;
             default:
                 break;
@@ -1126,8 +1150,6 @@ const app = {
      * 设置刷新状态
      */
     setRefreshing(isRefreshing) {
-        const app = document.querySelector('.view-container.active .app') || document.querySelector('.app');
-        if (app) app.classList.toggle('refreshing', isRefreshing);
         const refreshBtn = document.getElementById('refreshBtn');
         if (refreshBtn) refreshBtn.classList.toggle('loading', isRefreshing);
     },
@@ -6376,6 +6398,552 @@ Object.assign(app, {
         } catch {
             this.showAlert('删除失败', 'danger');
         }
+    },
+
+    // ═══════════════════════════════════════════════════════
+    // 表情权限管理
+    // ═══════════════════════════════════════════════════════
+
+    _epState: {
+        permissions: {},
+        currentGroup: 'free',
+        currentCategory: 'all',
+        groups: [],
+        searchText: ''
+    },
+
+    /**
+     * 权限组定义（免费用户 + 标签组，与 seedSystemTags 对应）
+     */
+    _epGroupDefs: [
+        { id: 'free',      name: '免费用户',   icon: '🆓', color: '#6b7280' },
+        { id: 'tester',    name: '测试志愿者', icon: '🧪', color: '#64748b' },
+        { id: 'friend',    name: '朋友',       icon: '👤', color: '#64748b' },
+        { id: 'risk',      name: '风险用户',   icon: '⚠️', color: '#ef4444' },
+        { id: 'vip',       name: 'VIP',        icon: '⭐', color: '#f59e0b' },
+        { id: 'internal',  name: '内测组',     icon: '🔧', color: '#8b5cf6' },
+        { id: 'sponsor_1', name: '一级赞助者', icon: '❤️', color: '#f472b6' },
+        { id: 'sponsor_2', name: '二级赞助者', icon: '💖', color: '#ec4899' },
+        { id: 'sponsor_3', name: '三级赞助者', icon: '💝', color: '#db2777' },
+        { id: 'sponsor_4', name: '四级赞助者', icon: '👑', color: '#a855f7' },
+        { id: 'streamer',  name: '主播',       icon: '📺', color: '#06b6d4' }
+    ],
+
+    /**
+     * 初始化表情权限管理页面
+     */
+    async initEmojiPermission() {
+        if (!window.EMOJI_DATABASE) {
+            console.error('EMOJI_DATABASE not loaded');
+            return;
+        }
+        this._epState.groups = this._epGroupDefs;
+        this._epState.currentGroup = 'free';
+        this._epState.currentCategory = this._epGroupDefs.length ? EMOJI_DATABASE.categories[0].id : 'smileys';
+        this._epState.searchText = '';
+
+        await this._epLoadPermissions();
+        this._epRenderSummary();
+        this._epRenderGroupList();
+        this._epRenderCategoryTabs();
+        this._epRenderGrid();
+        this._epRenderSelectedPanel();
+    },
+
+    /**
+     * 从后端加载表情权限配置
+     */
+    async _epLoadPermissions() {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/emoji-permissions`);
+            if (res.ok) {
+                const data = await res.json();
+                this._epState.permissions = data.permissions || {};
+            }
+        } catch (e) {
+            console.warn('加载表情权限失败:', e);
+        }
+        // 确保每个组有初始数据
+        this._epGroupDefs.forEach(g => {
+            if (!this._epState.permissions[g.id]) {
+                this._epState.permissions[g.id] = g.id === 'free' ? [...EMOJI_DATABASE.PRESET_FREE] : [];
+            }
+        });
+    },
+
+    /**
+     * 渲染 KPI 摘要卡片
+     */
+    _epRenderSummary() {
+        const el = document.getElementById('epSummary');
+        if (!el) return;
+        const perms = this._epState.permissions;
+        const configuredCount = Object.keys(perms).filter(k => perms[k] && perms[k].length > 0).length;
+        const totalEmojis = EMOJI_DATABASE.getTotalCount();
+        const allUsed = new Set();
+        Object.values(perms).forEach(arr => (arr || []).forEach(e => allUsed.add(e)));
+
+        el.innerHTML = `
+            <div class="ep-summary-card">
+                <div class="ep-summary-value">${configuredCount}</div>
+                <div class="ep-summary-label">已配置权限组</div>
+            </div>
+            <div class="ep-summary-card">
+                <div class="ep-summary-value">${allUsed.size}</div>
+                <div class="ep-summary-label">使用中的表情</div>
+            </div>
+            <div class="ep-summary-card">
+                <div class="ep-summary-value">${totalEmojis}</div>
+                <div class="ep-summary-label">表情库总量</div>
+            </div>
+        `;
+    },
+
+    /**
+     * 渲染权限组列表
+     */
+    _epRenderGroupList() {
+        const el = document.getElementById('epGroupList');
+        if (!el) return;
+        const perms = this._epState.permissions;
+        el.innerHTML = this._epGroupDefs.map(g => {
+            const count = (perms[g.id] || []).length;
+            const active = this._epState.currentGroup === g.id ? ' active' : '';
+            return `<div class="ep-group-item${active}" onclick="app.epSwitchGroup('${g.id}')">
+                <span class="ep-group-icon" style="background:${g.color}15;color:${g.color}">${g.icon}</span>
+                <span class="ep-group-name">${g.name}</span>
+                <span class="ep-group-count">${count}</span>
+            </div>`;
+        }).join('');
+    },
+
+    /**
+     * 渲染分类 Tab
+     */
+    _epRenderCategoryTabs() {
+        const el = document.getElementById('epCategoryTabs');
+        if (!el) return;
+        const cats = EMOJI_DATABASE.categories;
+        let html = '';
+        cats.forEach(cat => {
+            const active = this._epState.currentCategory === cat.id ? ' active' : '';
+            html += `<div class="ep-category-tab${active}" onclick="app.epSwitchCategory('${cat.id}')">
+                <span class="tab-icon">${cat.icon}</span><span>${cat.name}</span>
+                <span class="tab-count">${cat.emojis.length}</span>
+            </div>`;
+        });
+        el.innerHTML = html;
+    },
+
+    /**
+     * 渲染表情 Grid
+     */
+    _epRenderGrid() {
+        const gridEl = document.getElementById('epEmojiGrid');
+        const countEl = document.getElementById('epSelectedCount');
+        const totalEl = document.getElementById('epTotalCount');
+        const titleEl = document.getElementById('epEditorTitle');
+        if (!gridEl) return;
+
+        // 清理旧的 observer
+        if (this._epScrollObserver) {
+            this._epScrollObserver.disconnect();
+            this._epScrollObserver = null;
+        }
+
+        const currentPerms = this._epState.permissions[this._epState.currentGroup] || [];
+        const permSet = new Set(currentPerms);
+        const search = this._epState.searchText;
+
+        // 获取当前分类要展示的表情
+        let emojis;
+        if (this._epState.currentCategory === 'all') {
+            emojis = EMOJI_DATABASE.getAllEmojis();
+        } else {
+            emojis = EMOJI_DATABASE.getCategoryEmojis(this._epState.currentCategory);
+        }
+
+        // 搜索过滤
+        if (search) {
+            emojis = emojis.filter(e => e.includes(search));
+        }
+
+        // 缓存数据供分批渲染使用
+        this._epChunkedEmojis = emojis;
+        this._epChunkedPermSet = permSet;
+        this._epChunkedIndex = 0;
+
+        // 清空 grid 并渲染首批
+        gridEl.innerHTML = '';
+        this._epRenderNextBatch(gridEl);
+
+        if (countEl) countEl.textContent = currentPerms.length;
+        if (totalEl) totalEl.textContent = EMOJI_DATABASE.getTotalCount();
+
+        // 更新标题
+        const groupDef = this._epGroupDefs.find(g => g.id === this._epState.currentGroup);
+        if (titleEl && groupDef) {
+            titleEl.textContent = `编辑：${groupDef.name}`;
+        }
+    },
+
+    /** 分批渲染表情（每批 120 个），到底通过 IntersectionObserver 触发下一批 */
+    _epRenderNextBatch(gridEl) {
+        const BATCH = 120;
+        const emojis = this._epChunkedEmojis;
+        const permSet = this._epChunkedPermSet;
+        if (!emojis || this._epChunkedIndex >= emojis.length) return;
+
+        const end = Math.min(this._epChunkedIndex + BATCH, emojis.length);
+        const fragment = document.createDocumentFragment();
+        for (let i = this._epChunkedIndex; i < end; i++) {
+            const emoji = emojis[i];
+            const div = document.createElement('div');
+            div.className = 'ep-emoji-cell' + (permSet.has(emoji) ? ' selected' : '');
+            div.textContent = emoji;
+            div.title = emoji;
+            div.onclick = () => this.epToggleEmoji(div, emoji);
+            fragment.appendChild(div);
+        }
+        gridEl.appendChild(fragment);
+        this._epChunkedIndex = end;
+
+        // 若还有更多，添加哨兵元素触发懒加载
+        if (this._epChunkedIndex < emojis.length) {
+            const sentinel = document.createElement('div');
+            sentinel.className = 'ep-load-sentinel';
+            sentinel.style.cssText = 'height:1px;width:100%;grid-column:1/-1;';
+            gridEl.appendChild(sentinel);
+
+            this._epScrollObserver = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting) {
+                    this._epScrollObserver.disconnect();
+                    sentinel.remove();
+                    this._epRenderNextBatch(gridEl);
+                }
+            }, { root: gridEl.closest('.ep-emoji-grid-wrap'), threshold: 0 });
+            this._epScrollObserver.observe(sentinel);
+        }
+    },
+
+    /**
+     * 转义 emoji 中可能影响 onclick 的字符
+     */
+    _epEscapeEmoji(emoji) {
+        return emoji.replace(/'/g, "\\'");
+    },
+
+    /**
+     * 切换权限组
+     */
+    epSwitchGroup(groupId) {
+        this._epState.currentGroup = groupId;
+        this._epRenderGroupList();
+        this._epRenderGrid();
+        this._epRenderSelectedPanel();
+    },
+
+    /**
+     * 切换分类
+     */
+    epSwitchCategory(catId) {
+        this._epState.currentCategory = catId;
+        this._epRenderCategoryTabs();
+        this._epRenderGrid();
+    },
+
+    /**
+     * 搜索过滤
+     */
+    epFilterEmojis() {
+        const input = document.getElementById('epSearchInput');
+        this._epState.searchText = input ? input.value.trim() : '';
+        this._epRenderGrid();
+    },
+
+    /**
+     * 切换单个表情选中状态
+     */
+    epToggleEmoji(el, emoji) {
+        const group = this._epState.currentGroup;
+        let perms = this._epState.permissions[group] || [];
+        const idx = perms.indexOf(emoji);
+        if (idx >= 0) {
+            perms.splice(idx, 1);
+            el.classList.remove('selected');
+        } else {
+            perms.push(emoji);
+            el.classList.add('selected');
+        }
+        this._epState.permissions[group] = perms;
+        // 更新计数
+        const countEl = document.getElementById('epSelectedCount');
+        if (countEl) countEl.textContent = perms.length;
+        // 更新左栏计数和已选面板
+        this._epRenderGroupList();
+        this._epRenderSelectedPanel();
+    },
+
+    /**
+     * 全选当前分类
+     */
+    epSelectAll() {
+        const group = this._epState.currentGroup;
+        let perms = new Set(this._epState.permissions[group] || []);
+        let emojis;
+        if (this._epState.currentCategory === 'all') {
+            emojis = EMOJI_DATABASE.getAllEmojis();
+        } else {
+            emojis = EMOJI_DATABASE.getCategoryEmojis(this._epState.currentCategory);
+        }
+        emojis.forEach(e => perms.add(e));
+        this._epState.permissions[group] = Array.from(perms);
+        this._epRenderGrid();
+        this._epRenderGroupList();
+        this._epRenderSelectedPanel();
+    },
+
+    /**
+     * 全选全部表情
+     */
+    epSelectAllEmojis() {
+        const group = this._epState.currentGroup;
+        this._epState.permissions[group] = [...EMOJI_DATABASE.getAllEmojis()];
+        this._epRenderGrid();
+        this._epRenderGroupList();
+        this._epRenderSelectedPanel();
+    },
+
+    /**
+     * 清空当前组
+     */
+    epClearAll() {
+        const group = this._epState.currentGroup;
+        this._epState.permissions[group] = [];
+        this._epRenderGrid();
+        this._epRenderGroupList();
+        this._epRenderSelectedPanel();
+    },
+
+    /**
+     * 应用预设模板
+     */
+    epApplyPreset(preset) {
+        const group = this._epState.currentGroup;
+        switch (preset) {
+            case 'free':
+                this._epState.permissions[group] = [...EMOJI_DATABASE.PRESET_FREE];
+                break;
+            case 'common':
+                this._epState.permissions[group] = [...EMOJI_DATABASE.getPresetCommon()];
+                break;
+            case 'all':
+                this._epState.permissions[group] = [...EMOJI_DATABASE.getAllEmojis()];
+                break;
+        }
+        this._epRenderGrid();
+        this._epRenderGroupList();
+        this._epRenderSelectedPanel();
+    },
+
+    /**
+     * 渲染已选表情面板（中栏）
+     */
+    _epRenderSelectedPanel() {
+        const gridEl = document.getElementById('epSelectedGrid');
+        const badgeEl = document.getElementById('epSelectedBadge');
+        const titleEl = document.getElementById('epSelectedTitle');
+        if (!gridEl) return;
+
+        const currentPerms = this._epState.permissions[this._epState.currentGroup] || [];
+        if (badgeEl) badgeEl.textContent = currentPerms.length;
+
+        const groupDef = this._epGroupDefs.find(g => g.id === this._epState.currentGroup);
+        if (titleEl && groupDef) {
+            titleEl.textContent = `${groupDef.name} 已选`;
+        }
+
+        if (currentPerms.length === 0) {
+            gridEl.innerHTML = '<div class="ep-selected-empty">暂无已选表情<br>在右侧表情池中点击添加</div>';
+            return;
+        }
+
+        gridEl.innerHTML = currentPerms.map(emoji => {
+            return `<div class="ep-selected-cell" onclick="app.epRemoveSelectedEmoji('${this._epEscapeEmoji(emoji)}')" oncontextmenu="event.preventDefault(); app.epLocateEmoji('${this._epEscapeEmoji(emoji)}')" title="${emoji}  点击取消 | 右键定位">${emoji}</div>`;
+        }).join('');
+    },
+
+    /**
+     * 从已选面板点击移除表情
+     */
+    epRemoveSelectedEmoji(emoji) {
+        const group = this._epState.currentGroup;
+        let perms = this._epState.permissions[group] || [];
+        const idx = perms.indexOf(emoji);
+        if (idx >= 0) {
+            perms.splice(idx, 1);
+            this._epState.permissions[group] = perms;
+            this._epRenderGrid();
+            this._epRenderGroupList();
+            this._epRenderSelectedPanel();
+            const countEl = document.getElementById('epSelectedCount');
+            if (countEl) countEl.textContent = perms.length;
+        }
+    },
+
+    /**
+     * 右键已选表情 → 在表情池中定位
+     */
+    epLocateEmoji(emoji) {
+        // 找到该表情所在的分类
+        const cats = EMOJI_DATABASE.categories;
+        let targetCat = null;
+        for (const cat of cats) {
+            if (cat.emojis.includes(emoji)) {
+                targetCat = cat.id;
+                break;
+            }
+        }
+
+        // 切到对应分类（或全部）
+        if (targetCat && this._epState.currentCategory !== targetCat) {
+            this._epState.currentCategory = targetCat;
+            this._epRenderCategoryTabs();
+            this._epRenderGrid();
+        } else if (!targetCat && this._epState.currentCategory !== 'all') {
+            this._epState.currentCategory = 'all';
+            this._epRenderCategoryTabs();
+            this._epRenderGrid();
+        }
+
+        // 强制渲染全部剩余批次，确保目标 emoji 在 DOM 中
+        const gridEl = document.getElementById('epEmojiGrid');
+        if (gridEl && this._epChunkedEmojis && this._epChunkedIndex < this._epChunkedEmojis.length) {
+            if (this._epScrollObserver) {
+                this._epScrollObserver.disconnect();
+                this._epScrollObserver = null;
+            }
+            const sentinel = gridEl.querySelector('.ep-load-sentinel');
+            if (sentinel) sentinel.remove();
+            // 一次性渲染剩余
+            const permSet = this._epChunkedPermSet;
+            const emojis = this._epChunkedEmojis;
+            const fragment = document.createDocumentFragment();
+            for (let i = this._epChunkedIndex; i < emojis.length; i++) {
+                const e = emojis[i];
+                const div = document.createElement('div');
+                div.className = 'ep-emoji-cell' + (permSet.has(e) ? ' selected' : '');
+                div.textContent = e;
+                div.title = e;
+                div.onclick = () => this.epToggleEmoji(div, e);
+                fragment.appendChild(div);
+            }
+            gridEl.appendChild(fragment);
+            this._epChunkedIndex = emojis.length;
+        }
+
+        // 查找表情池中对应的 cell 并滚动定位
+        requestAnimationFrame(() => {
+            if (!gridEl) return;
+            const cells = gridEl.querySelectorAll('.ep-emoji-cell');
+            for (const cell of cells) {
+                if (cell.textContent.trim() === emoji) {
+                    cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    cell.classList.remove('ep-locate-highlight');
+                    void cell.offsetWidth;
+                    cell.classList.add('ep-locate-highlight');
+                    setTimeout(() => cell.classList.remove('ep-locate-highlight'), 1500);
+                    break;
+                }
+            }
+        });
+    },
+
+    /**
+     * 保存当前组配置
+     */
+    async saveCurrentEmojiGroup() {
+        await this._epSavePermissions();
+        const toast = document.getElementById('epSaveToast');
+        if (toast) {
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+    },
+
+    /**
+     * 保存全部配置
+     */
+    async saveAllEmojiPermissions() {
+        await this._epSavePermissions();
+        this.showAlert('表情权限配置已保存', 'success');
+        this._epRenderSummary();
+    },
+
+    /**
+     * 发送保存请求
+     */
+    async _epSavePermissions() {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/emoji-permissions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ permissions: this._epState.permissions })
+            });
+            if (!res.ok) throw new Error('服务器返回错误');
+        } catch (e) {
+            this.showAlert('保存失败: ' + e.message, 'danger');
+        }
+    },
+
+    /** 剪贴板缓存（复制的表情配置） */
+    _epClipboard: null,
+    _epClipboardGroupName: '',
+
+    /** 复制当前组的表情配置 */
+    epCopyConfig() {
+        const group = this._epState.currentGroup;
+        const perms = this._epState.permissions[group] || [];
+        this._epClipboard = [...perms];
+        const groupDef = this._epGroupDefs.find(g => g.id === group);
+        this._epClipboardGroupName = groupDef ? groupDef.name : group;
+        this.showAlert(`已复制「${this._epClipboardGroupName}」的 ${perms.length} 个表情配置`, 'success');
+    },
+
+    /** 粘贴配置到当前组（追加模式） */
+    epPasteConfig() {
+        if (!this._epClipboard || this._epClipboard.length === 0) {
+            this.showAlert('剪贴板为空，请先复制某个组的配置', 'warning');
+            return;
+        }
+        const group = this._epState.currentGroup;
+        const currentPerms = new Set(this._epState.permissions[group] || []);
+        const before = currentPerms.size;
+        this._epClipboard.forEach(e => currentPerms.add(e));
+        this._epState.permissions[group] = Array.from(currentPerms);
+        const added = currentPerms.size - before;
+        this._epRenderGrid();
+        this._epRenderGroupList();
+        this._epRenderSelectedPanel();
+        const countEl = document.getElementById('epSelectedCount');
+        if (countEl) countEl.textContent = currentPerms.size;
+        this.showAlert(`已从「${this._epClipboardGroupName}」粘贴，新增 ${added} 个表情`, 'success');
+    },
+
+    /** 粘贴配置到当前组（替换模式） */
+    epPasteConfigReplace() {
+        if (!this._epClipboard || this._epClipboard.length === 0) {
+            this.showAlert('剪贴板为空，请先复制某个组的配置', 'warning');
+            return;
+        }
+        const group = this._epState.currentGroup;
+        this._epState.permissions[group] = [...this._epClipboard];
+        this._epRenderGrid();
+        this._epRenderGroupList();
+        this._epRenderSelectedPanel();
+        const countEl = document.getElementById('epSelectedCount');
+        if (countEl) countEl.textContent = this._epClipboard.length;
+        this.showAlert(`已用「${this._epClipboardGroupName}」的配置替换当前组（${this._epClipboard.length} 个）`, 'success');
     }
 });
 

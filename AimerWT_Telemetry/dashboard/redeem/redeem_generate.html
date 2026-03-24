@@ -5,10 +5,14 @@
         </div>
 
         <!-- 预设类型卡片区 -->
-        <div style="margin-bottom: 8px;">
-            <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">选择预设类型或自定义</div>
+        <div style="margin-bottom: 8px; display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size: 13px; color: var(--text-muted);">选择预设类型或自定义</div>
+            <button class="btn" onclick="redeemModule.showGroupManager()" style="font-size:11px; padding:4px 10px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7m0-18H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7m0-18v18"/></svg>
+                管理分组
+            </button>
         </div>
-        <div class="redeem-preset-grid" id="redeemPresetGrid"></div>
+        <div id="redeemPresetGrid"></div>
 
         <!-- 生成配置面板（选中预设后展开） -->
         <div class="redeem-gen-panel" id="redeemGenPanel" style="display: none;">

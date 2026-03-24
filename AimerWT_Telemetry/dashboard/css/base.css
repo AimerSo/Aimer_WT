@@ -1176,15 +1176,7 @@ body {
     font-weight: 600;
 }
 
-/* Refreshing State */
-.app.refreshing .panel,
-.app.refreshing .kpi-card,
-.app.refreshing .toolbar-card,
-.app.refreshing .recent-item,
-.app.refreshing .detail-card {
-    opacity: 0.65;
-    transform: translateY(2px);
-}
+/* Refreshing State — 仅通过刷新按钮旋转动画指示刷新中，不改变面板透明度 */
 
 /* Responsive */
 @media (max-width: 1200px) {

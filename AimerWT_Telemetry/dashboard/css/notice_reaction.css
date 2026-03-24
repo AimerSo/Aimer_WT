@@ -1,0 +1,165 @@
+/* 公告表情反应区域样式 */
+
+.notice-reaction-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 32px;
+    border-top: 1px solid #f3f4f6;
+}
+
+/* 反应胶囊（emoji + 计数） */
+.notice-reaction-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1.5px solid #e5e7eb;
+    background: #fafafa;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    user-select: none;
+    position: relative;
+}
+
+.notice-reaction-pill:hover {
+    background: #f0f0f0;
+    border-color: #d1d5db;
+    transform: translateY(-1px);
+}
+
+.notice-reaction-pill.active {
+    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.4);
+}
+
+.notice-reaction-pill .reaction-emoji {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.notice-reaction-pill .reaction-count {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    min-width: 10px;
+    text-align: center;
+}
+
+.notice-reaction-pill.active .reaction-count {
+    color: #3b82f6;
+}
+
+/* 添加表情按钮 */
+.notice-reaction-add-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    border: 1.5px dashed #d1d5db;
+    background: transparent;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    color: #9ca3af;
+}
+
+.notice-reaction-add-btn:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+    color: #6b7280;
+    transform: translateY(-1px);
+}
+
+/* 表情选择浮层 */
+.notice-reaction-picker {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    z-index: 100;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 10px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    opacity: 0;
+    transform: translateY(6px) scale(0.95);
+    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+    min-width: 260px;
+}
+
+.notice-reaction-picker.show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.notice-reaction-picker-item {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 20px;
+    transition: all 0.12s ease;
+}
+
+.notice-reaction-picker-item:hover {
+    background: #f3f4f6;
+    transform: scale(1.2);
+}
+
+/* hover 用户列表提示 */
+.notice-reaction-tooltip {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    background: rgba(17, 24, 39, 0.92);
+    color: #ffffff;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: nowrap;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    opacity: 0;
+    transition: all 0.15s ease;
+    z-index: 50;
+}
+
+.notice-reaction-pill:hover .notice-reaction-tooltip {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* 反应栏容器相对定位（用于浮层 anchor） */
+.notice-reaction-bar-wrap {
+    position: relative;
+}
+
+@media (max-width: 640px) {
+    .notice-reaction-bar {
+        padding: 10px 16px;
+        gap: 5px;
+    }
+
+    .notice-reaction-picker {
+        grid-template-columns: repeat(6, 1fr);
+        min-width: 220px;
+    }
+}

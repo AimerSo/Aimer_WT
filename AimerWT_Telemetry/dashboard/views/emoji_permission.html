@@ -1,0 +1,102 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">表情权限管理</div>
+                    <div class="panel-sub">按标签组（权限组）管理用户可使用的公告反应表情</div>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn primary" onclick="app.saveAllEmojiPermissions()" id="epSaveAllBtn">
+                        <i class="ri-save-line"></i> 保存全部
+                    </button>
+                </div>
+            </div>
+            <div class="panel-body" style="padding:16px;">
+                <!-- KPI 摘要 -->
+                <div class="ep-summary-grid" id="epSummary"></div>
+
+                <!-- 三栏布局 -->
+                <div class="ep-layout">
+                    <!-- 左栏：权限组列表 -->
+                    <div class="ep-col-left">
+                        <div class="ep-col-title">
+                            <i class="ri-group-line"></i> 权限组
+                        </div>
+                        <div class="ep-group-list" id="epGroupList"></div>
+                    </div>
+
+                    <!-- 中栏：已选表情展示 -->
+                    <div class="ep-col-mid">
+                        <div class="ep-col-title">
+                            <span style="display:flex;align-items:center;gap:6px;flex:1;">
+                                <i class="ri-checkbox-circle-line"></i>
+                                <span id="epSelectedTitle">已选表情</span>
+                                <span class="ep-selected-badge" id="epSelectedBadge">0</span>
+                            </span>
+                        </div>
+                        <div class="ep-mid-toolbar">
+                            <button class="ep-tool-btn" onclick="app.epCopyConfig()" title="复制当前组配置">
+                                <i class="ri-file-copy-line"></i> 复制
+                            </button>
+                            <button class="ep-tool-btn" onclick="app.epPasteConfig()" title="追加粘贴（保留已有+新增剪贴板）">
+                                <i class="ri-clipboard-line"></i> 追加粘贴
+                            </button>
+                            <button class="ep-tool-btn danger" onclick="app.epPasteConfigReplace()" title="替换粘贴（完全覆盖为剪贴板内容）">
+                                <i class="ri-refresh-line"></i> 替换粘贴
+                            </button>
+                        </div>
+                        <div class="ep-selected-hint">点击取消 · 右键定位</div>
+                        <div class="ep-selected-grid-wrap">
+                            <div class="ep-selected-grid" id="epSelectedGrid"></div>
+                        </div>
+                    </div>
+
+                    <!-- 右栏：表情选择器 -->
+                    <div class="ep-col-right">
+                        <div class="ep-col-title" style="justify-content:space-between;">
+                            <span style="display:flex;align-items:center;gap:6px;">
+                                <i class="ri-palette-line"></i>
+                                <span id="epEditorTitle">编辑：免费用户</span>
+                            </span>
+                            <span class="ep-save-toast" id="epSaveToast"><i class="ri-check-line"></i> 已保存</span>
+                        </div>
+                        <div class="ep-right-toolbar">
+                            <div class="ep-actions-row">
+                                <button class="ep-action-btn" onclick="app.epSelectAll()" title="全选当前分类">全选分类</button>
+                                <button class="ep-action-btn" onclick="app.epSelectAllEmojis()" title="全选全部">全选全部</button>
+                                <button class="ep-action-btn danger" onclick="app.epClearAll()" title="清空">清空</button>
+                                <span class="ep-toolbar-sep"></span>
+                                <button class="ep-preset-btn" onclick="app.epApplyPreset('free')" title="基础 20 个常用表情">预设:基础</button>
+                                <button class="ep-preset-btn" onclick="app.epApplyPreset('common')" title="表情+人物+动物自然">预设:常用</button>
+                                <button class="ep-preset-btn" onclick="app.epApplyPreset('all')" title="全部表情">预设:全部</button>
+                            </div>
+                        </div>
+
+                        <!-- 搜索 -->
+                        <div class="ep-search-wrap">
+                            <i class="ri-search-line ep-search-icon"></i>
+                            <input type="text" class="ep-search-input" id="epSearchInput" placeholder="搜索表情（输入 emoji 直接过滤）" oninput="app.epFilterEmojis()">
+                        </div>
+
+                        <!-- 分类 Tab -->
+                        <div class="ep-category-tabs" id="epCategoryTabs"></div>
+
+                        <!-- 统计 -->
+                        <div class="ep-stats">
+                            <span>已选 <span class="ep-stats-count" id="epSelectedCount">0</span> / <span id="epTotalCount">0</span> 个表情</span>
+                            <button class="ep-action-btn primary" onclick="app.saveCurrentEmojiGroup()" style="font-size:11px;padding:4px 12px;">
+                                <i class="ri-save-line"></i> 保存此组
+                            </button>
+                        </div>
+
+                        <!-- 表情 Grid -->
+                        <div class="ep-emoji-grid-wrap">
+                            <div class="ep-emoji-grid" id="epEmojiGrid"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

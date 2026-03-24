@@ -1886,3 +1886,224 @@
     color: #fff;
 }
 
+/* ============================================
+   预设分组样式
+   ============================================ */
+
+.preset-group-section {
+    margin-bottom: 20px;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 14px;
+    overflow: hidden;
+    background: var(--bg-card, #fff);
+}
+
+.preset-group-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+    background: linear-gradient(135deg, rgba(248, 250, 252, 0.8), rgba(241, 245, 249, 0.5));
+    border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.preset-group-header:hover {
+    background: linear-gradient(135deg, rgba(241, 245, 249, 1), rgba(226, 232, 240, 0.5));
+}
+
+.preset-group-chevron {
+    font-size: 16px;
+    color: var(--text-muted, #94a3b8);
+    width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+}
+
+.preset-group-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.8);
+}
+
+.preset-group-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text, #1e293b);
+    flex: 1;
+    letter-spacing: -0.2px;
+}
+
+.preset-group-count {
+    font-size: 11px;
+    color: var(--text-muted, #94a3b8);
+    background: rgba(0,0,0,0.04);
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+}
+
+.preset-group-actions {
+    display: none;
+    align-items: center;
+    gap: 4px;
+}
+
+.preset-group-header:hover .preset-group-actions {
+    display: flex;
+}
+
+.preset-group-action-btn {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.preset-group-action-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(59, 130, 246, 0.04);
+}
+
+.preset-group-action-btn.danger:hover {
+    border-color: var(--danger, #ef4444);
+    color: var(--danger, #ef4444);
+    background: rgba(239, 68, 68, 0.04);
+}
+
+.preset-group-grid {
+    padding: 16px;
+    margin: 0;
+}
+
+/* inline 重命名输入框 */
+.preset-group-rename-input {
+    width: 160px;
+    padding: 3px 8px;
+    border: 1.5px solid var(--primary, #3b82f6);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text, #1e293b);
+    outline: none;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* ============================================
+   分组管理弹窗样式
+   ============================================ */
+
+.pgm-group {
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+.pgm-group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.pgm-group-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text, #1e293b);
+    flex: 1;
+}
+
+.pgm-btn {
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border, #e2e8f0);
+    background: #fff;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--text-secondary, #475569);
+}
+
+.pgm-btn:hover {
+    border-color: var(--primary, #3b82f6);
+    color: var(--primary, #3b82f6);
+}
+
+.pgm-btn.primary {
+    background: var(--primary, #3b82f6);
+    color: #fff;
+    border-color: transparent;
+}
+
+.pgm-btn.primary:hover {
+    opacity: 0.9;
+}
+
+.pgm-btn.danger {
+    color: var(--danger, #ef4444);
+}
+
+.pgm-btn.danger:hover {
+    border-color: var(--danger, #ef4444);
+    background: rgba(239, 68, 68, 0.06);
+}
+
+.pgm-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.pgm-member {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    background: var(--bg, #f1f5f9);
+    border: 1px solid var(--border, #e2e8f0);
+    color: var(--text, #1e293b);
+}
+
+.pgm-member-remove {
+    cursor: pointer;
+    color: var(--text-muted, #94a3b8);
+    font-weight: 700;
+    transition: color 0.15s;
+    padding: 0 2px;
+}
+
+.pgm-member-remove:hover {
+    color: var(--danger, #ef4444);
+}
+
+.pgm-add-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.pgm-add-select {
+    flex: 1;
+    min-width: 0;
+    border-radius: 8px !important;
+    height: 28px;
+}

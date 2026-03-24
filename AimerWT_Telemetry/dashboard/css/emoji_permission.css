@@ -1,0 +1,529 @@
+/* ============================================
+   表情权限管理页面样式
+   ============================================ */
+
+/* 三栏布局 */
+.ep-layout {
+    display: grid;
+    grid-template-columns: 200px 240px 1fr;
+    gap: 14px;
+    min-height: 520px;
+}
+
+/* 统一栏样式 */
+.ep-col-left,
+.ep-col-mid,
+.ep-col-right {
+    background: var(--bg-card, #fff);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* 栏标题 */
+.ep-col-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text, #1e293b);
+    border-bottom: 1px solid var(--border, #e2e8f0);
+    background: linear-gradient(135deg, rgba(248,250,252,0.8), rgba(241,245,249,0.4));
+    flex-shrink: 0;
+}
+
+.ep-col-title i {
+    font-size: 15px;
+    color: var(--primary, #3b82f6);
+}
+
+/* ========== 左栏：权限组 ========== */
+.ep-group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.ep-group-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    border: 1.5px solid transparent;
+    font-size: 12px;
+    color: var(--text);
+}
+
+.ep-group-item:hover {
+    background: var(--bg);
+}
+
+.ep-group-item.active {
+    background: rgba(37, 99, 235, 0.06);
+    border-color: rgba(37, 99, 235, 0.25);
+    font-weight: 600;
+}
+
+.ep-group-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.ep-group-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ep-group-count {
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--bg);
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-weight: 600;
+    min-width: 24px;
+    text-align: center;
+}
+
+/* ========== 中栏：已选表情 ========== */
+.ep-selected-badge {
+    font-size: 10px;
+    color: #fff;
+    background: var(--primary);
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-weight: 600;
+    min-width: 18px;
+    text-align: center;
+}
+
+.ep-mid-toolbar {
+    display: flex;
+    gap: 4px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+    background: rgba(248,250,252,0.5);
+    flex-wrap: wrap;
+}
+
+.ep-tool-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border, #e2e8f0);
+    background: #fff;
+    color: var(--text-secondary, #475569);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-weight: 500;
+}
+
+.ep-tool-btn i {
+    font-size: 12px;
+}
+
+.ep-tool-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(37, 99, 235, 0.04);
+}
+
+.ep-tool-btn.danger:hover {
+    border-color: var(--danger, #ef4444);
+    color: var(--danger, #ef4444);
+    background: rgba(239, 68, 68, 0.04);
+}
+
+.ep-selected-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    padding: 6px 12px 4px;
+    opacity: 0.7;
+}
+
+.ep-selected-grid-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.ep-selected-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+    gap: 3px;
+}
+
+.ep-selected-cell {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    position: relative;
+    user-select: none;
+    border: 1.5px solid rgba(37, 99, 235, 0.15);
+    background: rgba(37, 99, 235, 0.03);
+}
+
+.ep-selected-cell:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.4);
+    transform: scale(1.12);
+    z-index: 2;
+}
+
+.ep-selected-cell:hover::after {
+    content: '×';
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 13px;
+    height: 13px;
+    background: var(--danger);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.ep-selected-empty {
+    padding: 30px 10px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* ========== 右栏：表情选择器 ========== */
+.ep-right-toolbar {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+    background: rgba(248,250,252,0.5);
+}
+
+.ep-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.ep-toolbar-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--border, #e2e8f0);
+    margin: 0 4px;
+}
+
+.ep-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-weight: 500;
+}
+
+.ep-action-btn:hover {
+    background: var(--bg);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.ep-action-btn.primary {
+    background: var(--primary);
+    color: #fff;
+    border-color: transparent;
+}
+
+.ep-action-btn.primary:hover {
+    opacity: 0.9;
+}
+
+.ep-action-btn.danger {
+    color: var(--danger);
+}
+
+.ep-action-btn.danger:hover {
+    border-color: var(--danger);
+    background: rgba(239, 68, 68, 0.06);
+}
+
+.ep-preset-btn {
+    padding: 3px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #fff;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.12s;
+    color: var(--text-muted);
+}
+
+.ep-preset-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(37, 99, 235, 0.04);
+}
+
+/* 搜索框 */
+.ep-search-wrap {
+    position: relative;
+    padding: 8px 12px;
+}
+
+.ep-search-input {
+    width: 100%;
+    padding: 7px 12px 7px 32px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    font-size: 12px;
+    background: #fff;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+}
+
+.ep-search-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.08);
+}
+
+.ep-search-icon {
+    position: absolute;
+    left: 22px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* 分类 Tab 栏 */
+.ep-category-tabs {
+    display: flex;
+    gap: 3px;
+    padding: 0 12px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+}
+
+.ep-category-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.ep-category-tab {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 5px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 11px;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    background: transparent;
+}
+
+.ep-category-tab:hover {
+    background: var(--bg);
+    color: var(--text);
+}
+
+.ep-category-tab.active {
+    background: rgba(37, 99, 235, 0.08);
+    color: var(--primary);
+    border-color: rgba(37, 99, 235, 0.15);
+    font-weight: 600;
+}
+
+.ep-category-tab .tab-icon {
+    font-size: 14px;
+}
+
+.ep-category-tab .tab-count {
+    font-size: 9px;
+    opacity: 0.6;
+}
+
+/* 统计栏 */
+.ep-stats {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.ep-stats-count {
+    font-weight: 600;
+    color: var(--primary);
+}
+
+/* 表情 Grid */
+.ep-emoji-grid-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 10px;
+    min-height: 200px;
+}
+
+.ep-emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+    gap: 2px;
+}
+
+.ep-emoji-cell {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    position: relative;
+    user-select: none;
+    border: 1.5px solid transparent;
+}
+
+.ep-emoji-cell:hover {
+    background: rgba(37, 99, 235, 0.08);
+    transform: scale(1.15);
+    z-index: 2;
+}
+
+.ep-emoji-cell.selected {
+    background: rgba(37, 99, 235, 0.12);
+    border-color: rgba(37, 99, 235, 0.3);
+}
+
+.ep-emoji-cell.selected::after {
+    content: '✓';
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 13px;
+    height: 13px;
+    background: var(--primary);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+}
+
+/* 表情定位高亮动画 */
+.ep-emoji-cell.ep-locate-highlight {
+    animation: ep-locate-flash 1.2s ease;
+}
+
+@keyframes ep-locate-flash {
+    0%, 100% { box-shadow: none; background: rgba(37, 99, 235, 0.12); }
+    20%, 60% { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.15); transform: scale(1.25); }
+}
+
+/* 保存成功提示 */
+.ep-save-toast {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.12);
+    color: var(--secondary);
+    font-size: 11px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.ep-save-toast.show {
+    opacity: 1;
+}
+
+/* KPI 摘要卡片 */
+.ep-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.ep-summary-card {
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    text-align: center;
+}
+
+.ep-summary-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 2px;
+}
+
+.ep-summary-label {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* 响应式 */
+@media (max-width: 1100px) {
+    .ep-layout {
+        grid-template-columns: 180px 1fr;
+    }
+    .ep-col-mid {
+        display: none;
+    }
+}
+
+@media (max-width: 800px) {
+    .ep-layout {
+        grid-template-columns: 1fr;
+    }
+}

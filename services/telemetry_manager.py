@@ -351,6 +351,9 @@ class TelemetryManager:
                                 notice_items = data.get("notice_items")
                                 if notice_items is not None:
                                     sys_config["notice_items"] = notice_items
+                                notice_reactions = data.get("notice_reactions")
+                                if notice_reactions is not None:
+                                    sys_config["notice_reactions"] = notice_reactions
                                 self._msg_callback(sys_config)
 
                         user_cmd = data.get("user_command")

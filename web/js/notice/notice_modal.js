@@ -278,6 +278,120 @@
         });
     }
 
+    /* 预选表情面板 */
+    var REACTION_EMOJI_PALETTE = ['👍','❤️','😄','😮','🎉','🔥','😢','👀','👎','🤔','💯','🙏','✨','😂','🤣','😍','🥺','💀','😎','🫡'];
+
+    /* 渲染反应栏内容（嵌入 footer 内部，与"我已知晓"按钮同行） */
+    function _buildReactionBarHtml(noticeId) {
+        if (!noticeId) return '';
+        return '<div class="notice-reaction-inline" data-notice-reaction-id="' + noticeId + '">' +
+            '<span class="reaction-loading" style="font-size:12px;color:#9ca3af;">加载中...</span>' +
+            '</div>';
+    }
+
+    /* 异步加载并渲染反应栏内容 */
+    function _loadAndRenderReactions(noticeId) {
+        var baseUrl = (window._telemetryBaseUrl || '').replace(/\/+$/, '');
+        var hwid = window._telemetryHWID || '';
+        if (!baseUrl || !noticeId) {
+            // 无遥测连接时使用摘要数据做静态展示
+            _renderReactionsFromSummary(noticeId);
+            return;
+        }
+        var url = baseUrl + '/notice-reactions/' + noticeId;
+        if (hwid) url += '?machine_id=' + encodeURIComponent(hwid);
+
+        fetch(url).then(function(res) { return res.json(); }).then(function(data) {
+            var reactions = data.reactions || [];
+            _renderReactionPills(noticeId, reactions);
+        }).catch(function() {
+            _renderReactionsFromSummary(noticeId);
+        });
+    }
+
+    /* 从全局摘要数据渲染（无详细用户列表） */
+    function _renderReactionsFromSummary(noticeId) {
+        var rawData = window._noticeReactionsData;
+        if (!Array.isArray(rawData)) { _renderReactionPills(noticeId, []); return; }
+        var reactions = [];
+        rawData.forEach(function(r) {
+            if (String(r.notice_id) !== String(noticeId)) return;
+            reactions.push({ emoji: r.emoji, count: r.count || 0, users: [], reacted: false });
+        });
+        _renderReactionPills(noticeId, reactions);
+    }
+
+    /* 生成反应胶囊 DOM */
+    function _renderReactionPills(noticeId, reactions) {
+        var container = document.querySelector('[data-notice-reaction-id="' + noticeId + '"]');
+        if (!container) return;
+
+        var pills = (reactions || []).map(function(r) {
+            var userList = (r.users || []).map(function(u) { return 'UID' + u; });
+            var tooltipText = userList.length ? userList.join('、') : r.emoji + ' × ' + r.count;
+            return '<div class="notice-reaction-pill' + (r.reacted ? ' active' : '') + '" data-emoji="' + escapeHtml(r.emoji) + '" onclick="NoticeModalModule._onReactionClick(this,' + noticeId + ')">' +
+                '<span class="notice-reaction-tooltip">' + escapeHtml(tooltipText) + '</span>' +
+                '<span class="reaction-emoji">' + r.emoji + '</span>' +
+                '<span class="reaction-count">' + r.count + '</span>' +
+                '</div>';
+        }).join('');
+
+        var pickerItems = REACTION_EMOJI_PALETTE.map(function(e) {
+            return '<span class="notice-reaction-picker-item" onclick="NoticeModalModule._onPickerSelect(\'' + e + '\',' + noticeId + ')">' + e + '</span>';
+        }).join('');
+
+        container.innerHTML = pills +
+            '<button class="notice-reaction-add-btn" onclick="NoticeModalModule._toggleReactionPicker(this)" title="添加表情">😀</button>' +
+            '<div class="notice-reaction-picker">' + pickerItems + '</div>';
+    }
+
+    /* 切换表情选择浮层 */
+    function _toggleReactionPicker(btn) {
+        var picker = btn.parentElement.querySelector('.notice-reaction-picker');
+        if (!picker) return;
+        var isOpen = picker.classList.contains('show');
+        document.querySelectorAll('.notice-reaction-picker.show').forEach(function(p) { p.classList.remove('show'); });
+        if (!isOpen) {
+            picker.classList.add('show');
+            setTimeout(function() {
+                function closePicker(e) {
+                    if (!picker.contains(e.target) && e.target !== btn) {
+                        picker.classList.remove('show');
+                        document.removeEventListener('click', closePicker);
+                    }
+                }
+                document.addEventListener('click', closePicker);
+            }, 0);
+        }
+    }
+
+    /* 从选择器选中表情 */
+    function _onPickerSelect(emoji, noticeId) {
+        document.querySelectorAll('.notice-reaction-picker.show').forEach(function(p) { p.classList.remove('show'); });
+        _submitReaction(noticeId, emoji);
+    }
+
+    /* 点击已有反应胶囊（切换） */
+    function _onReactionClick(pill, noticeId) {
+        var emoji = pill.getAttribute('data-emoji');
+        if (emoji) _submitReaction(noticeId, emoji);
+    }
+
+    /* 提交/取消反应 */
+    function _submitReaction(noticeId, emoji) {
+        var baseUrl = (window._telemetryBaseUrl || '').replace(/\/+$/, '');
+        var hwid = window._telemetryHWID || '';
+        if (!baseUrl || !hwid) return;
+
+        fetch(baseUrl + '/notice-reaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notice_id: Number(noticeId), machine_id: hwid, emoji: emoji })
+        }).then(function() {
+            _loadAndRenderReactions(noticeId);
+        }).catch(function() {});
+    }
+
     function isUpdateType(item) {
         const t = String((item && item.type) || '').toLowerCase();
         if (t === 'update') return true;
@@ -318,11 +432,19 @@
             parseLogTextHtml: parseLogTextHtml,
             parseMarkdown: parseMarkdown,
             parseArticleMarkdown: parseArticleMarkdown,
-            renderMarkdownSafe: renderMarkdownSafe
+            renderMarkdownSafe: renderMarkdownSafe,
+            buildReactionBarHtml: function(noticeId) {
+                return _buildReactionBarHtml(noticeId);
+            }
         };
 
         shell.innerHTML = renderByTemplate(safeItem, helpers);
         bindCloseButtons(overlay);
+
+        // 弹窗渲染完成后，异步加载反应详情
+        if (safeItem.id) {
+            _loadAndRenderReactions(safeItem.id);
+        }
 
         overlay.classList.remove('entered');
         overlay.classList.remove('hiding');
@@ -339,6 +461,9 @@
         ensureModal: ensureModal,
         closeNoticeDetail: closeNoticeDetail,
         openNoticeDetail: openNoticeDetail,
-        renderMarkdownSafe: renderMarkdownSafe
+        renderMarkdownSafe: renderMarkdownSafe,
+        _toggleReactionPicker: _toggleReactionPicker,
+        _onPickerSelect: _onPickerSelect,
+        _onReactionClick: _onReactionClick
     };
 })();

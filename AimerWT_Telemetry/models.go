@@ -223,3 +223,12 @@ type RedeemRecord struct {
 	MachineID string    `gorm:"uniqueIndex:idx_redeem_record_code_machine;type:varchar(64)" json:"machine_id"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
+
+// NoticeReaction 公告表情反应记录（用户对公告添加 emoji 反应）
+type NoticeReaction struct {
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	NoticeID  uint      `gorm:"uniqueIndex:idx_notice_reaction_unique;not null" json:"notice_id"`
+	MachineID string    `gorm:"uniqueIndex:idx_notice_reaction_unique;type:varchar(64);not null" json:"machine_id"`
+	Emoji     string    `gorm:"uniqueIndex:idx_notice_reaction_unique;type:varchar(32);not null" json:"emoji"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+}

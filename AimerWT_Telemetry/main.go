@@ -39,7 +39,7 @@ func initDB() {
 	}
 	if err := db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{}, &FeedbackRecord{},
 		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{}, &AdClickEvent{},
-		&RedeemCode{}, &RedeemRecord{}); err != nil {
+		&RedeemCode{}, &RedeemRecord{}, &NoticeReaction{}); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 }

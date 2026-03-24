@@ -32,7 +32,7 @@
             '  </div>' +
             '  <div class="notice-article-content custom-scrollbar">' + blocksHtml + '</div>' +
             '  <div class="notice-article-footer">' +
-            '    <p>Aimer WT • 感谢支持，正在努力开发中！</p>' +
+            (helpers.buildReactionBarHtml ? helpers.buildReactionBarHtml(item.id) : '') +
             '    <button class="notice-ack-btn" type="button" data-notice-close="1"><i class="ri-check-line"></i> 我已知晓</button>' +
             '  </div>' +
             '</div>';

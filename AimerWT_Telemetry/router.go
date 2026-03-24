@@ -685,6 +685,70 @@ func initRouter(r *gin.Engine) {
 				c.JSON(200, gin.H{"status": "success"})
 			})
 
+			// 公告反应管理 API (admin)
+			admin.GET("/notice-reactions/:notice_id", func(c *gin.Context) {
+				noticeID := c.Param("notice_id")
+				var reactions []NoticeReaction
+				db.Where("notice_id = ?", noticeID).Order("created_at asc").Find(&reactions)
+
+				// 按 emoji 分组统计
+				type reactionGroup struct {
+					Emoji string   `json:"emoji"`
+					Count int      `json:"count"`
+					Users []string `json:"users"`
+				}
+				groupMap := map[string]*reactionGroup{}
+				var order []string
+				for _, r := range reactions {
+					g, ok := groupMap[r.Emoji]
+					if !ok {
+						g = &reactionGroup{Emoji: r.Emoji}
+						groupMap[r.Emoji] = g
+						order = append(order, r.Emoji)
+					}
+					g.Count++
+					g.Users = append(g.Users, r.MachineID)
+				}
+				result := make([]reactionGroup, 0, len(order))
+				for _, emoji := range order {
+					result = append(result, *groupMap[emoji])
+				}
+				c.JSON(200, gin.H{"reactions": result})
+			})
+
+			// 表情权限管理 API (admin)
+			admin.GET("/emoji-permissions", func(c *gin.Context) {
+				var cfg ContentConfig
+				result := db.Where("key = ?", "emoji_permissions").First(&cfg)
+				if result.Error != nil {
+					c.JSON(200, gin.H{"permissions": map[string]interface{}{}})
+					return
+				}
+				var parsed interface{}
+				if err := json.Unmarshal([]byte(cfg.Value), &parsed); err != nil {
+					c.JSON(200, gin.H{"permissions": map[string]interface{}{}})
+					return
+				}
+				c.JSON(200, gin.H{"permissions": parsed})
+			})
+
+			admin.POST("/emoji-permissions", func(c *gin.Context) {
+				var req struct {
+					Permissions interface{} `json:"permissions"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					return
+				}
+				data, err := json.Marshal(req.Permissions)
+				if err != nil {
+					c.JSON(400, gin.H{"error": "Invalid data"})
+					return
+				}
+				SaveConfig("emoji_permissions", string(data))
+				c.JSON(200, gin.H{"status": "success"})
+			})
+
 			// 反馈管理 API (admin)
 			admin.GET("/feedback", func(c *gin.Context) {
 				query := db.Model(&FeedbackRecord{})
@@ -1109,6 +1173,118 @@ func initRouter(r *gin.Engine) {
 		c.JSON(200, gin.H{"status": "success", "feedback_id": fb.ID})
 	})
 
+	// 公告表情反应 API（客户端调用）
+	r.POST("/notice-reaction", func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4<<10)
+		var req struct {
+			NoticeID  uint   `json:"notice_id"`
+			MachineID string `json:"machine_id"`
+			Emoji     string `json:"emoji"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			return
+		}
+		if !ensureClientMachineBinding(c, req.MachineID) {
+			return
+		}
+		if req.NoticeID == 0 || req.Emoji == "" || req.MachineID == "" {
+			c.JSON(400, gin.H{"error": "notice_id, machine_id, emoji are required"})
+			return
+		}
+
+		// 限制每用户对每条公告最多 5 种不同表情
+		var existing NoticeReaction
+		err := db.Where("notice_id = ? AND machine_id = ? AND emoji = ?", req.NoticeID, req.MachineID, req.Emoji).First(&existing).Error
+		if err == nil {
+			// 已有此反应 → 取消
+			db.Delete(&existing)
+			c.JSON(200, gin.H{"status": "removed"})
+			return
+		}
+
+		// 检查用户对此公告的反应种类数
+		var distinctCount int64
+		db.Model(&NoticeReaction{}).Where("notice_id = ? AND machine_id = ?", req.NoticeID, req.MachineID).Distinct("emoji").Count(&distinctCount)
+		if distinctCount >= 5 {
+			c.JSON(429, gin.H{"error": "每条公告最多添加 5 种表情反应"})
+			return
+		}
+
+		newReaction := NoticeReaction{
+			NoticeID:  req.NoticeID,
+			MachineID: req.MachineID,
+			Emoji:     req.Emoji,
+		}
+		if err := db.Create(&newReaction).Error; err != nil {
+			c.JSON(500, gin.H{"error": "保存失败"})
+			return
+		}
+		c.JSON(200, gin.H{"status": "added"})
+	})
+
+	r.GET("/notice-reactions/:notice_id", func(c *gin.Context) {
+		noticeID := c.Param("notice_id")
+		machineID := c.Query("machine_id")
+
+		var reactions []NoticeReaction
+		db.Where("notice_id = ?", noticeID).Order("created_at asc").Find(&reactions)
+
+		// 收集所有参与的 MachineID，批量查询对应的 user_seq_id（TelemetryRecord.ID）
+		machineIDs := map[string]bool{}
+		for _, r := range reactions {
+			machineIDs[r.MachineID] = true
+		}
+		type idRow struct {
+			MachineID string
+			ID        uint
+		}
+		var idRows []idRow
+		if len(machineIDs) > 0 {
+			keys := make([]string, 0, len(machineIDs))
+			for k := range machineIDs {
+				keys = append(keys, k)
+			}
+			db.Model(&TelemetryRecord{}).Where("machine_id IN ?", keys).Select("machine_id, id").Scan(&idRows)
+		}
+		seqMap := map[string]uint{}
+		for _, row := range idRows {
+			seqMap[row.MachineID] = row.ID
+		}
+
+		type reactionItem struct {
+			Emoji   string   `json:"emoji"`
+			Count   int      `json:"count"`
+			Users   []string `json:"users"`
+			Reacted bool     `json:"reacted"`
+		}
+		groupMap := map[string]*reactionItem{}
+		var order []string
+		for _, r := range reactions {
+			g, ok := groupMap[r.Emoji]
+			if !ok {
+				g = &reactionItem{Emoji: r.Emoji}
+				groupMap[r.Emoji] = g
+				order = append(order, r.Emoji)
+			}
+			g.Count++
+			// 使用数字序号 ID 代替 MachineID 哈希
+			uid := "?"
+			if seqID, exists := seqMap[r.MachineID]; exists {
+				uid = fmt.Sprintf("%d", seqID)
+			}
+			g.Users = append(g.Users, uid)
+			if r.MachineID == machineID {
+				g.Reacted = true
+			}
+		}
+		result := make([]reactionItem, 0, len(order))
+		for _, emoji := range order {
+			result = append(result, *groupMap[emoji])
+		}
+		c.JSON(200, gin.H{"reactions": result})
+	})
+
 	// 广告点击上报（客户端直接调用，不需要 admin 认证）
 	r.POST("/telemetry/ad-click", func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
@@ -1261,6 +1437,16 @@ func initRouter(r *gin.Engine) {
 		var noticeItems []NoticeItem
 		db.Order("sort_order asc, id desc").Find(&noticeItems)
 		response["notice_items"] = noticeItems
+
+		// 公告反应摘要（emoji + count，不含用户列表）
+		type reactionSummary struct {
+			NoticeID uint   `json:"notice_id"`
+			Emoji    string `json:"emoji"`
+			Count    int64  `json:"count"`
+		}
+		var rawSummaries []reactionSummary
+		db.Model(&NoticeReaction{}).Select("notice_id, emoji, count(*) as count").Group("notice_id, emoji").Scan(&rawSummaries)
+		response["notice_reactions"] = rawSummaries
 
 		c.JSON(200, response)
 	})

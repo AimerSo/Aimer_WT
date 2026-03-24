@@ -1,5 +1,39 @@
 /* 仪表盘公告卡片实时预览模块 */
 (function () {
+    /* 预选表情列表 */
+    var EMOJI_PALETTE = ['👍','❤️','😄','😮','🎉','🔥','😢','👀','👎','🤔','💯','🙏','✨','😂','🤣','😍','🥺','💀','😎','🫡'];
+
+    /* 预览模式模拟反应数据 */
+    var MOCK_REACTIONS = [
+        { emoji: '👍', count: 12, users: ['a1b2c3..', 'd4e5f6..', '789abc..'], reacted: true },
+        { emoji: '🎉', count: 5, users: ['d4e5f6..', 'ff0011..'], reacted: false },
+        { emoji: '🔥', count: 3, users: ['789abc..'], reacted: false }
+    ];
+
+    /* 生成反应栏 HTML */
+    function _buildReactionBarHtml(reactions) {
+        if (!reactions) reactions = MOCK_REACTIONS;
+        var pills = reactions.map(function(r) {
+            var tooltip = r.emoji + ' ' + (r.users || []).join('、');
+            return '<div class="notice-reaction-pill' + (r.reacted ? ' active' : '') + '">' +
+                '<span class="notice-reaction-tooltip">' + esc(tooltip) + '</span>' +
+                '<span class="reaction-emoji">' + r.emoji + '</span>' +
+                '<span class="reaction-count">' + r.count + '</span>' +
+                '</div>';
+        }).join('');
+
+        var pickerItems = EMOJI_PALETTE.map(function(e) {
+            return '<span class="notice-reaction-picker-item">' + e + '</span>';
+        }).join('');
+
+        return '<div class="notice-reaction-bar-wrap">' +
+            '<div class="notice-reaction-bar">' +
+            pills +
+            '<button class="notice-reaction-add-btn" onclick="NoticePreviewModule._togglePicker(this)" title="添加表情">😀</button>' +
+            '<div class="notice-reaction-picker">' + pickerItems + '</div>' +
+            '</div>' +
+            '</div>';
+    }
     /* 类型元信息映射（与主软件 notice_data.js 保持一致） */
     var TYPE_META = {
         urgent: { tagClass: 'np-tag-urgent', icon: '⚠️' },
@@ -203,6 +237,7 @@
             '</div>' +
             '</div>' +
             '<div class="notice-react-content" style="max-height:380px;overflow-y:auto;">' + bodyHtml + '</div>' +
+            _buildReactionBarHtml() +
             '<div class="notice-react-footer"><p>Aimer WT • 预览模式</p></div>' +
             '</div>';
     }
@@ -243,13 +278,37 @@
             '</div>' +
             '</div>' +
             '<div class="notice-article-content" style="max-height:380px;overflow-y:auto;">' + blocksHtml + '</div>' +
+            _buildReactionBarHtml() +
             '<div class="notice-article-footer"><p>Aimer WT • 预览模式</p></div>' +
             '</div>';
+    }
+
+    /* 切换表情选择浮层 */
+    function _togglePicker(btn) {
+        var picker = btn.parentElement.querySelector('.notice-reaction-picker');
+        if (!picker) return;
+        var isOpen = picker.classList.contains('show');
+        // 先关闭所有已打开的 picker
+        document.querySelectorAll('.notice-reaction-picker.show').forEach(function(p) { p.classList.remove('show'); });
+        if (!isOpen) {
+            picker.classList.add('show');
+            // 点击其他地方关闭
+            setTimeout(function() {
+                function closePicker(e) {
+                    if (!picker.contains(e.target) && e.target !== btn) {
+                        picker.classList.remove('show');
+                        document.removeEventListener('click', closePicker);
+                    }
+                }
+                document.addEventListener('click', closePicker);
+            }, 0);
+        }
     }
 
     window.NoticePreviewModule = {
         renderPreview: renderPreview,
         renderContentPreview: renderContentPreview,
-        renderClientPreview: renderClientPreview
+        renderClientPreview: renderClientPreview,
+        _togglePicker: _togglePicker
     };
 })();
