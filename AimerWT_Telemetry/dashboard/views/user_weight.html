@@ -1,0 +1,94 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(16, 185, 129, 0.14)); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgb(37, 99, 235)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 3v18"></path>
+                        <path d="M17 8l-5-5-5 5"></path>
+                        <path d="M17 16l-5 5-5-5"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-weight: 700; font-size: 16px; color: var(--text);">用户权重</div>
+                    <div style="color: var(--text-muted); font-size: 12px;">设置评论排序时用到的作者权重。评论总分 = 评论基础 1 + 点赞 × 0.5 + 回复 × 0.5 + 作者权重。</div>
+                </div>
+            </div>
+            <div class="top-actions" style="margin-left: auto; display: flex; gap: 8px;">
+                <button class="btn" onclick="app.resetUserWeightConfig()">恢复默认</button>
+                <button class="btn" onclick="app.initUserWeight()">刷新</button>
+                <button class="btn primary" onclick="app.saveUserWeightConfig()">保存权重</button>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(320px, 440px) minmax(0, 1fr); gap: 20px; align-items: start;">
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+                <div class="panel">
+                    <div class="panel-header" style="padding: 14px 16px;">
+                        <div>
+                            <div class="panel-title">用户组权重</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">基础权重会作用于所有用户，星标和管理员会在基础上继续叠加。</div>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding: 16px; display: flex; flex-direction: column; gap: 14px;">
+                        <label style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+                            <div>
+                                <div style="font-size: 13px; font-weight: 600; color: var(--text);">所有用户</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">每位用户默认拥有的发言权重</div>
+                            </div>
+                            <input class="input" id="weightBaseUser" type="number" step="0.5" style="width: 110px; text-align: right;" oninput="app.updateUserWeightPreview()">
+                        </label>
+                        <label style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+                            <div>
+                                <div style="font-size: 13px; font-weight: 600; color: var(--text);">星标用户</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">命中星标时追加的加成</div>
+                            </div>
+                            <input class="input" id="weightStarredUser" type="number" step="0.5" style="width: 110px; text-align: right;" oninput="app.updateUserWeightPreview()">
+                        </label>
+                        <label style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+                            <div>
+                                <div style="font-size: 13px; font-weight: 600; color: var(--text);">管理员</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">命中管理员时追加的加成</div>
+                            </div>
+                            <input class="input" id="weightAdminUser" type="number" step="0.5" style="width: 110px; text-align: right;" oninput="app.updateUserWeightPreview()">
+                        </label>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header" style="padding: 14px 16px;">
+                        <div>
+                            <div class="panel-title">公式预览</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">这里展示的是当前配置下的实际计算方式。</div>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+                        <div style="padding: 12px 14px; border-radius: 12px; background: linear-gradient(135deg, rgba(37,99,235,0.07), rgba(16,185,129,0.08)); border: 1px solid rgba(37,99,235,0.12);">
+                            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">评论总分</div>
+                            <div id="userWeightFormulaText" style="font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.6;">评论基础 1 + 点赞 × 0.5 + 回复 × 0.5 + 作者权重</div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                            <div style="padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg);" id="userWeightPreviewBasic"></div>
+                            <div style="padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg);" id="userWeightPreviewStarred"></div>
+                            <div style="padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg);" id="userWeightPreviewTag"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header" style="padding: 14px 16px;">
+                    <div>
+                        <div class="panel-title">标签组权重</div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">用户拥有某个标签时，会把对应权重继续叠加到作者权重里。</div>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding: 16px;">
+                    <div id="userWeightTagList" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px;">
+                        <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 30px 12px;">加载中...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

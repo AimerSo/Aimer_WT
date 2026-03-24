@@ -20,8 +20,8 @@ type TelemetryRecord struct {
 	IsStarred      bool      `json:"is_starred"`
 	IsAdmin        bool      `json:"is_admin"`
 	Tags           string    `gorm:"type:text;default:'[]'" json:"tags"`
-	LastSeenAt     time.Time `gorm:"autoUpdateTime" json:"last_seen_at"`
-	CreatedAt      time.Time `gorm:"autoCreateTime" json:"created_at"`
+	LastSeenAt     time.Time `gorm:"autoUpdateTime;index" json:"last_seen_at"`
+	CreatedAt      time.Time `gorm:"autoCreateTime;index" json:"created_at"`
 }
 
 type StatsResponse struct {
@@ -117,11 +117,11 @@ type AdCarouselItem struct {
 // AdClickEvent 广告点击事件（客户端上报，用于流量统计与广告效果分析）
 type AdClickEvent struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	MachineID string    `gorm:"index;type:varchar(64)" json:"machine_id"`
+	MachineID string    `gorm:"index:idx_ad_click_machine_ad_created,priority:1;type:varchar(64)" json:"machine_id"`
 	AdMedium  string    `gorm:"index;type:varchar(32)" json:"ad_medium"`
-	AdID      string    `gorm:"index;type:varchar(64)" json:"ad_id"`
+	AdID      string    `gorm:"index:idx_ad_click_machine_ad_created,priority:2;type:varchar(64)" json:"ad_id"`
 	TargetURL string    `gorm:"type:text" json:"target_url"`
-	CreatedAt time.Time `gorm:"autoCreateTime;index" json:"created_at"`
+	CreatedAt time.Time `gorm:"autoCreateTime;index;index:idx_ad_click_machine_ad_created,priority:3" json:"created_at"`
 }
 
 // NoticeItem 公告列表数据表（对应客户端 notice_data.js 的数据结构）
@@ -142,7 +142,7 @@ type NoticeItem struct {
 // FeedbackRecord 用户反馈数据表
 type FeedbackRecord struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	MachineID string    `gorm:"index;type:varchar(64)" json:"machine_id"`
+	MachineID string    `gorm:"index:idx_feedback_machine_created,priority:1;type:varchar(64)" json:"machine_id"`
 	Version   string    `json:"version"`
 	Contact   string    `json:"contact"`
 	Content   string    `gorm:"type:text" json:"content"`
@@ -153,7 +153,7 @@ type FeedbackRecord struct {
 	Locale    string    `json:"locale"`
 	Status    string    `json:"status" gorm:"default:'pending'"` // pending / read / resolved / ignored
 	AdminNote string    `gorm:"type:text" json:"admin_note"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	CreatedAt time.Time `gorm:"autoCreateTime;index:idx_feedback_machine_created,priority:2;index" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 

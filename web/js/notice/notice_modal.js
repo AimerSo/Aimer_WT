@@ -248,7 +248,9 @@
         document.body.appendChild(overlay);
 
         overlay.addEventListener('click', (e) => {
-            if (!e.target.closest('.notice-detail-modal')) closeNoticeDetail();
+            const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+            const clickedInsideModal = path.some((node) => node && node.classList && node.classList.contains('notice-detail-modal'));
+            if (!clickedInsideModal) closeNoticeDetail();
         });
 
         return overlay;
@@ -444,6 +446,14 @@
         // 弹窗渲染完成后，异步加载反应详情
         if (safeItem.id) {
             _loadAndRenderReactions(safeItem.id);
+        }
+
+        // 初始化社区评论面板
+        if (window.NoticeCommentPanel && typeof window.NoticeCommentPanel.renderPanel === 'function') {
+            var ncPanel = shell.querySelector('.nc-panel[data-nc-notice-id]');
+            if (ncPanel && safeItem.id) {
+                window.NoticeCommentPanel.renderPanel(safeItem.id, ncPanel);
+            }
         }
 
         overlay.classList.remove('entered');

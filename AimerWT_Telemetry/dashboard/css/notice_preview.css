@@ -240,3 +240,35 @@
     background: #10b981;
     box-shadow: 0 0 0 2px rgba(16,185,129,0.18);
 }
+
+/* 客户端效果预览限宽容器 */
+.np-client-wrap {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.np-client-wrap .notice-detail-modal {
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--border, rgba(0,0,0,0.06));
+    background: var(--card-bg, #fff);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+}
+
+.np-client-wrap .notice-detail-modal.nc-split-layout {
+    width: 100% !important;
+}
+
+.np-client-wrap .notice-react-content,
+.np-client-wrap .notice-article-content {
+    max-height: 380px;
+    overflow-y: auto;
+}
+
+.np-client-wrap .nc-panel {
+    max-height: 500px;
+}
+
+.np-client-wrap .nc-comment-list {
+    max-height: 260px;
+}

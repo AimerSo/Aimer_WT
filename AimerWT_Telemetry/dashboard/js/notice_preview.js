@@ -160,8 +160,8 @@
     }
 
     /**
-     * 复用客户端模板逻辑，渲染"客户端效果"预览
-     * 根据公告类型自动选择 update / general 渲染方式
+     * 复用客户端模板，渲染"客户端效果"预览
+     * 直接调用主软件的 NoticeUpdateTemplate / NoticeGeneralTemplate
      */
     function renderClientPreview(container, item) {
         if (!container) return;
@@ -178,109 +178,36 @@
         var MR = window.MarkdownRenderer || {};
         var isUpdate = (item.type === 'update') ||
             /更新日志|版本更新|changelog/i.test(item.title || '');
+
+        // 构造辅助函数对象（与主软件 notice_modal.js 一致）
+        var helpers = {
+            escapeHtml: MR.escapeHtml || esc,
+            parseMarkdown: MR.parseChangelog || function(md) { return { title: '更新日志', version: 'Latest', sections: [] }; },
+            parseLogTextHtml: MR.parseLogTextHtml || function(t) { return esc(t); },
+            renderMarkdownSafe: MR.render || function(t) { return t; },
+            parseArticleMarkdown: MR.parseArticleMarkdown || function(md, ft) { return { title: ft || '公告详情', date: '', content: [{ type: 'paragraph', text: md }] }; },
+            renderInlineBasic: MR.renderInline || function(t) { return esc(t); },
+            buildReactionBarHtml: function() { return _buildReactionBarHtml(); }
+        };
+
         var html = '';
-
-        if (isUpdate) {
-            html = _renderUpdatePreview(item, MR);
+        if (isUpdate && window.NoticeUpdateTemplate) {
+            html = window.NoticeUpdateTemplate.render(item, helpers);
+        } else if (window.NoticeGeneralTemplate) {
+            html = window.NoticeGeneralTemplate.render(item, helpers);
         } else {
-            html = _renderGeneralPreview(item, MR);
+            // 模板未加载时的降级处理
+            html = '<div style="padding:20px;color:var(--text-muted);font-size:12px;text-align:center;">模板组件未加载</div>';
         }
-        container.innerHTML = html;
-    }
 
-    /* 更新日志模板预览（分节 + 图标 + 时间线） */
-    function _renderUpdatePreview(item, MR) {
-        var parseChangelog = MR.parseChangelog || function (md) {
-            return { title: '更新日志', version: 'Latest', sections: [] };
-        };
-        var escH = MR.escapeHtml || esc;
-        var parseLog = MR.parseLogTextHtml || function (t) { return escH(t); };
+        // 限宽容器包裹，模拟弹窗效果
+        container.innerHTML = '<div class="np-client-wrap">' + html + '</div>';
 
-        var data = parseChangelog(item.content || '');
-        var title = data.title || item.title || '更新日志';
-        var version = data.version || 'Latest';
-        var intro = item.summary || '';
-
-        var sectionsHtml = (data.sections || []).map(function (section) {
-            var colorClass = section.color === 'blue' ? 'notice-react-sec-blue'
-                : section.color === 'green' ? 'notice-react-sec-green'
-                    : section.color === 'red' ? 'notice-react-sec-red'
-                        : 'notice-react-sec-gray';
-
-            var itemsHtml = (section.items || []).map(function (line) {
-                return '<li class="notice-react-item">' +
-                    '<div class="notice-react-item-dot"></div>' +
-                    '<div class="notice-react-item-text">' + parseLog(line) + '</div>' +
-                    '</li>';
-            }).join('');
-
-            return '<section class="notice-react-section">' +
-                '<div class="notice-react-sec-head">' +
-                '<div class="notice-react-sec-icon ' + colorClass + '"><i class="' + escH(section.icon) + '"></i></div>' +
-                '<h3>' + escH(section.title) + '</h3>' +
-                '</div>' +
-                '<ul class="notice-react-list">' + itemsHtml + '</ul>' +
-                '</section>';
-        }).join('');
-
-        var bodyHtml = sectionsHtml || '<div style="padding:12px;color:var(--text-muted);font-size:12px;">（无有效日志节，请使用 ## 节名 + - 列表项 格式）</div>';
-
-        return '<div class="notice-react-update-modal" style="border-radius:14px;overflow:hidden;border:1px solid var(--border);background:var(--card-bg,#fff);">' +
-            '<div class="notice-react-header">' +
-            '<div>' +
-            '<h2 class="notice-react-title">' + escH(title) + '</h2>' +
-            '<div class="notice-react-subline">' +
-            '<span class="notice-react-pulse"></span>' +
-            '<span>' + escH(version) + '</span>' +
-            '</div>' +
-            (intro ? '<p class="notice-react-intro">' + escH(intro) + '</p>' : '') +
-            '</div>' +
-            '</div>' +
-            '<div class="notice-react-content" style="max-height:380px;overflow-y:auto;">' + bodyHtml + '</div>' +
-            _buildReactionBarHtml() +
-            '<div class="notice-react-footer"><p>Aimer WT • 预览模式</p></div>' +
-            '</div>';
-    }
-
-    /* 通用公告模板预览（文章样式） */
-    function _renderGeneralPreview(item, MR) {
-        var parseArticle = MR.parseArticleMarkdown || function (md, ft) {
-            return { title: ft || '公告详情', date: '', content: [{ type: 'paragraph', text: md }] };
-        };
-        var escH = MR.escapeHtml || esc;
-        var renderInline = MR.renderInline || function (t) { return escH(t); };
-
-        var data = parseArticle(item.content || '', item.title || '公告详情');
-
-        var blocksHtml = (data.content || []).map(function (block) {
-            if (!block) return '';
-            if (block.type === 'h2') {
-                return '<h4 class="notice-article-h2"><span class="notice-article-h2-bar"></span>' + renderInline(block.text) + '</h4>';
-            }
-            if (block.type === 'quote') {
-                return '<div class="notice-article-quote"><i class="ri-information-line"></i><div>' + renderInline(block.text) + '</div></div>';
-            }
-            if (block.type === 'list') {
-                var items = (block.items || []).map(function (x) { return '<li>' + renderInline(x) + '</li>'; }).join('');
-                return '<ul class="notice-article-list">' + items + '</ul>';
-            }
-            return '<p class="notice-article-p">' + renderInline(block.text) + '</p>';
-        }).join('');
-
-        return '<div class="notice-article-modal" style="border-radius:14px;overflow:hidden;border:1px solid var(--border);background:var(--card-bg,#fff);">' +
-            '<div class="notice-article-header">' +
-            '<div class="notice-article-head-left">' +
-            '<div class="notice-article-bell"><i class="ri-notification-3-line"></i></div>' +
-            '<div>' +
-            '<h3 class="notice-article-title">' + escH(data.title || '公告详情') + '</h3>' +
-            '<div class="notice-article-date">Release Date: ' + escH(item.date || data.date || '') + '</div>' +
-            '</div>' +
-            '</div>' +
-            '</div>' +
-            '<div class="notice-article-content" style="max-height:380px;overflow-y:auto;">' + blocksHtml + '</div>' +
-            _buildReactionBarHtml() +
-            '<div class="notice-article-footer"><p>Aimer WT • 预览模式</p></div>' +
-            '</div>';
+        // 初始化评论面板（离线占位）
+        var ncPanel = container.querySelector('.nc-panel[data-nc-notice-id]');
+        if (ncPanel && window.NoticeCommentPanel) {
+            window.NoticeCommentPanel.renderPanel(item.id || 'preview', ncPanel);
+        }
     }
 
     /* 切换表情选择浮层 */

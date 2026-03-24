@@ -31,6 +31,9 @@ func initDB() {
 	if err != nil {
 		log.Fatalf("数据库句柄获取失败: %v", err)
 	}
+	// SQLite 更适合小连接池，能显著降低高并发写入时的锁竞争。
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
 	if _, err := sqlDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
 		log.Printf("警告: 启用 SQLite WAL 失败: %v", err)
 	}
@@ -39,7 +42,8 @@ func initDB() {
 	}
 	if err := db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{}, &FeedbackRecord{},
 		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{}, &AdClickEvent{},
-		&RedeemCode{}, &RedeemRecord{}, &NoticeReaction{}); err != nil {
+		&RedeemCode{}, &RedeemRecord{}, &NoticeReaction{},
+		&NoticeComment{}, &NoticeCommentLike{}, &NoticeCommentBan{}); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 }

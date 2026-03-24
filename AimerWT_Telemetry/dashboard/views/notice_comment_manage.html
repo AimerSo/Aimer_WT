@@ -1,0 +1,104 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(16, 185, 129, 0.08));display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgb(37, 99, 235)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        <path d="M8 10h8"></path>
+                        <path d="M8 7h4"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:16px;color:var(--text);">公告评论</div>
+                    <div style="font-size:12px;color:var(--text-muted);">按公告查看评论、删除或隐藏内容，并管理评论资格封禁</div>
+                </div>
+            </div>
+            <div class="top-actions" style="margin-left:auto;display:flex;gap:8px;">
+                <button class="btn" onclick="app.refreshNoticeCommentManage()">刷新</button>
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:minmax(0, 1fr) 360px;gap:20px;align-items:start;">
+            <div class="panel" style="display:flex;flex-direction:column;min-height:560px;">
+                <div class="panel-header" style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
+                    <div style="width:28px;height:28px;border-radius:8px;background:rgba(37, 99, 235, 0.08);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:13px;font-weight:600;color:var(--text);">评论列表</div>
+                        <div style="font-size:10px;color:var(--text-muted);" id="noticeCommentManageSummary">加载中...</div>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding:16px;display:flex;flex-direction:column;gap:14px;">
+                    <div style="display:flex;flex-wrap:wrap;gap:12px;">
+                        <div class="form-group" style="margin:0;min-width:220px;flex:1;">
+                            <label style="font-size:11px;margin-bottom:4px;">公告筛选</label>
+                            <select class="select" id="ncmNoticeFilter" style="width:100%;" onchange="app.onNoticeCommentFilterChange()">
+                                <option value="">全部公告</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin:0;width:180px;">
+                            <label style="font-size:11px;margin-bottom:4px;">状态筛选</label>
+                            <select class="select" id="ncmStatusFilter" style="width:100%;" onchange="app.onNoticeCommentFilterChange()">
+                                <option value="">全部状态</option>
+                                <option value="visible">正常显示</option>
+                                <option value="hidden">已隐藏</option>
+                                <option value="reported">已标记</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="noticeCommentListContainer" style="display:flex;flex-direction:column;gap:12px;">
+                        <div style="text-align:center;color:var(--text-muted);padding:40px;">加载中...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:20px;">
+                <div class="panel">
+                    <div class="panel-header" style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+                        <div style="width:28px;height:28px;border-radius:8px;background:rgba(16, 185, 129, 0.08);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 12l2 2 4-4"></path>
+                                <path d="M21 12c.552 0 1 .449.995 1.001A9.004 9.004 0 0 1 13.001 22C12.449 22.005 12 21.552 12 21v-1"></path>
+                                <path d="M3 12c-.552 0-1-.449-.995-1.001A9.004 9.004 0 0 1 10.999 2C11.551 1.995 12 2.448 12 3v1"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <div style="font-size:13px;font-weight:600;color:var(--text);">管理说明</div>
+                            <div style="font-size:10px;color:var(--text-muted);">当前支持的基础操作</div>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding:16px;font-size:12px;color:var(--text-muted);line-height:1.8;">
+                        <div>选择某条公告后，列表会只显示该公告下的评论与回复。</div>
+                        <div>“隐藏评论”会保留数据但不再对客户端显示，“删除评论”会直接移除。</div>
+                        <div>“封禁评论”会阻止该用户继续发送新评论或回复，但不影响现有记录查看。</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header" style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+                        <div style="width:28px;height:28px;border-radius:8px;background:rgba(239, 68, 68, 0.10);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18 6L6 18"></path>
+                                <path d="M6 6l12 12"></path>
+                            </svg>
+                        </div>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:13px;font-weight:600;color:var(--text);">被封禁用户</div>
+                            <div style="font-size:10px;color:var(--text-muted);" id="noticeCommentBanCount">0 人</div>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding:0;">
+                        <div id="noticeCommentBanList">
+                            <div style="text-align:center;color:var(--text-muted);padding:36px 20px;">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

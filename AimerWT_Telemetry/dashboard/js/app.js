@@ -29,7 +29,10 @@ const app = {
         aiUsageStats: null,
         aiModelDistribution: [],
         usageCurrentPage: 1,
-        usagePageSize: 10
+        usagePageSize: 10,
+        userWeightConfig: null,
+        userWeightTags: [],
+        userWeightFormula: null
     },
 
     // 颜色配置
@@ -327,6 +330,9 @@ const app = {
             case 'userdetail':
                 this.initUserDetail();
                 break;
+            case 'user_weight':
+                this.initUserWeight();
+                break;
             case 'settings':
                 this.initSettings();
                 break;
@@ -371,6 +377,9 @@ const app = {
                 break;
             case 'emoji_permission':
                 this.initEmojiPermission();
+                break;
+            case 'notice_comment_manage':
+                this.initNoticeCommentManage();
                 break;
             default:
                 break;
@@ -438,6 +447,16 @@ const app = {
         return Number(num).toLocaleString('zh-CN');
     },
 
+    getOnlineThresholdMinutes() {
+        const settings = this.loadSettings();
+        const parsed = parseInt(settings.onlineThreshold || '5', 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
+    },
+
+    isUserOnlineByMinutes(minutes) {
+        return typeof minutes === 'number' && minutes <= this.getOnlineThresholdMinutes();
+    },
+
     /**
      * 获取数据
      */
@@ -468,7 +487,8 @@ const app = {
             arch: document.getElementById('filterArch')?.value,
             version: document.getElementById('filterVersion')?.value,
             locale: document.getElementById('filterLocale')?.value,
-            range: document.getElementById('trendRange')?.value
+            range: document.getElementById('trendRange')?.value,
+            online_threshold_min: String(this.getOnlineThresholdMinutes())
         };
 
         const compareStart = document.getElementById('compareStart')?.value;
@@ -977,7 +997,7 @@ const app = {
             const version = item.version || item.app_version || item.client_version || '-';
             const minutes = item.minutes_ago ?? item.minutes ?? item.last_seen_minutes ?? '-';
 
-            const isOnline = typeof minutes === 'number' && minutes <= 5;
+            const isOnline = this.isUserOnlineByMinutes(minutes);
             const statusClass = isOnline ? 'online' : 'offline';
 
             div.className = 'recent-item';
@@ -2654,6 +2674,319 @@ const app = {
         }
     },
 
+    // ==================== 公告评论管理 ====================
+
+    _noticeCommentNotices: [],
+    _noticeCommentRecords: [],
+    _noticeCommentBans: [],
+    _noticeCommentFilter: {
+        noticeId: '',
+        status: ''
+    },
+    _noticeCommentTotal: 0,
+
+    async initNoticeCommentManage() {
+        this._noticeCommentRecords = [];
+        this._noticeCommentBans = [];
+        this._noticeCommentTotal = 0;
+        try {
+            await this._loadNoticeCommentNotices();
+            await Promise.all([
+                this.loadNoticeCommunityComments(),
+                this.loadNoticeCommentBans()
+            ]);
+        } catch (error) {
+            this.showAlert('公告评论视图初始化失败: ' + error.message, 'danger');
+        }
+    },
+
+    async refreshNoticeCommentManage() {
+        try {
+            await this._loadNoticeCommentNotices();
+            await Promise.all([
+                this.loadNoticeCommunityComments(),
+                this.loadNoticeCommentBans()
+            ]);
+            this.showAlert('公告评论数据已刷新', 'success');
+        } catch (error) {
+            this.showAlert('刷新失败: ' + error.message, 'danger');
+        }
+    },
+
+    async _loadNoticeCommentNotices() {
+        const res = await fetch(`${this.config.apiBase}/admin/notices`);
+        if (!res.ok) throw new Error('服务器返回 ' + res.status);
+        const data = await res.json();
+        this._noticeCommentNotices = data.items || [];
+
+        const select = document.getElementById('ncmNoticeFilter');
+        if (!select) return;
+
+        let selectedNoticeId = this._noticeCommentFilter.noticeId || '';
+        if (selectedNoticeId && !this._noticeCommentNotices.some((item) => String(item.id) === String(selectedNoticeId))) {
+            selectedNoticeId = '';
+            this._noticeCommentFilter.noticeId = '';
+        }
+        if (!selectedNoticeId && this._noticeCommentNotices.length) {
+            selectedNoticeId = String(this._noticeCommentNotices[0].id);
+            this._noticeCommentFilter.noticeId = selectedNoticeId;
+        }
+
+        select.innerHTML = '<option value="">全部公告</option>' + this._noticeCommentNotices.map((item) => {
+            const label = this.escapeHtmlSafe(item.title || `公告 #${item.id}`);
+            return `<option value="${item.id}">${label}</option>`;
+        }).join('');
+        select.value = selectedNoticeId;
+    },
+
+    onNoticeCommentFilterChange() {
+        this._noticeCommentFilter.noticeId = document.getElementById('ncmNoticeFilter')?.value || '';
+        this._noticeCommentFilter.status = document.getElementById('ncmStatusFilter')?.value || '';
+        this.loadNoticeCommunityComments();
+    },
+
+    _getNoticeCommentNoticeTitle(noticeId) {
+        const item = this._noticeCommentNotices.find((notice) => String(notice.id) === String(noticeId));
+        return item?.title || `公告 #${noticeId}`;
+    },
+
+    _isNoticeCommentMachineBanned(machineId) {
+        return this._noticeCommentBans.some((ban) => String(ban.machine_id) === String(machineId));
+    },
+
+    async loadNoticeCommunityComments() {
+        const container = document.getElementById('noticeCommentListContainer');
+        if (container) {
+            container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;">加载评论中...</div>';
+        }
+
+        const params = new URLSearchParams({
+            page: '1',
+            page_size: '100'
+        });
+        if (this._noticeCommentFilter.noticeId) params.set('notice_id', this._noticeCommentFilter.noticeId);
+        if (this._noticeCommentFilter.status) params.set('status', this._noticeCommentFilter.status);
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/community/comments?${params.toString()}`);
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            const data = await res.json();
+            this._noticeCommentRecords = data.comments || [];
+            this._noticeCommentTotal = data.total || this._noticeCommentRecords.length;
+            this.renderNoticeCommunityComments();
+        } catch (error) {
+            if (container) {
+                container.innerHTML = `<div style="text-align:center;color:var(--danger);padding:40px;">加载失败：${this.escapeHtmlSafe(error.message)}</div>`;
+            }
+        }
+    },
+
+    renderNoticeCommunityComments() {
+        const container = document.getElementById('noticeCommentListContainer');
+        const summary = document.getElementById('noticeCommentManageSummary');
+        if (!container) return;
+
+        const currentNoticeLabel = this._noticeCommentFilter.noticeId
+            ? this._getNoticeCommentNoticeTitle(this._noticeCommentFilter.noticeId)
+            : '全部公告';
+        if (summary) {
+            summary.textContent = `${currentNoticeLabel} · ${this._noticeCommentTotal} 条评论`;
+        }
+
+        if (!this._noticeCommentRecords.length) {
+            container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:48px 20px;"><div style="font-size:13px;font-weight:600;margin-bottom:6px;">暂无评论数据</div><div style="font-size:11px;">当前筛选条件下没有可管理的评论</div></div>';
+            return;
+        }
+
+        const statusMeta = {
+            visible: { text: '正常显示', color: '#059669', bg: 'rgba(16,185,129,0.10)' },
+            hidden: { text: '已隐藏', color: '#d97706', bg: 'rgba(245,158,11,0.12)' },
+            reported: { text: '已标记', color: '#dc2626', bg: 'rgba(239,68,68,0.12)' }
+        };
+
+        container.innerHTML = this._noticeCommentRecords.map((item) => {
+            const noticeTitle = this.escapeHtmlSafe(this._getNoticeCommentNoticeTitle(item.notice_id));
+            const uid = this.escapeHtmlSafe(item.uid || '?');
+            const alias = this.escapeHtmlSafe((item.alias || '').trim() || '暂无备注');
+            const content = this.escapeHtmlSafe(item.content || '');
+            const createdAt = this.escapeHtmlSafe(item.created_at || '');
+            const machineId = JSON.stringify(String(item.machine_id || ''));
+            const displayName = JSON.stringify('用户#' + String(item.uid || '?'));
+            const meta = statusMeta[item.status] || statusMeta.visible;
+            const nextStatus = item.status === 'hidden' ? 'visible' : 'hidden';
+            const nextLabel = item.status === 'hidden' ? '恢复显示' : '隐藏评论';
+            const isBanned = this._isNoticeCommentMachineBanned(item.machine_id);
+
+            return `
+                <div style="border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--card-bg);box-shadow:0 1px 2px rgba(15,23,42,0.03);">
+                    <div style="display:flex;align-items:flex-start;gap:12px;min-width:0;">
+                        <div style="width:42px;height:42px;border-radius:12px;background:rgba(37,99,235,0.10);color:#2563eb;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${uid}</div>
+                        <div style="flex:1;min-width:0;">
+                            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                                <span style="font-size:10px;padding:3px 8px;border-radius:999px;background:rgba(37,99,235,0.08);color:#2563eb;font-weight:700;">${noticeTitle}</span>
+                                <span style="font-size:10px;padding:3px 8px;border-radius:999px;background:rgba(148,163,184,0.10);color:var(--text-muted);font-weight:700;">${item.parent_id > 0 ? '回复评论' : '主评论'}</span>
+                                <span style="font-size:10px;padding:3px 8px;border-radius:999px;background:${meta.bg};color:${meta.color};font-weight:700;">${meta.text}</span>
+                            </div>
+                            <div style="margin-top:10px;font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">用户#${uid}</div>
+                            <div style="margin-top:4px;font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${alias}</div>
+                            <div style="margin-top:12px;font-size:13px;line-height:1.8;color:var(--text);white-space:pre-wrap;word-break:break-word;">${content}</div>
+                            <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:var(--text-muted);">
+                                <span>点赞 ${Number(item.like_count || 0)}</span>
+                                <span>${createdAt}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;">
+                        <button class="btn" style="padding:4px 10px;font-size:11px;height:28px;justify-content:center;" onclick="app.toggleNoticeCommunityCommentStatus(${item.id}, '${nextStatus}')">${nextLabel}</button>
+                        <button class="btn" style="padding:4px 10px;font-size:11px;height:28px;justify-content:center;${isBanned ? 'opacity:0.55;cursor:not-allowed;' : 'color:var(--warning);border-color:rgba(245,158,11,0.2);'}" onclick="app.banNoticeCommentMachine(${machineId}, ${displayName})" ${isBanned ? 'disabled' : ''}>${isBanned ? '已封禁评论' : '封禁评论'}</button>
+                        <button class="btn" style="padding:4px 10px;font-size:11px;height:28px;justify-content:center;color:var(--danger);border-color:rgba(239,68,68,0.18);" onclick="app.deleteNoticeCommunityComment(${item.id})">删除评论</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    async loadNoticeCommentBans() {
+        const container = document.getElementById('noticeCommentBanList');
+        if (container) {
+            container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:32px 20px;">加载封禁名单中...</div>';
+        }
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/community/comment-bans`);
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            const data = await res.json();
+            this._noticeCommentBans = data.bans || [];
+            this.renderNoticeCommentBans();
+            if (this._noticeCommentRecords.length) this.renderNoticeCommunityComments();
+        } catch (error) {
+            if (container) {
+                container.innerHTML = `<div style="text-align:center;color:var(--danger);padding:32px 20px;">加载失败：${this.escapeHtmlSafe(error.message)}</div>`;
+            }
+        }
+    },
+
+    renderNoticeCommentBans() {
+        const container = document.getElementById('noticeCommentBanList');
+        const countEl = document.getElementById('noticeCommentBanCount');
+        if (countEl) countEl.textContent = `${this._noticeCommentBans.length} 人`;
+        if (!container) return;
+
+        if (!this._noticeCommentBans.length) {
+            container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:36px 20px;font-size:12px;">当前没有被封禁的评论用户</div>';
+            return;
+        }
+
+        container.innerHTML = this._noticeCommentBans.map((ban) => {
+            const uid = this.escapeHtmlSafe(ban.uid || '?');
+            const alias = this.escapeHtmlSafe((ban.alias || '').trim() || '暂无备注');
+            const reason = this.escapeHtmlSafe((ban.reason || '').trim() || '未填写封禁原因');
+            const createdAt = this.escapeHtmlSafe(ban.created_at || '');
+            const machineId = this.escapeHtmlSafe(String(ban.machine_id || ''));
+            const machinePreview = machineId.length > 18
+                ? `${machineId.slice(0, 8)}...${machineId.slice(-6)}`
+                : machineId;
+
+            return `
+                <div style="padding:14px 16px;border-bottom:1px solid var(--border);">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <div style="width:36px;height:36px;border-radius:10px;background:rgba(239,68,68,0.10);color:#dc2626;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${uid}</div>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">用户#${uid}</div>
+                            <div style="margin-top:4px;font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${alias}</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;font-size:12px;line-height:1.7;color:var(--text);word-break:break-word;">${reason}</div>
+                    <div style="margin-top:10px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:11px;color:var(--text-muted);">
+                        <span title="${machineId}">Machine ID: ${machinePreview}</span>
+                        <span>${createdAt}</span>
+                        <button class="btn" style="margin-left:auto;padding:4px 10px;font-size:11px;height:28px;justify-content:center;color:var(--secondary);border-color:rgba(16,185,129,0.18);" onclick="app.unbanNoticeCommentMachine(${ban.id})">解除封禁</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    async toggleNoticeCommunityCommentStatus(id, status) {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/community/comments/${id}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            this.showAlert(status === 'hidden' ? '评论已隐藏' : '评论已恢复显示', 'success');
+            this.loadNoticeCommunityComments();
+        } catch (error) {
+            this.showAlert('状态更新失败: ' + error.message, 'danger');
+        }
+    },
+
+    async deleteNoticeCommunityComment(id) {
+        if (!confirm('确定要删除这条评论吗？该操作不可恢复。')) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/community/comments/${id}`, {
+                method: 'DELETE'
+            });
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            this.showAlert('评论已删除', 'success');
+            this.loadNoticeCommunityComments();
+        } catch (error) {
+            this.showAlert('删除失败: ' + error.message, 'danger');
+        }
+    },
+
+    async banNoticeCommentMachine(machineId, displayName) {
+        if (!machineId) {
+            this.showAlert('缺少 machine_id，无法封禁', 'warning');
+            return;
+        }
+        if (this._isNoticeCommentMachineBanned(machineId)) {
+            this.showAlert('该用户已经在封禁名单中', 'warning');
+            return;
+        }
+
+        const reason = window.prompt(`请输入 ${displayName || '该用户'} 的评论封禁原因（可留空）`, '公告评论违规');
+        if (reason === null) return;
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/community/comment-bans`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    machine_id: machineId,
+                    reason: String(reason || '').trim()
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || ('服务器返回 ' + res.status));
+            this.showAlert('评论资格已封禁', 'success');
+            await Promise.all([
+                this.loadNoticeCommentBans(),
+                this.loadNoticeCommunityComments()
+            ]);
+        } catch (error) {
+            this.showAlert('封禁失败: ' + error.message, 'danger');
+        }
+    },
+
+    async unbanNoticeCommentMachine(id) {
+        if (!confirm('确定要解除该用户的评论封禁吗？')) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/community/comment-bans/${id}`, {
+                method: 'DELETE'
+            });
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            this.showAlert('已解除评论封禁', 'success');
+            await Promise.all([
+                this.loadNoticeCommentBans(),
+                this.loadNoticeCommunityComments()
+            ]);
+        } catch (error) {
+            this.showAlert('解除封禁失败: ' + error.message, 'danger');
+        }
+    },
+
     // ==================== 广告轮播管理 ====================
 
     escapeHtmlSafe(str) {
@@ -3206,6 +3539,12 @@ const app = {
         try {
             localStorage.setItem('dashboard_settings', JSON.stringify(settings));
             this.applySettings(settings);
+            if (['dashboard', 'userlist', 'userdetail'].includes(this.state.currentView)) {
+                this.fetchData();
+                if (this.state.currentView === 'userdetail' && this.state.selectedUser) {
+                    this.renderUserDetailView(this.state.selectedUser);
+                }
+            }
             this.showAlert('设置已保存', 'success');
         } catch (e) {
             this.showAlert('保存设置失败', 'error');
@@ -3249,6 +3588,198 @@ const app = {
         this._startFetchInterval();
         this.initSettings();
         this.showAlert('已恢复默认设置', 'success');
+    },
+
+    _readUserWeightNumber(value, fallback) {
+        const parsed = parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    },
+
+    _formatWeightNumber(value) {
+        const normalized = Math.round(Number(value || 0) * 100) / 100;
+        return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+    },
+
+    _collectUserWeightConfigFromForm() {
+        const tagWeights = {};
+        document.querySelectorAll('#userWeightTagList [data-weight-tag]').forEach((input) => {
+            const tagName = input.getAttribute('data-weight-tag');
+            const weight = this._readUserWeightNumber(input.value, 0);
+            if (!tagName) return;
+            if (Math.abs(weight) < 0.0001) return;
+            tagWeights[tagName] = weight;
+        });
+
+        return {
+            base_user_weight: this._readUserWeightNumber(document.getElementById('weightBaseUser')?.value, 1),
+            starred_user_weight: this._readUserWeightNumber(document.getElementById('weightStarredUser')?.value, 0),
+            admin_user_weight: this._readUserWeightNumber(document.getElementById('weightAdminUser')?.value, 0),
+            tag_weights: tagWeights
+        };
+    },
+
+    _renderUserWeightTagInputs() {
+        const container = document.getElementById('userWeightTagList');
+        if (!container) return;
+
+        const tags = this.state.userWeightTags || [];
+        const tagWeights = this.state.userWeightConfig?.tag_weights || {};
+        if (!tags.length) {
+            container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 36px 14px;">当前还没有可配置的标签</div>';
+            return;
+        }
+
+        container.innerHTML = tags.map((tag) => {
+            const label = this._getTagLabel(tag);
+            const icon = tag.icon || 'ri-price-tag-3-line';
+            const weight = tagWeights[tag.name] ?? 0;
+            const colors = this._getTagColor(tag.name);
+            return `
+                <label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg);">
+                    <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+                        <div style="width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: ${colors.color}; background: ${colors.bg}; border: 1px solid ${colors.borderColor}; flex-shrink: 0;">
+                            <i class="${this.escapeHtmlSafe(icon)}"></i>
+                        </div>
+                        <div style="min-width: 0;">
+                            <div style="font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtmlSafe(label)}</div>
+                            <div style="font-size: 11px; color: var(--text-muted);">${this.escapeHtmlSafe(tag.name)}</div>
+                        </div>
+                    </div>
+                    <input class="input" type="number" step="0.5" data-weight-tag="${this.escapeHtmlSafe(tag.name)}" value="${this._formatWeightNumber(weight)}" style="width: 100px; text-align: right;" oninput="app.updateUserWeightPreview()">
+                </label>
+            `;
+        }).join('');
+    },
+
+    updateUserWeightPreview() {
+        const formula = this.state.userWeightFormula || {
+            base_comment_weight: 1,
+            like_weight: 0.5,
+            reply_weight: 0.5
+        };
+        const cfg = this._collectUserWeightConfigFromForm();
+        this.state.userWeightConfig = cfg;
+
+        const baseAuthor = cfg.base_user_weight || 0;
+        const starredAuthor = baseAuthor + (cfg.starred_user_weight || 0);
+        const tags = this.state.userWeightTags || [];
+        const sampleTag = tags.find((tag) => Math.abs(cfg.tag_weights?.[tag.name] || 0) > 0.0001) || tags[0] || null;
+        const sampleTagWeight = sampleTag ? (cfg.tag_weights?.[sampleTag.name] || 0) : 0;
+        const sampleTagAuthor = baseAuthor + sampleTagWeight;
+
+        const formulaText = document.getElementById('userWeightFormulaText');
+        if (formulaText) {
+            formulaText.textContent = `评论基础 ${this._formatWeightNumber(formula.base_comment_weight)} + 点赞 × ${this._formatWeightNumber(formula.like_weight)} + 回复 × ${this._formatWeightNumber(formula.reply_weight)} + 作者权重`;
+        }
+
+        const basicEl = document.getElementById('userWeightPreviewBasic');
+        if (basicEl) {
+            const total = formula.base_comment_weight + baseAuthor;
+            basicEl.innerHTML = `
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">普通用户示例</div>
+                <div style="font-size: 14px; color: var(--text); line-height: 1.7;">一条新评论 = ${this._formatWeightNumber(formula.base_comment_weight)} + 作者权重 ${this._formatWeightNumber(baseAuthor)} = <strong style="color: var(--primary);">${this._formatWeightNumber(total)}</strong></div>
+            `;
+        }
+
+        const starredEl = document.getElementById('userWeightPreviewStarred');
+        if (starredEl) {
+            const total = formula.base_comment_weight + starredAuthor + formula.like_weight * 2 + formula.reply_weight;
+            starredEl.innerHTML = `
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">星标用户示例</div>
+                <div style="font-size: 14px; color: var(--text); line-height: 1.7;">一条 2 个赞、1 条回复的评论 = ${this._formatWeightNumber(formula.base_comment_weight)} + 作者权重 ${this._formatWeightNumber(starredAuthor)} + ${this._formatWeightNumber(formula.like_weight)} × 2 + ${this._formatWeightNumber(formula.reply_weight)} × 1 = <strong style="color: var(--secondary);">${this._formatWeightNumber(total)}</strong></div>
+            `;
+        }
+
+        const tagEl = document.getElementById('userWeightPreviewTag');
+        if (tagEl) {
+            if (sampleTag) {
+                const total = formula.base_comment_weight + sampleTagAuthor;
+                tagEl.innerHTML = `
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">标签用户示例</div>
+                    <div style="font-size: 14px; color: var(--text); line-height: 1.7;">拥有「${this.escapeHtmlSafe(this._getTagLabel(sampleTag))}」标签时，作者权重 = ${this._formatWeightNumber(baseAuthor)} + ${this._formatWeightNumber(sampleTagWeight)} = <strong style="color: #7c3aed;">${this._formatWeightNumber(sampleTagAuthor)}</strong>，新评论总分 = <strong style="color: #7c3aed;">${this._formatWeightNumber(total)}</strong></div>
+                `;
+            } else {
+                tagEl.innerHTML = '<div style="font-size: 12px; color: var(--text-muted);">当前没有标签，先在“设置”页里创建标签后，这里就能继续配置。</div>';
+            }
+        }
+    },
+
+    async initUserWeight() {
+        const container = document.getElementById('userWeightTagList');
+        if (container) {
+            container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 36px 14px;">加载中...</div>';
+        }
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/comment-weights`);
+            if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
+            const data = await res.json();
+            const cfg = data.config || {};
+            this.state.userWeightConfig = {
+                base_user_weight: this._readUserWeightNumber(cfg.base_user_weight, 1),
+                starred_user_weight: this._readUserWeightNumber(cfg.starred_user_weight, 0),
+                admin_user_weight: this._readUserWeightNumber(cfg.admin_user_weight, 0),
+                tag_weights: cfg.tag_weights || {}
+            };
+            this.state.userWeightTags = data.tags || [];
+            this.state.userWeightFormula = data.formula || null;
+
+            const fields = {
+                weightBaseUser: this.state.userWeightConfig.base_user_weight,
+                weightStarredUser: this.state.userWeightConfig.starred_user_weight,
+                weightAdminUser: this.state.userWeightConfig.admin_user_weight
+            };
+            Object.entries(fields).forEach(([id, value]) => {
+                const el = document.getElementById(id);
+                if (el) el.value = this._formatWeightNumber(value);
+            });
+
+            this._renderUserWeightTagInputs();
+            this.updateUserWeightPreview();
+        } catch (error) {
+            if (container) {
+                container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--danger); padding: 36px 14px;">加载失败：${this.escapeHtmlSafe(error.message)}</div>`;
+            }
+            this.showAlert('加载用户权重失败', 'danger');
+        }
+    },
+
+    async saveUserWeightConfig() {
+        const cfg = this._collectUserWeightConfigFromForm();
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/comment-weights`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(cfg)
+            });
+            if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
+            this.state.userWeightConfig = cfg;
+            this.updateUserWeightPreview();
+            this.showAlert('用户权重已保存', 'success');
+        } catch (error) {
+            this.showAlert(`保存失败：${error.message}`, 'danger');
+        }
+    },
+
+    async resetUserWeightConfig() {
+        const defaultCfg = {
+            base_user_weight: 1,
+            starred_user_weight: 0,
+            admin_user_weight: 0,
+            tag_weights: {}
+        };
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/comment-weights`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(defaultCfg)
+            });
+            if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
+            await this.initUserWeight();
+            this.showAlert('用户权重已恢复默认值', 'success');
+        } catch (error) {
+            this.showAlert(`恢复默认失败：${error.message}`, 'danger');
+        }
     },
 
     /**
@@ -3319,8 +3850,8 @@ const app = {
                 case 'status':
                     const minA = a.minutes_ago ?? a.minutes ?? a.last_seen_minutes ?? Infinity;
                     const minB = b.minutes_ago ?? b.minutes ?? b.last_seen_minutes ?? Infinity;
-                    valA = typeof minA === 'number' && minA <= 5 ? 1 : 0;
-                    valB = typeof minB === 'number' && minB <= 5 ? 1 : 0;
+                    valA = this.isUserOnlineByMinutes(minA) ? 1 : 0;
+                    valB = this.isUserOnlineByMinutes(minB) ? 1 : 0;
                     break;
                 default:
                     return 0;
@@ -3428,7 +3959,7 @@ const app = {
         tbody.innerHTML = list.map(user => {
             const hwid = user.hwid || user.hwid_hash || '-';
             const minutes = user.minutes_ago ?? user.minutes ?? user.last_seen_minutes ?? '-';
-            const isOnline = typeof minutes === 'number' && minutes <= 5;
+            const isOnline = this.isUserOnlineByMinutes(minutes);
             const statusClass = isOnline ? 'online' : 'offline';
             const statusText = isOnline ? '在线' : '离线';
             const localeCode = user.locale || '-';
@@ -3528,7 +4059,7 @@ const app = {
         if (statusFilter !== 'all') {
             list = list.filter(u => {
                 const min = u.minutes_ago ?? u.minutes ?? u.last_seen_minutes ?? Infinity;
-                const online = typeof min === 'number' && min <= 5;
+                const online = this.isUserOnlineByMinutes(min);
                 return statusFilter === 'online' ? online : !online;
             });
         }
@@ -3657,7 +4188,7 @@ const app = {
         };
         const localeDisplay = localeMap[localeCode] || localeCode;
 
-        const isOnline = typeof minutes === 'number' && minutes <= 5;
+        const isOnline = this.isUserOnlineByMinutes(minutes);
         const statusClass = isOnline ? 'online' : 'offline';
         const statusText = isOnline ? '在线' : '离线';
         const statusColor = isOnline ? 'var(--secondary)' : 'var(--danger)';

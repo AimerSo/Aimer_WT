@@ -141,13 +141,15 @@ func initRouter(r *gin.Engine) {
 		}
 
 		protectedClientPaths := map[string]bool{
-			"/telemetry":          true,
-			"/feedback":           true,
-			"/redeem":             true,
-			"/telemetry/ad-click": true,
-			"/api/ai/chat":        true,
-			"/api/ai/stats":       true,
-			"/api/ai/quota":       true,
+			"/telemetry":           true,
+			"/feedback":            true,
+			"/redeem":              true,
+			"/telemetry/ad-click":  true,
+			"/api/ai/chat":         true,
+			"/api/ai/stats":        true,
+			"/api/ai/quota":        true,
+			"/notice-comment":      true,
+			"/notice-comment-like": true,
 		}
 		if protectedClientPaths[path] {
 			if !requireClientRequest(c) {
@@ -186,6 +188,13 @@ func initRouter(r *gin.Engine) {
 				if days <= 0 {
 					days = 30
 				}
+				onlineThresholdMinutes, _ := strconv.Atoi(c.DefaultQuery("online_threshold_min", "5"))
+				if onlineThresholdMinutes <= 0 {
+					onlineThresholdMinutes = 5
+				}
+				if onlineThresholdMinutes > 120 {
+					onlineThresholdMinutes = 120
+				}
 
 				baseQuery := db.Model(&TelemetryRecord{})
 				if osFilter := c.Query("os"); osFilter != "" {
@@ -205,7 +214,7 @@ func initRouter(r *gin.Engine) {
 
 				baseQuery.Count(&stats.TotalUsers)
 
-				onlineThreshold := time.Now().Add(-7 * time.Minute)
+				onlineThreshold := time.Now().Add(-time.Duration(onlineThresholdMinutes) * time.Minute)
 				baseQuery.Session(&gorm.Session{}).Where("last_seen_at > ?", onlineThreshold).Count(&stats.OnlineUsers)
 
 				today := time.Now().Format("2006-01-02")
@@ -867,6 +876,12 @@ func initRouter(r *gin.Engine) {
 		// 兑换码管理路由
 		initRedeemRoutes(admin)
 
+		// 社区评论管理路由
+		initCommunityAdminRoutes(admin)
+
+		// 评论权重配置路由
+		initCommentWeightRoutes(admin)
+
 		// ==================== 广告统计 API ====================
 
 		admin.GET("/ad-stats", func(c *gin.Context) {
@@ -1188,26 +1203,66 @@ func initRouter(r *gin.Engine) {
 		if !ensureClientMachineBinding(c, req.MachineID) {
 			return
 		}
+		req.MachineID = strings.TrimSpace(req.MachineID)
+		req.Emoji = strings.TrimSpace(req.Emoji)
 		if req.NoticeID == 0 || req.Emoji == "" || req.MachineID == "" {
 			c.JSON(400, gin.H{"error": "notice_id, machine_id, emoji are required"})
 			return
 		}
 
-		// 限制每用户对每条公告最多 5 种不同表情
-		var existing NoticeReaction
-		err := db.Where("notice_id = ? AND machine_id = ? AND emoji = ?", req.NoticeID, req.MachineID, req.Emoji).First(&existing).Error
-		if err == nil {
-			// 已有此反应 → 取消
-			db.Delete(&existing)
-			c.JSON(200, gin.H{"status": "removed"})
+		var actor TelemetryRecord
+		db.Select("is_admin").Where("machine_id = ?", req.MachineID).First(&actor)
+
+		if !actor.IsAdmin {
+			status := "added"
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				var existingReactions []NoticeReaction
+				if err := tx.Select("id", "emoji").
+					Where("notice_id = ? AND machine_id = ?", req.NoticeID, req.MachineID).
+					Find(&existingReactions).Error; err != nil {
+					return err
+				}
+
+				hasSameEmoji := false
+				for _, reaction := range existingReactions {
+					if reaction.Emoji == req.Emoji {
+						hasSameEmoji = true
+						break
+					}
+				}
+
+				if len(existingReactions) > 0 {
+					if err := tx.Where("notice_id = ? AND machine_id = ?", req.NoticeID, req.MachineID).
+						Delete(&NoticeReaction{}).Error; err != nil {
+						return err
+					}
+				}
+
+				if hasSameEmoji {
+					status = "removed"
+					return nil
+				}
+				if len(existingReactions) > 0 {
+					status = "replaced"
+				}
+
+				return tx.Create(&NoticeReaction{
+					NoticeID:  req.NoticeID,
+					MachineID: req.MachineID,
+					Emoji:     req.Emoji,
+				}).Error
+			}); err != nil {
+				c.JSON(500, gin.H{"error": "保存失败"})
+				return
+			}
+			c.JSON(200, gin.H{"status": status})
 			return
 		}
 
-		// 检查用户对此公告的反应种类数
-		var distinctCount int64
-		db.Model(&NoticeReaction{}).Where("notice_id = ? AND machine_id = ?", req.NoticeID, req.MachineID).Distinct("emoji").Count(&distinctCount)
-		if distinctCount >= 5 {
-			c.JSON(429, gin.H{"error": "每条公告最多添加 5 种表情反应"})
+		var existing NoticeReaction
+		if err := db.Where("notice_id = ? AND machine_id = ? AND emoji = ?", req.NoticeID, req.MachineID, req.Emoji).First(&existing).Error; err == nil {
+			db.Delete(&existing)
+			c.JSON(200, gin.H{"status": "removed"})
 			return
 		}
 
@@ -1235,28 +1290,32 @@ func initRouter(r *gin.Engine) {
 		for _, r := range reactions {
 			machineIDs[r.MachineID] = true
 		}
-		type idRow struct {
+		type identityRow struct {
 			MachineID string
 			ID        uint
+			Alias     string
 		}
-		var idRows []idRow
+		var identityRows []identityRow
 		if len(machineIDs) > 0 {
 			keys := make([]string, 0, len(machineIDs))
 			for k := range machineIDs {
 				keys = append(keys, k)
 			}
-			db.Model(&TelemetryRecord{}).Where("machine_id IN ?", keys).Select("machine_id, id").Scan(&idRows)
+			db.Model(&TelemetryRecord{}).Where("machine_id IN ?", keys).Select("machine_id, id, alias").Scan(&identityRows)
 		}
 		seqMap := map[string]uint{}
-		for _, row := range idRows {
+		aliasMap := map[string]string{}
+		for _, row := range identityRows {
 			seqMap[row.MachineID] = row.ID
+			aliasMap[row.MachineID] = row.Alias
 		}
 
 		type reactionItem struct {
-			Emoji   string   `json:"emoji"`
-			Count   int      `json:"count"`
-			Users   []string `json:"users"`
-			Reacted bool     `json:"reacted"`
+			Emoji       string              `json:"emoji"`
+			Count       int                 `json:"count"`
+			Users       []string            `json:"users"`
+			UserDetails []map[string]string `json:"user_details,omitempty"`
+			Reacted     bool                `json:"reacted"`
 		}
 		groupMap := map[string]*reactionItem{}
 		var order []string
@@ -1274,6 +1333,11 @@ func initRouter(r *gin.Engine) {
 				uid = fmt.Sprintf("%d", seqID)
 			}
 			g.Users = append(g.Users, uid)
+			userDetail := map[string]string{"uid": uid}
+			if alias := strings.TrimSpace(aliasMap[r.MachineID]); alias != "" {
+				userDetail["alias"] = alias
+			}
+			g.UserDetails = append(g.UserDetails, userDetail)
 			if r.MachineID == machineID {
 				g.Reacted = true
 			}
@@ -1378,9 +1442,12 @@ func initRouter(r *gin.Engine) {
 
 		clientConfig := sysConfig
 
-		// 查询当前用户的持久化标签数据，用于 scope 匹配
 		var dbRecord TelemetryRecord
-		db.Where("machine_id = ?", record.MachineID).First(&dbRecord)
+		if err := db.Select("id", "version", "pending_command", "is_starred", "is_admin", "tags").
+			Where("machine_id = ?", record.MachineID).
+			First(&dbRecord).Error; err != nil {
+			dbRecord = record
+		}
 
 		if !matchScope(sysConfig.AlertScope, dbRecord) {
 			clientConfig.AlertActive = false
@@ -1400,10 +1467,8 @@ func initRouter(r *gin.Engine) {
 			clientConfig.HeartbeatInterval = 0
 		}
 
-		var pendingCmd string
-		var userSeqID uint
-		db.Model(&TelemetryRecord{}).Where("machine_id = ?", record.MachineID).Select("pending_command").Scan(&pendingCmd)
-		db.Model(&TelemetryRecord{}).Where("machine_id = ?", record.MachineID).Select("id").Scan(&userSeqID)
+		pendingCmd := dbRecord.PendingCommand
+		userSeqID := dbRecord.ID
 		if pendingCmd != "" {
 			db.Model(&TelemetryRecord{}).Where("machine_id = ?", record.MachineID).Update("pending_command", "")
 		}
@@ -1450,6 +1515,9 @@ func initRouter(r *gin.Engine) {
 
 		c.JSON(200, response)
 	})
+
+	// 社区评论客户端路由（公开端点，使用 UA/HMAC 校验）
+	initCommunityClientRoutes(r)
 
 	// WebSocket 端点（不需要 Basic Auth，使用自定义认证）
 	r.GET("/ws", HandleWebSocket)
