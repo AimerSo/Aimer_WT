@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -79,6 +80,13 @@ func intValue(raw any) (int, bool) {
 }
 
 func serializeTelemetryUser(record TelemetryRecord) map[string]any {
+	row := serializeTelemetryUserBase(record)
+	profiles := loadUserProfilesMap([]string{record.MachineID})
+	attachTelemetryUserProfile(row, profiles[record.MachineID])
+	return row
+}
+
+func serializeTelemetryUserBase(record TelemetryRecord) map[string]any {
 	return map[string]any{
 		"id":                record.ID,
 		"uid":               record.MachineID,
@@ -102,14 +110,46 @@ func serializeTelemetryUser(record TelemetryRecord) map[string]any {
 	}
 }
 
+func attachTelemetryUserProfile(row map[string]any, profile UserProfile) {
+	if profile.MachineID != "" {
+		row["level"] = profile.Level
+		row["exp"] = profile.Exp
+		row["nickname"] = profile.Nickname
+		row["badges"] = profile.Badges
+		row["verified"] = profile.Verified
+		return
+	}
+	row["level"] = 0
+	row["exp"] = 0
+	row["nickname"] = ""
+	row["badges"] = "[]"
+	row["verified"] = false
+}
+
+func serializeTelemetryUsers(records []TelemetryRecord) []map[string]any {
+	if len(records) == 0 {
+		return []map[string]any{}
+	}
+
+	machineIDs := make([]string, 0, len(records))
+	for _, record := range records {
+		machineIDs = append(machineIDs, record.MachineID)
+	}
+	profiles := loadUserProfilesMap(machineIDs)
+
+	result := make([]map[string]any, len(records))
+	for i, record := range records {
+		row := serializeTelemetryUserBase(record)
+		attachTelemetryUserProfile(row, profiles[record.MachineID])
+		result[i] = row
+	}
+	return result
+}
+
 func initRouter(r *gin.Engine) {
 	// CORS 中间件：允许 pywebview 前端跨域访问 AI 端点
 	r.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-AimerWT-Client, X-AimerWT-Timestamp, X-AimerWT-Machine, X-AimerWT-Signature")
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
+		if !applyCORSHeaders(c) {
 			return
 		}
 		c.Next()
@@ -122,9 +162,15 @@ func initRouter(r *gin.Engine) {
 	}
 	r.Static("/uploads", uploadsDir)
 
+	isValidAdminBasicAuth := func(req *http.Request) bool {
+		user, pass, hasAuth := req.BasicAuth()
+		return hasAuth &&
+			subtle.ConstantTimeCompare([]byte(user), []byte(adminUser)) == 1 &&
+			subtle.ConstantTimeCompare([]byte(pass), []byte(adminPass)) == 1
+	}
+
 	authMiddleware := func(c *gin.Context) {
-		user, pass, hasAuth := c.Request.BasicAuth()
-		if hasAuth && user == adminUser && pass == adminPass {
+		if isValidAdminBasicAuth(c.Request) {
 			c.Next()
 			return
 		}
@@ -135,7 +181,7 @@ func initRouter(r *gin.Engine) {
 
 	r.Use(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		if path == "/health" || path == "/ws" {
+		if path == "/health" || path == "/ws" || c.Request.Method == "OPTIONS" {
 			c.Next()
 			return
 		}
@@ -145,15 +191,27 @@ func initRouter(r *gin.Engine) {
 			"/feedback":            true,
 			"/redeem":              true,
 			"/telemetry/ad-click":  true,
+			"/user-profile":        true,
 			"/api/ai/chat":         true,
 			"/api/ai/stats":        true,
 			"/api/ai/quota":        true,
+			"/notice-reaction":     true,
 			"/notice-comment":      true,
 			"/notice-comment-like": true,
 		}
-		if protectedClientPaths[path] {
+		protectedByPrefix := strings.HasPrefix(path, "/notice-comments/") || strings.HasPrefix(path, "/notice-reactions/")
+		if protectedClientPaths[path] || protectedByPrefix {
+			if isValidAdminBasicAuth(c.Request) {
+				c.Next()
+				return
+			}
 			if !requireClientRequest(c) {
 				return
+			}
+			if queryMachineID := strings.TrimSpace(c.Query("machine_id")); queryMachineID != "" {
+				if !ensureClientMachineBinding(c, queryMachineID) {
+					return
+				}
 			}
 			c.Next()
 			return
@@ -188,7 +246,10 @@ func initRouter(r *gin.Engine) {
 				if days <= 0 {
 					days = 30
 				}
-				onlineThresholdMinutes, _ := strconv.Atoi(c.DefaultQuery("online_threshold_min", "5"))
+				onlineThresholdMinutes, _ := strconv.Atoi(c.DefaultQuery("online_threshold_min", "0"))
+				if onlineThresholdMinutes <= 0 {
+					onlineThresholdMinutes = sysConfig.OnlineThresholdMin
+				}
 				if onlineThresholdMinutes <= 0 {
 					onlineThresholdMinutes = 5
 				}
@@ -252,10 +313,7 @@ func initRouter(r *gin.Engine) {
 				var recentRecs []TelemetryRecord
 				baseQuery.Session(&gorm.Session{}).Order("last_seen_at desc").Limit(50).Find(&recentRecs)
 
-				stats.RecentUsers = make([]map[string]any, len(recentRecs))
-				for i, r := range recentRecs {
-					stats.RecentUsers[i] = serializeTelemetryUser(r)
-				}
+				stats.RecentUsers = serializeTelemetryUsers(recentRecs)
 
 				getAllOptions := func(field string) []map[string]any {
 					var results []map[string]any
@@ -279,6 +337,21 @@ func initRouter(r *gin.Engine) {
 			admin.GET("/drilldown", func(c *gin.Context) {
 				dimension := c.Query("dimension")
 				value := c.Query("value")
+				dimensionColumns := map[string]string{
+					"os":         "os",
+					"arch":       "arch",
+					"version":    "version",
+					"locale":     "locale",
+					"screen_res": "screen_res",
+					"date":       "date",
+				}
+
+				if dimension != "" {
+					if _, ok := dimensionColumns[dimension]; !ok {
+						c.JSON(400, gin.H{"error": "不支持的维度"})
+						return
+					}
+				}
 
 				var resp DrilldownResponse
 				resp.Period = "当前筛选"
@@ -286,7 +359,7 @@ func initRouter(r *gin.Engine) {
 				query := db.Model(&TelemetryRecord{})
 
 				if dimension != "" && value != "" && dimension != "date" {
-					query = query.Where(dimension+" = ?", value)
+					query = query.Where(dimensionColumns[dimension]+" = ?", value)
 				}
 				if dimension == "date" && value != "" {
 					query = query.Where("date(created_at) = ?", value)
@@ -324,6 +397,44 @@ func initRouter(r *gin.Engine) {
 				}
 
 				c.JSON(200, gin.H{"user": serializeTelemetryUser(user)})
+			})
+
+			admin.GET("/users", func(c *gin.Context) {
+				offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+				limit, _ := strconv.Atoi(c.DefaultQuery("limit", "500"))
+				if offset < 0 {
+					offset = 0
+				}
+				if limit <= 0 {
+					limit = 500
+				}
+				if limit > 1000 {
+					limit = 1000
+				}
+
+				baseQuery := db.Model(&TelemetryRecord{})
+
+				var total int64
+				if err := baseQuery.Count(&total).Error; err != nil {
+					c.JSON(500, gin.H{"error": "统计用户数量失败"})
+					return
+				}
+
+				var users []TelemetryRecord
+				if err := baseQuery.Order("last_seen_at desc, id desc").Offset(offset).Limit(limit).Find(&users).Error; err != nil {
+					c.JSON(500, gin.H{"error": "加载用户列表失败"})
+					return
+				}
+
+				nextOffset := offset + len(users)
+				c.JSON(200, gin.H{
+					"users":       serializeTelemetryUsers(users),
+					"total":       total,
+					"offset":      offset,
+					"limit":       limit,
+					"next_offset": nextOffset,
+					"has_more":    int64(nextOffset) < total,
+				})
 			})
 
 			admin.GET("/export", func(c *gin.Context) {
@@ -370,7 +481,7 @@ func initRouter(r *gin.Engine) {
 			admin.POST("/control", func(c *gin.Context) {
 				var req map[string]any
 				if err := c.ShouldBindJSON(&req); err != nil {
-					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
 					return
 				}
 
@@ -428,7 +539,7 @@ func initRouter(r *gin.Engine) {
 					if rawItems, exists := req["banner_items"]; exists {
 						items, err := parseBannerItems(rawItems)
 						if err != nil {
-							c.JSON(400, gin.H{"error": "Invalid banner_items"})
+							c.JSON(400, gin.H{"error": "横幅数据格式无效"})
 							return
 						}
 						sysConfig.BannerItems = items
@@ -477,12 +588,47 @@ func initRouter(r *gin.Engine) {
 						sysConfig.HeartbeatScope = val
 					}
 
+				case "online_threshold":
+					if val, ok := req["online_threshold_min"].(float64); ok {
+						iv := int(val)
+						if iv < 1 {
+							iv = 1
+						}
+						if iv > 120 {
+							iv = 120
+						}
+						sysConfig.OnlineThresholdMin = iv
+					}
+
 				case "project_info":
 					if val, ok := req["project_status"].(string); ok {
 						sysConfig.ProjectStatus = val
 					}
 					if val, ok := req["project_last_update"].(string); ok {
 						sysConfig.ProjectLastUpdate = val
+					}
+
+				case "user_features":
+					if val, ok := req["badge_system_enabled"].(bool); ok {
+						sysConfig.BadgeSystemEnabled = val
+					}
+					if val, ok := req["nickname_change_enabled"].(bool); ok {
+						sysConfig.NicknameChangeEnabled = val
+					}
+					if val, ok := req["avatar_upload_enabled"].(bool); ok {
+						sysConfig.AvatarUploadEnabled = val
+					}
+					if val, ok := req["notice_comment_enabled"].(bool); ok {
+						sysConfig.NoticeCommentEnabled = val
+					}
+					if val, ok := req["notice_reaction_enabled"].(bool); ok {
+						sysConfig.NoticeReactionEnabled = val
+					}
+					if val, ok := req["redeem_code_enabled"].(bool); ok {
+						sysConfig.RedeemCodeEnabled = val
+					}
+					if val, ok := req["feedback_enabled"].(bool); ok {
+						sysConfig.FeedbackEnabled = val
 					}
 
 				case "latest_version":
@@ -500,7 +646,7 @@ func initRouter(r *gin.Engine) {
 				case "_query":
 					shouldPersist = false
 				default:
-					c.JSON(400, gin.H{"error": "Unknown action"})
+					c.JSON(400, gin.H{"error": "未知操作"})
 					return
 				}
 
@@ -538,12 +684,18 @@ func initRouter(r *gin.Engine) {
 					Alias     string `json:"alias"`
 				}
 				if err := c.ShouldBindJSON(&req); err != nil {
-					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
+					return
+				}
+				req.MachineID = strings.TrimSpace(req.MachineID)
+				req.Alias = strings.TrimSpace(req.Alias)
+				if req.MachineID == "" {
+					c.JSON(400, gin.H{"error": "machine_id 为必填"})
 					return
 				}
 
 				if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("alias", req.Alias).Error; err != nil {
-					c.JSON(500, gin.H{"error": "Update failed"})
+					c.JSON(500, gin.H{"error": "更新失败"})
 					return
 				}
 				c.JSON(200, gin.H{"status": "success"})
@@ -555,13 +707,13 @@ func initRouter(r *gin.Engine) {
 					Command   string `json:"command"` // JSON string
 				}
 				if err := c.ShouldBindJSON(&req); err != nil {
-					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
 					return
 				}
 
 				err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("pending_command", req.Command).Error
 				if err != nil {
-					c.JSON(500, gin.H{"error": "Update failed"})
+					c.JSON(500, gin.H{"error": "更新失败"})
 					return
 				}
 				c.JSON(200, gin.H{"status": "success"})
@@ -572,12 +724,12 @@ func initRouter(r *gin.Engine) {
 					MachineID string `json:"machine_id"`
 				}
 				if err := c.ShouldBindJSON(&req); err != nil {
-					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
 					return
 				}
 
 				if err := db.Delete(&TelemetryRecord{}, "machine_id = ?", req.MachineID).Error; err != nil {
-					c.JSON(500, gin.H{"error": "Delete failed"})
+					c.JSON(500, gin.H{"error": "删除失败"})
 					return
 				}
 				c.JSON(200, gin.H{"status": "success"})
@@ -598,7 +750,7 @@ func initRouter(r *gin.Engine) {
 					IntervalMs int              `json:"interval_ms"`
 				}
 				if err := c.ShouldBindJSON(&req); err != nil {
-					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
 					return
 				}
 
@@ -646,7 +798,7 @@ func initRouter(r *gin.Engine) {
 			admin.POST("/notices", func(c *gin.Context) {
 				var item NoticeItem
 				if err := c.ShouldBindJSON(&item); err != nil {
-					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
 					return
 				}
 				item.ID = 0
@@ -655,7 +807,7 @@ func initRouter(r *gin.Engine) {
 					db.Model(&NoticeItem{}).Where("is_pinned = ?", true).Update("is_pinned", false)
 				}
 				if err := db.Create(&item).Error; err != nil {
-					c.JSON(500, gin.H{"error": "Create failed"})
+					c.JSON(500, gin.H{"error": "创建失败"})
 					return
 				}
 				c.JSON(200, gin.H{"status": "success", "item": item})
@@ -665,12 +817,12 @@ func initRouter(r *gin.Engine) {
 				id := c.Param("id")
 				var existing NoticeItem
 				if err := db.First(&existing, id).Error; err != nil {
-					c.JSON(404, gin.H{"error": "Not found"})
+					c.JSON(404, gin.H{"error": "未找到"})
 					return
 				}
 				var updates NoticeItem
 				if err := c.ShouldBindJSON(&updates); err != nil {
-					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
 					return
 				}
 				if updates.IsPinned {
@@ -688,7 +840,7 @@ func initRouter(r *gin.Engine) {
 			admin.DELETE("/notices/:id", func(c *gin.Context) {
 				id := c.Param("id")
 				if err := db.Delete(&NoticeItem{}, id).Error; err != nil {
-					c.JSON(500, gin.H{"error": "Delete failed"})
+					c.JSON(500, gin.H{"error": "删除失败"})
 					return
 				}
 				c.JSON(200, gin.H{"status": "success"})
@@ -746,12 +898,12 @@ func initRouter(r *gin.Engine) {
 					Permissions interface{} `json:"permissions"`
 				}
 				if err := c.ShouldBindJSON(&req); err != nil {
-					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
 					return
 				}
 				data, err := json.Marshal(req.Permissions)
 				if err != nil {
-					c.JSON(400, gin.H{"error": "Invalid data"})
+					c.JSON(400, gin.H{"error": "数据无效"})
 					return
 				}
 				SaveConfig("emoji_permissions", string(data))
@@ -836,7 +988,7 @@ func initRouter(r *gin.Engine) {
 				id := c.Param("id")
 				var existing FeedbackRecord
 				if err := db.First(&existing, id).Error; err != nil {
-					c.JSON(404, gin.H{"error": "Not found"})
+					c.JSON(404, gin.H{"error": "未找到"})
 					return
 				}
 				var req struct {
@@ -844,7 +996,7 @@ func initRouter(r *gin.Engine) {
 					AdminNote string `json:"admin_note"`
 				}
 				if err := c.ShouldBindJSON(&req); err != nil {
-					c.JSON(400, gin.H{"error": "Invalid JSON"})
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
 					return
 				}
 				updates := map[string]interface{}{}
@@ -864,7 +1016,7 @@ func initRouter(r *gin.Engine) {
 			admin.DELETE("/feedback/:id", func(c *gin.Context) {
 				id := c.Param("id")
 				if err := db.Delete(&FeedbackRecord{}, id).Error; err != nil {
-					c.JSON(500, gin.H{"error": "Delete failed"})
+					c.JSON(500, gin.H{"error": "删除失败"})
 					return
 				}
 				c.JSON(200, gin.H{"status": "success"})
@@ -987,23 +1139,23 @@ func initRouter(r *gin.Engine) {
 		admin.POST("/tags", func(c *gin.Context) {
 			var tag UserTag
 			if err := c.ShouldBindJSON(&tag); err != nil {
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 			tag.ID = 0
 			tag.IsSystem = false
 			if tag.Name == "" {
-				c.JSON(400, gin.H{"error": "name is required"})
+				c.JSON(400, gin.H{"error": "标签名称不能为空"})
 				return
 			}
 			var count int64
 			db.Model(&UserTag{}).Where("name = ?", tag.Name).Count(&count)
 			if count > 0 {
-				c.JSON(409, gin.H{"error": "tag name already exists"})
+				c.JSON(409, gin.H{"error": "标签名称已存在"})
 				return
 			}
 			if err := db.Create(&tag).Error; err != nil {
-				c.JSON(500, gin.H{"error": "Create failed"})
+				c.JSON(500, gin.H{"error": "创建失败"})
 				return
 			}
 			c.JSON(200, gin.H{"status": "success", "tag": tag})
@@ -1013,12 +1165,12 @@ func initRouter(r *gin.Engine) {
 			id := c.Param("id")
 			var existing UserTag
 			if err := db.First(&existing, id).Error; err != nil {
-				c.JSON(404, gin.H{"error": "Not found"})
+				c.JSON(404, gin.H{"error": "未找到"})
 				return
 			}
 			var updates UserTag
 			if err := c.ShouldBindJSON(&updates); err != nil {
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 			updateMap := map[string]interface{}{}
@@ -1048,7 +1200,7 @@ func initRouter(r *gin.Engine) {
 			id := c.Param("id")
 			var tag UserTag
 			if err := db.First(&tag, id).Error; err != nil {
-				c.JSON(404, gin.H{"error": "Not found"})
+				c.JSON(404, gin.H{"error": "未找到"})
 				return
 			}
 			if tag.IsSystem {
@@ -1067,12 +1219,12 @@ func initRouter(r *gin.Engine) {
 				Tags      []string `json:"tags"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 			tagsJson, _ := json.Marshal(req.Tags)
 			if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("tags", string(tagsJson)).Error; err != nil {
-				c.JSON(500, gin.H{"error": "Update failed"})
+				c.JSON(500, gin.H{"error": "更新失败"})
 				return
 			}
 			c.JSON(200, gin.H{"status": "success"})
@@ -1084,11 +1236,11 @@ func initRouter(r *gin.Engine) {
 				IsStarred bool   `json:"is_starred"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 			if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("is_starred", req.IsStarred).Error; err != nil {
-				c.JSON(500, gin.H{"error": "Update failed"})
+				c.JSON(500, gin.H{"error": "更新失败"})
 				return
 			}
 			c.JSON(200, gin.H{"status": "success"})
@@ -1100,15 +1252,18 @@ func initRouter(r *gin.Engine) {
 				IsAdmin   bool   `json:"is_admin"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 			if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("is_admin", req.IsAdmin).Error; err != nil {
-				c.JSON(500, gin.H{"error": "Update failed"})
+				c.JSON(500, gin.H{"error": "更新失败"})
 				return
 			}
 			c.JSON(200, gin.H{"status": "success"})
 		})
+
+		// 用户个人资料管理员路由
+		initUserProfileAdminRoutes(admin)
 	}
 
 	// 客户端 AI 聊天端点（支持 UA 或自定义 header 校验，不需要 Basic Auth）
@@ -1118,7 +1273,7 @@ func initRouter(r *gin.Engine) {
 		uaOk := len(ua) >= 14 && ua[:14] == "AimerWT-Client"
 		headerOk := clientHeader != ""
 		if !uaOk && !headerOk {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Access Denied"})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "访问被拒绝"})
 			return
 		}
 		handleAIChat(c)
@@ -1146,50 +1301,14 @@ func initRouter(r *gin.Engine) {
 	r.POST("/redeem", handleRedeem)
 
 	// 客户端反馈提交（使用与 /telemetry 相同的 UA 校验）
-	r.POST("/feedback", func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
-		var fb FeedbackRecord
-		if err := c.ShouldBindJSON(&fb); err != nil {
-			c.JSON(400, gin.H{"error": "Invalid JSON"})
-			return
-		}
-		if !ensureClientMachineBinding(c, fb.MachineID) {
-			return
-		}
-
-		// 内容校验
-		if len(fb.Content) == 0 {
-			c.JSON(400, gin.H{"error": "Content is required"})
-			return
-		}
-		if len(fb.Content) > 500 {
-			fb.Content = fb.Content[:500]
-		}
-		if len(fb.Contact) > 100 {
-			fb.Contact = fb.Contact[:100]
-		}
-
-		// 频率限制：同一 machine_id 5 分钟内最多 1 条
-		if fb.MachineID != "" {
-			var recentCount int64
-			threshold := time.Now().Add(-5 * time.Minute)
-			db.Model(&FeedbackRecord{}).Where("machine_id = ? AND created_at > ?", fb.MachineID, threshold).Count(&recentCount)
-			if recentCount > 0 {
-				c.JSON(429, gin.H{"error": "请稍后再提交反馈（5分钟内限1条）"})
-				return
-			}
-		}
-
-		fb.Status = "pending"
-		if err := db.Create(&fb).Error; err != nil {
-			c.JSON(500, gin.H{"error": "保存失败"})
-			return
-		}
-		c.JSON(200, gin.H{"status": "success", "feedback_id": fb.ID})
-	})
+	r.POST("/feedback", handleFeedback)
 
 	// 公告表情反应 API（客户端调用）
 	r.POST("/notice-reaction", func(c *gin.Context) {
+		if !sysConfig.NoticeReactionEnabled {
+			c.JSON(403, gin.H{"error": "公告表情互动已关闭"})
+			return
+		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4<<10)
 		var req struct {
 			NoticeID  uint   `json:"notice_id"`
@@ -1197,7 +1316,7 @@ func initRouter(r *gin.Engine) {
 			Emoji     string `json:"emoji"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			c.JSON(400, gin.H{"error": "请求数据格式错误"})
 			return
 		}
 		if !ensureClientMachineBinding(c, req.MachineID) {
@@ -1206,7 +1325,7 @@ func initRouter(r *gin.Engine) {
 		req.MachineID = strings.TrimSpace(req.MachineID)
 		req.Emoji = strings.TrimSpace(req.Emoji)
 		if req.NoticeID == 0 || req.Emoji == "" || req.MachineID == "" {
-			c.JSON(400, gin.H{"error": "notice_id, machine_id, emoji are required"})
+			c.JSON(400, gin.H{"error": "notice_id、machine_id、emoji 为必填"})
 			return
 		}
 
@@ -1279,6 +1398,10 @@ func initRouter(r *gin.Engine) {
 	})
 
 	r.GET("/notice-reactions/:notice_id", func(c *gin.Context) {
+		if !sysConfig.NoticeReactionEnabled {
+			c.JSON(200, gin.H{"reactions": []map[string]any{}, "disabled": true})
+			return
+		}
 		noticeID := c.Param("notice_id")
 		machineID := c.Query("machine_id")
 
@@ -1359,11 +1482,11 @@ func initRouter(r *gin.Engine) {
 			TargetURL string `json:"target_url"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			c.JSON(400, gin.H{"error": "请求数据格式错误"})
 			return
 		}
 		if req.AdMedium == "" || req.AdID == "" {
-			c.JSON(400, gin.H{"error": "ad_medium and ad_id are required"})
+			c.JSON(400, gin.H{"error": "ad_medium 和 ad_id 为必填"})
 			return
 		}
 		if !ensureClientMachineBinding(c, req.MachineID) {
@@ -1403,7 +1526,7 @@ func initRouter(r *gin.Engine) {
 			TargetURL: req.TargetURL,
 		}
 		if err := db.Create(&event).Error; err != nil {
-			c.JSON(500, gin.H{"error": "Save failed"})
+			c.JSON(500, gin.H{"error": "保存失败"})
 			return
 		}
 		c.JSON(200, gin.H{"status": "success"})
@@ -1418,7 +1541,7 @@ func initRouter(r *gin.Engine) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
 		var record TelemetryRecord
 		if err := c.ShouldBindJSON(&record); err != nil {
-			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			c.JSON(400, gin.H{"error": "请求数据格式错误"})
 			return
 		}
 		if !ensureClientMachineBinding(c, record.MachineID) {
@@ -1479,6 +1602,15 @@ func initRouter(r *gin.Engine) {
 			"user_command": pendingCmd,
 			"user_seq_id":  userSeqID,
 		}
+		if !hasClientDeviceToken(record.MachineID) {
+			deviceToken, err := issueClientDeviceToken(record.MachineID)
+			if err != nil {
+				c.JSON(500, gin.H{"status": "error", "error": "设备令牌签发失败"})
+				return
+			}
+			c.Header(clientDeviceTokenHeader, deviceToken)
+			response["client_device_token"] = deviceToken
+		}
 
 		// 构建广告轮播数据供客户端同步（图片路径补全为完整 URL）
 		items := LoadAdCarouselItems()
@@ -1516,9 +1648,59 @@ func initRouter(r *gin.Engine) {
 		c.JSON(200, response)
 	})
 
+	// 用户个人资料客户端公开路由
+	initUserProfileClientRoutes(r)
+
 	// 社区评论客户端路由（公开端点，使用 UA/HMAC 校验）
 	initCommunityClientRoutes(r)
 
 	// WebSocket 端点（不需要 Basic Auth，使用自定义认证）
 	r.GET("/ws", HandleWebSocket)
+}
+
+func handleFeedback(c *gin.Context) {
+	if !sysConfig.FeedbackEnabled {
+		c.JSON(403, gin.H{"error": "问题反馈功能已关闭"})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
+	var fb FeedbackRecord
+	if err := c.ShouldBindJSON(&fb); err != nil {
+		c.JSON(400, gin.H{"error": "请求数据格式错误"})
+		return
+	}
+	if !ensureClientMachineBinding(c, fb.MachineID) {
+		return
+	}
+
+	// 内容校验
+	if len(fb.Content) == 0 {
+		c.JSON(400, gin.H{"error": "内容不能为空"})
+		return
+	}
+	if len(fb.Content) > 500 {
+		fb.Content = fb.Content[:500]
+	}
+	if len(fb.Contact) > 100 {
+		fb.Contact = fb.Contact[:100]
+	}
+
+	// 频率限制：同一 machine_id 5 分钟内最多 1 条
+	if fb.MachineID != "" {
+		var recentCount int64
+		threshold := time.Now().Add(-5 * time.Minute)
+		db.Model(&FeedbackRecord{}).Where("machine_id = ? AND created_at > ?", fb.MachineID, threshold).Count(&recentCount)
+		if recentCount > 0 {
+			c.JSON(429, gin.H{"error": "请稍后再提交反馈（5分钟内限1条）"})
+			return
+		}
+	}
+
+	fb.Status = "pending"
+	if err := db.Create(&fb).Error; err != nil {
+		c.JSON(500, gin.H{"error": "保存失败"})
+		return
+	}
+	c.JSON(200, gin.H{"status": "success", "feedback_id": fb.ID})
 }

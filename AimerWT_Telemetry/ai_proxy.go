@@ -20,16 +20,17 @@ import (
 // ─── AI 配置（持久化到 ContentConfig 表） ───
 
 type AIProxyConfig struct {
-	Enabled      bool    `json:"enabled"`
-	Provider     string  `json:"provider"` // 标记用途（zhipu / deepseek / openai / relay 等）
-	ApiUrl       string  `json:"api_url"`  // OpenAI 兼容的 chat/completions 端点
-	ApiKey       string  `json:"api_key"`  // 持久化到数据库的 API Key（优先级高于环境变量）
-	Model        string  `json:"model"`    // 模型名称，自由填写
-	SystemPrompt string  `json:"system_prompt"`
-	MaxTokens    int     `json:"max_tokens"`
-	Temperature  float64 `json:"temperature"`
-	DailyLimit   int     `json:"daily_limit"` // 全局默认每日限额
-	MaxHistory   int     `json:"max_history"` // 最大历史对话条数
+	Enabled          bool    `json:"enabled"`
+	Provider         string  `json:"provider"` // 标记用途（zhipu / deepseek / openai / relay 等）
+	ApiUrl           string  `json:"api_url"`  // OpenAI 兼容的 chat/completions 端点
+	ApiKey           string  `json:"api_key,omitempty"`
+	ApiKeyCiphertext string  `json:"api_key_ciphertext,omitempty"`
+	Model            string  `json:"model"` // 模型名称，自由填写
+	SystemPrompt     string  `json:"system_prompt"`
+	MaxTokens        int     `json:"max_tokens"`
+	Temperature      float64 `json:"temperature"`
+	DailyLimit       int     `json:"daily_limit"` // 全局默认每日限额
+	MaxHistory       int     `json:"max_history"` // 最大历史对话条数
 }
 
 var aiConfig AIProxyConfig
@@ -63,13 +64,41 @@ func LoadAIConfig() {
 	aiConfig = defaultAIConfig()
 	raw := LoadConfig("ai_proxy_config")
 	if raw == "" {
-		SaveAIConfig()
+		if err := SaveAIConfig(); err != nil {
+			log.Printf("[AI] 保存默认配置失败: %v", err)
+		}
 		return
 	}
 	if err := json.Unmarshal([]byte(raw), &aiConfig); err != nil {
 		log.Printf("[AI] 解析配置失败，使用默认值: %v", err)
 		aiConfig = defaultAIConfig()
 	}
+
+	legacyPlaintextKey := strings.TrimSpace(aiConfig.ApiKey)
+	aiConfig.ApiKey = ""
+	if ciphertext := strings.TrimSpace(aiConfig.ApiKeyCiphertext); ciphertext != "" {
+		plaintext, err := decryptStoredSecret(ciphertext)
+		if err != nil {
+			log.Printf("[AI] 无法解密数据库中的 API Key，请检查 %s: %v", aiConfigEncryptionEnv, err)
+		} else {
+			aiConfig.ApiKey = plaintext
+		}
+	} else if legacyPlaintextKey != "" {
+		if canEncryptStoredSecrets() {
+			aiConfig.ApiKey = legacyPlaintextKey
+			if err := SaveAIConfig(); err != nil {
+				log.Printf("[AI] 迁移旧版 API Key 失败: %v", err)
+			}
+		} else {
+			log.Printf("[AI] 检测到旧版明文 API Key，但未配置 %s；已忽略数据库中的明文 Key，请改用环境变量 AI_API_KEY 或配置加密密钥后重新保存", aiConfigEncryptionEnv)
+			aiConfig.ApiKey = ""
+			aiConfig.ApiKeyCiphertext = ""
+			if err := SaveAIConfig(); err != nil {
+				log.Printf("[AI] 清理旧版明文 API Key 失败: %v", err)
+			}
+		}
+	}
+
 	// 兼容旧配置：如果 daily_limit 缺失（旧版存的是 hourly_limit），回退到默认值
 	if aiConfig.DailyLimit <= 0 {
 		aiConfig.DailyLimit = defaultAIConfig().DailyLimit
@@ -77,9 +106,29 @@ func LoadAIConfig() {
 }
 
 // 保存AI配置
-func SaveAIConfig() {
-	data, _ := json.Marshal(aiConfig)
+func SaveAIConfig() error {
+	persisted := aiConfig
+	plaintextKey := strings.TrimSpace(aiConfig.ApiKey)
+	persisted.ApiKey = ""
+
+	if plaintextKey != "" {
+		ciphertext, err := encryptStoredSecret(plaintextKey)
+		if err != nil {
+			return err
+		}
+		persisted.ApiKeyCiphertext = ciphertext
+	} else if strings.TrimSpace(aiConfig.ApiKeyCiphertext) != "" {
+		persisted.ApiKeyCiphertext = strings.TrimSpace(aiConfig.ApiKeyCiphertext)
+	} else {
+		persisted.ApiKeyCiphertext = ""
+	}
+
+	data, err := json.Marshal(persisted)
+	if err != nil {
+		return err
+	}
 	SaveConfig("ai_proxy_config", string(data))
+	return nil
 }
 
 // ─── 每日限额（基于数据库持久化） ───
@@ -476,7 +525,8 @@ func initAIRoutes(admin *gin.RouterGroup) {
 		ai.GET("/config", func(c *gin.Context) {
 			// 返回配置（API Key 只返回掩码，不返回明文）
 			configCopy := aiConfig
-			configCopy.ApiKey = "" // 不在 GET 响应中泄露明文 Key
+			configCopy.ApiKey = ""
+			configCopy.ApiKeyCiphertext = ""
 
 			effectiveKey := getEffectiveApiKey()
 			maskedKey := ""
@@ -509,7 +559,7 @@ func initAIRoutes(admin *gin.RouterGroup) {
 			var req AIProxyConfig
 			if err := c.ShouldBindJSON(&req); err != nil {
 				log.Printf("[AI] 配置解析失败: %v", err)
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 
@@ -517,11 +567,22 @@ func initAIRoutes(admin *gin.RouterGroup) {
 			// 清空 Key 使用独立的 /config/clear-key 接口
 			oldKey := aiConfig.ApiKey
 			aiConfig = req
+			aiConfig.ApiKeyCiphertext = ""
 			if aiConfig.ApiKey == "" {
 				aiConfig.ApiKey = oldKey
 			}
+			if strings.TrimSpace(req.ApiKey) != "" && !canEncryptStoredSecrets() {
+				c.JSON(400, gin.H{
+					"error": "未配置 AI_CONFIG_ENCRYPTION_KEY，拒绝将 API Key 存入数据库；请改用环境变量 AI_API_KEY，或先配置加密密钥后再保存",
+				})
+				return
+			}
 
-			SaveAIConfig()
+			if err := SaveAIConfig(); err != nil {
+				log.Printf("[AI] 保存配置失败: %v", err)
+				c.JSON(500, gin.H{"error": "保存 AI 配置失败"})
+				return
+			}
 			keySource := "none"
 			if aiConfig.ApiKey != "" {
 				keySource = "dashboard"
@@ -535,7 +596,12 @@ func initAIRoutes(admin *gin.RouterGroup) {
 		// 清空仪表盘配置的 API Key（回退到环境变量）
 		ai.POST("/config/clear-key", func(c *gin.Context) {
 			aiConfig.ApiKey = ""
-			SaveAIConfig()
+			aiConfig.ApiKeyCiphertext = ""
+			if err := SaveAIConfig(); err != nil {
+				log.Printf("[AI] 清空 API Key 失败: %v", err)
+				c.JSON(500, gin.H{"error": "清空 API Key 失败"})
+				return
+			}
 			log.Printf("[AI] 已清空仪表盘 API Key，当前使用: %s",
 				func() string {
 					if aiEnvKey != "" {
@@ -697,7 +763,7 @@ func initAIRoutes(admin *gin.RouterGroup) {
 				Reason    string `json:"reason"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 			ban := AIUserBan{MachineID: req.MachineID, Reason: req.Reason}
@@ -712,7 +778,7 @@ func initAIRoutes(admin *gin.RouterGroup) {
 		ai.DELETE("/bans/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			if err := db.Delete(&AIUserBan{}, id).Error; err != nil {
-				c.JSON(500, gin.H{"error": "Delete failed"})
+				c.JSON(500, gin.H{"error": "删除失败"})
 				return
 			}
 			c.JSON(200, gin.H{"status": "success"})
@@ -725,7 +791,7 @@ func initAIRoutes(admin *gin.RouterGroup) {
 				DailyLimit int    `json:"daily_limit"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 
@@ -761,7 +827,7 @@ func initAIRoutes(admin *gin.RouterGroup) {
 				Mode      string `json:"mode"`   // "add"=累加, "set"=设为固定值
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 

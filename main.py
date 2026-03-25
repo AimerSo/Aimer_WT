@@ -395,6 +395,7 @@ class AppApi:
         self._last_announce_content = None  # 兼容以前的 key (可选)
         self._last_ad_carousel_state = None  # 广告轮播配置去重
         self._last_notice_items_state = None  # 公告列表配置去重
+        self._last_user_feature_state = None  # 用户功能开关去重
 
         # 服务器数据缓存文件路径
         self._server_cache_file = Path(self._cfg_mgr.config_dir) / "server_cache.json"
@@ -428,7 +429,15 @@ class AppApi:
         dev_url = None
         if dev_mode_file.exists():
             try:
-                dev_url = dev_mode_file.read_text(encoding="utf-8").strip()
+                raw = dev_mode_file.read_text(encoding="utf-8").strip()
+                if raw.startswith("{"):
+                    data = json.loads(raw)
+                    dev_url = data.get("url", "")
+                    dev_secret = data.get("client_secret", "")
+                    if dev_secret:
+                        os.environ["TELEMETRY_CLIENT_SECRET"] = dev_secret
+                else:
+                    dev_url = raw
             except Exception:
                 dev_url = None
 
@@ -624,6 +633,25 @@ class AppApi:
 
         threading.Thread(target=_replay, name="ServerConfigReplay", daemon=True).start()
 
+    def _extract_user_feature_flags(self, config=None) -> dict:
+        defaults = {
+            "badge_system_enabled": True,
+            "nickname_change_enabled": True,
+            "avatar_upload_enabled": True,
+            "notice_comment_enabled": True,
+            "notice_reaction_enabled": True,
+            "redeem_code_enabled": True,
+            "feedback_enabled": True,
+        }
+        if not isinstance(config, dict):
+            return defaults
+
+        result = dict(defaults)
+        for key in list(defaults.keys()):
+            if key in config:
+                result[key] = bool(config.get(key))
+        return result
+
     def _apply_server_message(self, config: dict, force: bool = False):
         """将服务端配置应用到当前窗口。"""
         if not self._window or not isinstance(config, dict):
@@ -635,6 +663,13 @@ class AppApi:
             return f"if(window.app && app.{func_name}) app.{func_name}({js_args})"
 
         try:
+            # 0. 用户功能开关（优先注入，让设置页和公告弹窗及时响应）
+            feature_flags = self._extract_user_feature_flags(config)
+            feature_state = json.dumps(feature_flags, ensure_ascii=False, sort_keys=True)
+            if force or self._last_user_feature_state != feature_state:
+                self._window.evaluate_js(safe_js_call("applyServerUserFeatures", feature_flags))
+                self._last_user_feature_state = feature_state
+
             # 1. 维护模式处理 (状态发生变化时才提示)
             is_maint = config.get("maintenance", False)
             maint_msg = config.get("maintenance_msg", "")
@@ -1061,6 +1096,7 @@ class AppApi:
             "telemetry_enabled": self._cfg_mgr.get_telemetry_enabled(),
             "telemetry_connected": get_telemetry_connection_status(),
             "telemetry_base_url": telemetry_base_url,
+            "server_user_features": self._extract_user_feature_flags(self._latest_server_config),
             "user_seq_id": get_user_seq_id(),
             "autostart_enabled": self._cfg_mgr.get_autostart_enabled(),
             "tray_mode": self._cfg_mgr.get_tray_mode(),

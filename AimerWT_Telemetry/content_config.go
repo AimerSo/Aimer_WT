@@ -63,12 +63,19 @@ func RestoreSysConfig() {
 	raw := LoadConfig("sys_config")
 	if raw == "" {
 		log.Println("[Config] 无历史配置，使用默认值")
+		applyDefaultUserFeatureFlags(&sysConfig, nil)
 		return
+	}
+	var rawMap map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &rawMap); err != nil {
+		rawMap = nil
 	}
 	if err := json.Unmarshal([]byte(raw), &sysConfig); err != nil {
 		log.Printf("[Config] sysConfig 反序列化失败: %v", err)
+		applyDefaultUserFeatureFlags(&sysConfig, nil)
 		return
 	}
+	applyDefaultUserFeatureFlags(&sysConfig, rawMap)
 	log.Println("[Config] 已从数据库恢复 sysConfig")
 }
 

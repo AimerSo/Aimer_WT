@@ -1,0 +1,50 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg, rgba(99,102,241,0.18), rgba(59,130,246,0.14));display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgb(99,102,241)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="8.5" cy="7" r="4"></circle>
+                        <polyline points="17 11 19 13 23 9"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:16px;color:var(--text);">用户请求</div>
+                    <div style="font-size:12px;color:var(--text-muted);">管理用户提交的昵称变更审批请求。</div>
+                </div>
+            </div>
+            <div class="top-actions" style="margin-left:auto;display:flex;gap:8px;">
+                <select class="select" id="nickReqStatusFilter" onchange="app.initUserRequests()" style="font-size:13px;">
+                    <option value="">全部状态</option>
+                    <option value="pending" selected>待审批</option>
+                    <option value="approved">已批准</option>
+                    <option value="rejected">已拒绝</option>
+                </select>
+                <button class="btn" onclick="app.initUserRequests(); app.showAlert('已刷新', 'success')">刷新</button>
+            </div>
+        </div>
+
+        <div class="panel" style="margin-top:0;">
+            <div class="panel-body" style="padding:0;">
+                <table class="data-table data-table-compact" id="nickReqTable">
+                    <thead>
+                        <tr>
+                            <th>用户</th>
+                            <th>当前昵称</th>
+                            <th>请求昵称</th>
+                            <th>状态</th>
+                            <th>提交时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="nickReqBody">
+                        <tr>
+                            <td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

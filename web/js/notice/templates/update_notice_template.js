@@ -5,6 +5,10 @@
         const title = data.title || item.title || '更新日志';
         const version = data.version || 'Latest';
         const intro = item.summary || 'V3 版本聚焦于交互优化、稳定性提升与功能扩展，带来更顺滑的使用体验与更完整的内容管理能力。';
+        const commentEnabled = helpers.isFeatureEnabled ? helpers.isFeatureEnabled('notice_comment_enabled') : true;
+        const modalClass = commentEnabled
+            ? 'modal-content notice-detail-modal notice-react-update-modal nc-split-layout'
+            : 'modal-content notice-detail-modal notice-react-update-modal';
 
         const sections = (data.sections || []).map((section) => {
             const colorClass = section.color === 'blue'
@@ -36,7 +40,7 @@
         const bodyHtml = sections || ('<div class="notice-react-fallback">' + helpers.renderMarkdownSafe(item.content || '') + '</div>');
 
         return '' +
-            '<div class="modal-content notice-detail-modal notice-react-update-modal nc-split-layout">' +
+            '<div class="' + modalClass + '">' +
             '  <div class="nc-left-col">' +
             '  <div class="notice-react-header">' +
             '    <div>' +
@@ -55,7 +59,7 @@
             '    <button class="notice-react-ack" type="button" data-notice-close="1"><i class="ri-check-line"></i> 我已知晓</button>' +
             '  </div>' +
             '  </div>' +
-            '  <div class="nc-panel" data-nc-notice-id="' + (item.id || '') + '"></div>' +
+            (commentEnabled ? ('  <div class="nc-panel" data-nc-notice-id="' + (item.id || '') + '"></div>') : '') +
             '</div>';
     }
 

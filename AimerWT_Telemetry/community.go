@@ -53,13 +53,18 @@ type commentReplyCountRow struct {
 	ReplyCount int
 }
 
-// 序列化评论为前端友好的格式，关联 UID 序号
-func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint]struct{}) map[string]interface{} {
+// 序列化评论为前端友好的格式，关联 UID 序号和标签
+func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint]struct{}, tagsMap map[string]string) map[string]interface{} {
 	uid := "?"
 	if seqID, ok := seqMap[c.MachineID]; ok {
 		uid = fmt.Sprintf("%d", seqID)
 	}
 	_, liked := likedSet[c.ID]
+
+	tags := "[]"
+	if t, ok := tagsMap[c.MachineID]; ok && t != "" {
+		tags = t
+	}
 
 	return map[string]interface{}{
 		"id":         c.ID,
@@ -70,11 +75,12 @@ func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint
 		"like_count": c.LikeCount,
 		"liked":      liked,
 		"status":     c.Status,
+		"tags":       tags,
 		"created_at": c.CreatedAt.Format("2006-01-02 15:04:05"),
 	}
 }
 
-// 批量查询 MachineID → UID 序号映射
+// 批量查询 MachineID → UID 序号映射，同时获取 tags
 func buildSeqMap(machineIDs []string) map[string]uint {
 	if len(machineIDs) == 0 {
 		return map[string]uint{}
@@ -90,6 +96,24 @@ func buildSeqMap(machineIDs []string) map[string]uint {
 	result := make(map[string]uint, len(rows))
 	for _, r := range rows {
 		result[r.MachineID] = r.ID
+	}
+	return result
+}
+
+// buildTagsMap 批量查询 MachineID → Tags JSON 映射
+func buildTagsMap(machineIDs []string) map[string]string {
+	if len(machineIDs) == 0 {
+		return map[string]string{}
+	}
+	type tagRow struct {
+		MachineID string
+		Tags      string
+	}
+	var rows []tagRow
+	db.Model(&TelemetryRecord{}).Where("machine_id IN ?", machineIDs).Select("machine_id, tags").Scan(&rows)
+	result := make(map[string]string, len(rows))
+	for _, r := range rows {
+		result[r.MachineID] = r.Tags
 	}
 	return result
 }
@@ -222,6 +246,22 @@ func initCommunityClientRoutes(r *gin.Engine) {
 
 	// 获取评论列表
 	r.GET("/notice-comments/:notice_id", func(c *gin.Context) {
+		if !sysConfig.NoticeCommentEnabled {
+			c.JSON(200, gin.H{
+				"comments":         []map[string]interface{}{},
+				"total_count":      0,
+				"total_top_count":  0,
+				"total_likes":      0,
+				"can_comment":      false,
+				"ban_reason":       "评论功能已关闭",
+				"offset":           0,
+				"limit":            0,
+				"next_offset":      0,
+				"has_more":         false,
+				"feature_disabled": true,
+			})
+			return
+		}
 		noticeID, ok := parseNoticeUintParam(c, "notice_id")
 		if !ok {
 			return
@@ -258,10 +298,11 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		}
 		seqMap := buildSeqMap(idList)
 		likedSet := buildLikedCommentSet(machineID, pageCommentIDs)
+		tagsMap := buildTagsMap(idList)
 
 		result := make([]map[string]interface{}, 0, len(pageItems))
 		for _, ranked := range pageItems {
-			item := serializeComment(ranked.Comment, seqMap, likedSet)
+			item := serializeComment(ranked.Comment, seqMap, likedSet, tagsMap)
 			item["replies"] = []map[string]interface{}{}
 			item["reply_count"] = ranked.ReplyCount
 			item["author_weight"] = ranked.AuthorWeight
@@ -300,6 +341,10 @@ func initCommunityClientRoutes(r *gin.Engine) {
 	})
 
 	r.GET("/notice-comments/:notice_id/replies/:comment_id", func(c *gin.Context) {
+		if !sysConfig.NoticeCommentEnabled {
+			c.JSON(200, gin.H{"replies": []map[string]interface{}{}, "reply_count": 0, "feature_disabled": true})
+			return
+		}
 		noticeID, ok := parseNoticeUintParam(c, "notice_id")
 		if !ok {
 			return
@@ -340,11 +385,12 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		likedSet := buildLikedCommentSet(machineID, replyIDs)
 		weightCfg := LoadCommentWeightConfig()
 		authorWeightMap := buildCommentAuthorWeightMap(idList, weightCfg)
+		tagsMap := buildTagsMap(idList)
 
 		result := make([]map[string]interface{}, 0, len(replies))
 		for _, reply := range replies {
 			authorWeight := authorWeightMap[reply.MachineID]
-			item := serializeComment(reply, seqMap, likedSet)
+			item := serializeComment(reply, seqMap, likedSet, tagsMap)
 			item["reply_count"] = 0
 			item["author_weight"] = authorWeight
 			item["weight_score"] = computeCommentWeight(reply.LikeCount, 0, authorWeight)
@@ -359,6 +405,10 @@ func initCommunityClientRoutes(r *gin.Engine) {
 
 	// 发表评论/回复
 	r.POST("/notice-comment", func(c *gin.Context) {
+		if !sysConfig.NoticeCommentEnabled {
+			c.JSON(403, gin.H{"error": "公告评论功能已关闭"})
+			return
+		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4<<10)
 		var req struct {
 			NoticeID  uint   `json:"notice_id"`
@@ -367,7 +417,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			ParentID  uint   `json:"parent_id"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			c.JSON(400, gin.H{"error": "请求数据格式错误"})
 			return
 		}
 		if !ensureClientMachineBinding(c, req.MachineID) {
@@ -448,7 +498,8 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		seqMap := buildSeqMap([]string{req.MachineID})
 		weightCfg := LoadCommentWeightConfig()
 		authorWeight := buildCommentAuthorWeightMap([]string{req.MachineID}, weightCfg)[req.MachineID]
-		commentResp := serializeComment(comment, seqMap, nil)
+		tagsMap := buildTagsMap([]string{req.MachineID})
+		commentResp := serializeComment(comment, seqMap, nil, tagsMap)
 		commentResp["reply_count"] = 0
 		commentResp["author_weight"] = authorWeight
 		commentResp["weight_score"] = computeCommentWeight(comment.LikeCount, 0, authorWeight)
@@ -461,13 +512,17 @@ func initCommunityClientRoutes(r *gin.Engine) {
 
 	// 点赞/取消点赞
 	r.POST("/notice-comment-like", func(c *gin.Context) {
+		if !sysConfig.NoticeCommentEnabled {
+			c.JSON(403, gin.H{"error": "公告评论功能已关闭"})
+			return
+		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<10)
 		var req struct {
 			CommentID uint   `json:"comment_id"`
 			MachineID string `json:"machine_id"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			c.JSON(400, gin.H{"error": "请求数据格式错误"})
 			return
 		}
 		if !ensureClientMachineBinding(c, req.MachineID) {
@@ -622,7 +677,7 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 				Status string `json:"status"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 			allowed := map[string]bool{"visible": true, "hidden": true, "reported": true}
@@ -693,7 +748,7 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 				Reason    string `json:"reason"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(400, gin.H{"error": "Invalid JSON"})
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
 

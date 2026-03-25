@@ -127,6 +127,7 @@ const app = {
     currentModId: null, // 当前正在操作的 mod
     currentTheme: null, // 当前主题对象
     currentThemeData: null, // 当前主题原始数据
+    serverUserFeatures: null,
     _appliedThemeKeys: [],
     _libraryLoaded: false,
     _libraryRefreshing: false,
@@ -180,6 +181,54 @@ const app = {
         this._appliedThemeKeys = [];
         this.currentTheme = { ...DEFAULT_THEME };
         this.currentThemeData = null;
+    },
+
+    getDefaultUserFeatures() {
+        return {
+            badge_system_enabled: true,
+            nickname_change_enabled: true,
+            avatar_upload_enabled: true,
+            notice_comment_enabled: true,
+            notice_reaction_enabled: true,
+            redeem_code_enabled: true,
+            feedback_enabled: true,
+        };
+    },
+
+    normalizeServerUserFeatures(raw = {}) {
+        return { ...this.getDefaultUserFeatures(), ...(raw || {}) };
+    },
+
+    getServerUserFeatures(key) {
+        const features = this.normalizeServerUserFeatures(this.serverUserFeatures || window._aimerUserFeatures || {});
+        if (!this.serverUserFeatures) {
+            this.serverUserFeatures = features;
+        }
+        return key ? features[key] !== false : features;
+    },
+
+    applyServerUserFeatures(raw = {}) {
+        const features = this.normalizeServerUserFeatures(raw);
+        this.serverUserFeatures = features;
+        window._aimerUserFeatures = { ...features };
+
+        const cdkCard = document.getElementById('cdk-redeem-card');
+        if (cdkCard) cdkCard.style.display = features.redeem_code_enabled ? '' : 'none';
+
+        const feedbackCard = document.getElementById('feedback-card');
+        if (feedbackCard) feedbackCard.style.display = features.feedback_enabled ? '' : 'none';
+
+        const openNoticeShell = document.getElementById('notice-detail-shell');
+        if (openNoticeShell && !features.notice_comment_enabled) {
+            openNoticeShell.querySelectorAll('.nc-panel').forEach(el => el.remove());
+            openNoticeShell.querySelectorAll('.nc-split-layout').forEach(el => el.classList.remove('nc-split-layout'));
+        }
+
+        if (window.userProfile && typeof window.userProfile.applyFeatureSettings === 'function') {
+            window.userProfile.applyFeatureSettings(features);
+        }
+
+        return features;
     },
 
     // --- Theme Logic ---
@@ -1751,10 +1800,16 @@ const app = {
         if (!window.pywebview?.api?.get_telemetry_connection_status) return;
         try {
             const connected = await pywebview.api.get_telemetry_connection_status();
+            var wasDisconnected = !this.telemetryConnected;
             this.telemetryConnected = !!connected;
-            if (window.pywebview?.api?.init_app_state && connected && !this.userSeqId) {
+            if (window.pywebview?.api?.init_app_state && connected && (!this.userSeqId || wasDisconnected)) {
                 const st = await pywebview.api.init_app_state();
                 if (st && st.user_seq_id) this.userSeqId = st.user_seq_id;
+                if (st && st.telemetry_base_url) window._telemetryBaseUrl = st.telemetry_base_url;
+                if (st && st.hwid) window._telemetryHWID = st.hwid;
+            }
+            if (connected && wasDisconnected && window.userProfile && typeof window.userProfile.loadProfile === 'function') {
+                window.userProfile.loadProfile();
             }
             if (window.NoticeBoardModule && typeof window.NoticeBoardModule.updateServerStatusFooter === 'function') {
                 window.NoticeBoardModule.updateServerStatusFooter(this.telemetryConnected, this.userSeqId);
@@ -3587,8 +3642,14 @@ app.init = async function () {
         this.telemetryConnected = !!state.telemetry_connected;
         // AI 代理模式使用的遥测服务器基地址
         if (state.telemetry_base_url) window._telemetryBaseUrl = state.telemetry_base_url;
-        if (state.hwid) window._telemetryHWID = state.hwid;
+        if (state.hwid) {
+            window._telemetryHWID = state.hwid;
+            if (window.userProfile && typeof window.userProfile.init === 'function') {
+                window.userProfile.init(state.hwid, state.telemetry_base_url || '');
+            }
+        }
         this.userSeqId = state.user_seq_id || 0;
+        this.applyServerUserFeatures(state.server_user_features || {});
         this.currentLaunchMode = state.launch_mode || 'launcher';
         this.updatePathUI(state.game_path, state.path_valid);
 

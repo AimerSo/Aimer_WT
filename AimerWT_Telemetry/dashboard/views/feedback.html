@@ -116,6 +116,12 @@
     };
     const STATUS_MAP = { pending: '待处理', read: '已读', resolved: '已解决', ignored: '已忽略' };
     const STATUS_COLOR = { pending: 'var(--warning)', read: 'var(--primary)', resolved: 'var(--secondary)', ignored: 'var(--muted)' };
+    const escapeHtml = (value) => String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 
     app.loadFeedbackList = async function() {
         const status = document.getElementById('feedbackFilterStatus')?.value || '';
@@ -160,8 +166,11 @@
                 const catIcon = CATEGORY_ICON[fb.category] || CATEGORY_ICON.other;
                 const st = STATUS_MAP[fb.status] || fb.status;
                 const stColor = STATUS_COLOR[fb.status] || 'var(--text-muted)';
-                const alias = fb.alias || app.formatHwid(fb.machine_id);
-                const timeStr = fb.created_at ? fb.created_at.replace('T', ' ').slice(0, 16) : '-';
+                const alias = escapeHtml(fb.alias || app.formatHwid(fb.machine_id));
+                const timeStr = escapeHtml(fb.created_at ? fb.created_at.replace('T', ' ').slice(0, 16) : '-');
+                const contentText = escapeHtml(fb.content || '');
+                const contactText = escapeHtml(fb.contact || '');
+                const osText = escapeHtml(`${fb.os || ''} ${fb.os_version ? String(fb.os_version).slice(0, 10) : ''}`.trim());
 
                 html += `<div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 14px; cursor: pointer; transition: background 0.15s;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''" onclick="app.showFeedbackDetail(${fb.id})">`;
 
@@ -172,14 +181,14 @@
                 html += `<div style="flex: 1; min-width: 0;">`;
                 html += `<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">`;
                 html += `<span style="font-weight: 600; font-size: 13px; color: var(--text);">#${fb.id}</span>`;
-                html += `<span style="display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: ${stColor}15; color: ${stColor};">${catIcon} ${cat}</span>`;
+                html += `<span style="display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: ${stColor}15; color: ${stColor};">${catIcon} ${escapeHtml(cat)}</span>`;
                 html += `<span style="font-size: 11px; color: var(--text-muted);">${alias}</span>`;
                 html += `</div>`;
-                html += `<div style="font-size: 13px; color: var(--text); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 600px;">${fb.content}</div>`;
+                html += `<div style="font-size: 13px; color: var(--text); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 600px;">${contentText}</div>`;
                 html += `<div style="display: flex; align-items: center; gap: 12px; margin-top: 6px; font-size: 11px; color: var(--text-muted);">`;
                 html += `<span style="display: inline-flex; align-items: center; gap: 3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>${timeStr}</span>`;
-                if (fb.contact) html += `<span style="display: inline-flex; align-items: center; gap: 3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>${fb.contact}</span>`;
-                if (fb.os) html += `<span>${fb.os} ${fb.os_version ? fb.os_version.slice(0, 10) : ''}</span>`;
+                if (fb.contact) html += `<span style="display: inline-flex; align-items: center; gap: 3px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>${contactText}</span>`;
+                if (fb.os) html += `<span>${osText}</span>`;
                 html += `</div>`;
                 html += `</div>`;
 
@@ -221,30 +230,30 @@
         const catIcon = CATEGORY_ICON[fb.category] || CATEGORY_ICON.other;
         const st = STATUS_MAP[fb.status] || fb.status;
         const stColor = STATUS_COLOR[fb.status] || 'var(--text-muted)';
-        const timeStr = fb.created_at ? fb.created_at.replace('T', ' ').slice(0, 19) : '-';
+        const timeStr = escapeHtml(fb.created_at ? fb.created_at.replace('T', ' ').slice(0, 19) : '-');
 
         let html = '';
         // 头部信息
         html += `<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">`;
         html += `<div style="width: 42px; height: 42px; border-radius: 12px; background: ${stColor}12; display: flex; align-items: center; justify-content: center; color: ${stColor};">${catIcon}</div>`;
-        html += `<div><div style="font-weight: 700; font-size: 15px; color: var(--text);">#${fb.id} ${cat}反馈</div>`;
+        html += `<div><div style="font-weight: 700; font-size: 15px; color: var(--text);">#${fb.id} ${escapeHtml(cat)}反馈</div>`;
         html += `<div style="font-size: 11px; color: var(--text-muted);">${timeStr}</div></div>`;
-        html += `<span style="margin-left: auto; padding: 3px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; background: ${stColor}15; color: ${stColor};">${st}</span>`;
+        html += `<span style="margin-left: auto; padding: 3px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; background: ${stColor}15; color: ${stColor};">${escapeHtml(st)}</span>`;
         html += `</div>`;
 
         // 反馈内容
         html += `<div style="background: var(--bg); border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border);">`;
         html += `<div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>反馈内容</div>`;
-        html += `<div style="font-size: 13px; color: var(--text); line-height: 1.7; white-space: pre-wrap; word-break: break-all;">${fb.content}</div>`;
+        html += `<div style="font-size: 13px; color: var(--text); line-height: 1.7; white-space: pre-wrap; word-break: break-all;">${escapeHtml(fb.content || '')}</div>`;
         html += `</div>`;
 
         // 详情信息网格
         const details = [
-            { label: '用户', value: fb.alias || app.formatHwid(fb.machine_id), icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>' },
-            { label: '联系方式', value: fb.contact || '-', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>' },
-            { label: 'HWID', value: fb.machine_id || '-', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>' },
-            { label: '操作系统', value: `${fb.os || '-'} ${fb.os_version || ''}`.trim(), icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>' },
-            { label: '分辨率', value: fb.screen_res || '-', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>' }
+            { label: '用户', value: escapeHtml(fb.alias || app.formatHwid(fb.machine_id)), icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>' },
+            { label: '联系方式', value: escapeHtml(fb.contact || '-'), icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>' },
+            { label: 'HWID', value: escapeHtml(fb.machine_id || '-'), icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>' },
+            { label: '操作系统', value: escapeHtml(`${fb.os || '-'} ${fb.os_version || ''}`.trim()), icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>' },
+            { label: '分辨率', value: escapeHtml(fb.screen_res || '-'), icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>' }
         ];
 
         html += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">`;

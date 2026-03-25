@@ -435,6 +435,10 @@
             parseMarkdown: parseMarkdown,
             parseArticleMarkdown: parseArticleMarkdown,
             renderMarkdownSafe: renderMarkdownSafe,
+            isFeatureEnabled: function(featureKey) {
+                return !(window.app && typeof window.app.getServerUserFeatures === 'function') ||
+                    window.app.getServerUserFeatures(featureKey);
+            },
             buildReactionBarHtml: function(noticeId) {
                 return _buildReactionBarHtml(noticeId);
             }
@@ -449,7 +453,8 @@
         }
 
         // 初始化社区评论面板
-        if (window.NoticeCommentPanel && typeof window.NoticeCommentPanel.renderPanel === 'function') {
+        if (helpers.isFeatureEnabled('notice_comment_enabled') &&
+            window.NoticeCommentPanel && typeof window.NoticeCommentPanel.renderPanel === 'function') {
             var ncPanel = shell.querySelector('.nc-panel[data-nc-notice-id]');
             if (ncPanel && safeItem.id) {
                 window.NoticeCommentPanel.renderPanel(safeItem.id, ncPanel);

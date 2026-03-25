@@ -517,6 +517,11 @@ func initRedeemRoutes(admin *gin.RouterGroup) {
 
 // handleRedeem 客户端提交兑换码验证（公开端点，UA 校验）
 func handleRedeem(c *gin.Context) {
+	if !sysConfig.RedeemCodeEnabled {
+		c.JSON(403, gin.H{"error": "兑换码功能已关闭"})
+		return
+	}
+
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
 	var req struct {
 		Code      string `json:"code"`

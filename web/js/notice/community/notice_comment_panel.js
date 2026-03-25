@@ -73,11 +73,107 @@
         return window._userSeqId || '';
     }
 
+    function _buildTelemetryHeaders(path, method, machineID, includeJsonContentType) {
+        var headers = { 'X-AimerWT-Client': '1' };
+        if (includeJsonContentType) headers['Content-Type'] = 'application/json';
+
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.get_telemetry_auth_headers) {
+            return window.pywebview.api.get_telemetry_auth_headers(path, method, machineID || '')
+                .then(function (authHeaders) {
+                    if (authHeaders && typeof authHeaders === 'object') {
+                        Object.assign(headers, authHeaders);
+                    }
+                    return headers;
+                })
+                .catch(function () {
+                    return headers;
+                });
+        }
+        return Promise.resolve(headers);
+    }
+
+    function _isFeatureEnabled(key) {
+        var flags = window._aimerUserFeatures || {};
+        return flags[key] !== false;
+    }
+
     function _getVisibleReactionLimit(noticeId) {
         var row = document.getElementById('nc-rr-' + noticeId);
         var panel = row ? row.closest('.nc-panel') : null;
         var panelWidth = panel ? panel.clientWidth : 0;
         return panelWidth && panelWidth <= 360 ? 4 : MAX_VISIBLE_REACTIONS;
+    }
+
+    function _prefersReducedMotion() {
+        return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    }
+
+    function _animateReactionToggle(noticeId, reactions, expand) {
+        var header = document.getElementById('nc-rh-' + noticeId);
+        var row = document.getElementById('nc-rr-' + noticeId);
+        var state = _getState(noticeId);
+        if (!row || !header || _prefersReducedMotion()) {
+            state.reactionsExpanded = expand;
+            _renderReactions(noticeId, reactions);
+            return;
+        }
+
+        var startHeight = Math.max(row.getBoundingClientRect().height, row.scrollHeight, 28);
+        var startHeaderHeight = Math.max(header.getBoundingClientRect().height, header.scrollHeight, 48);
+        header.classList.add('nc-animating');
+        row.classList.add('nc-animating');
+        header.style.maxHeight = startHeaderHeight + 'px';
+        row.style.maxHeight = startHeight + 'px';
+        row.style.opacity = '1';
+        row.style.transform = 'translateY(0)';
+
+        state.reactionsExpanded = expand;
+        _renderReactions(noticeId, reactions);
+
+        var endHeight = Math.max(row.scrollHeight, 28);
+        var endHeaderHeight = Math.max(header.scrollHeight, 48);
+        if (startHeight === endHeight) {
+            header.classList.remove('nc-animating');
+            row.classList.remove('nc-animating');
+            header.style.maxHeight = '';
+            row.style.maxHeight = '';
+            row.style.opacity = '';
+            row.style.transform = '';
+            return;
+        }
+
+        header.style.maxHeight = startHeaderHeight + 'px';
+        row.style.maxHeight = startHeight + 'px';
+        row.style.opacity = '0.5';
+        row.style.transform = expand ? 'translateY(6px)' : 'translateY(-6px)';
+        header.offsetHeight;
+
+        var cleaned = false;
+        function cleanup() {
+            if (cleaned) return;
+            cleaned = true;
+            header.classList.remove('nc-animating');
+            row.classList.remove('nc-animating');
+            header.style.maxHeight = '';
+            row.style.maxHeight = '';
+            row.style.opacity = '';
+            row.style.transform = '';
+            row.removeEventListener('transitionend', onEnd);
+            window.clearTimeout(fallback);
+        }
+        function onEnd(e) {
+            if (e.target !== row || e.propertyName !== 'max-height') return;
+            cleanup();
+        }
+        row.addEventListener('transitionend', onEnd);
+        var fallback = window.setTimeout(cleanup, 550);
+
+        requestAnimationFrame(function () {
+            header.style.maxHeight = endHeaderHeight + 'px';
+            row.style.maxHeight = endHeight + 'px';
+            row.style.opacity = '1';
+            row.style.transform = 'translateY(0)';
+        });
     }
 
     function _normalizeLiker(entry) {
@@ -236,21 +332,27 @@
         }
         container.classList.remove('nc-offline');
 
+        var reactionEnabled = _isFeatureEnabled('notice_reaction_enabled');
+
         container.innerHTML =
+            (reactionEnabled ? (
             '<div class="nc-reaction-header" id="nc-rh-' + id + '">' +
             '  <div class="nc-reaction-row" id="nc-rr-' + id + '"><span style="font-size:12px;color:#9ca3af;">加载中...</span></div>' +
-            '</div>' +
+            '</div>'
+            ) : '') +
             '<div class="nc-comment-list custom-scrollbar" id="nc-cl-' + id + '">' +
             '  <div class="nc-comment-loading"><i class="ri-loader-4-line"></i><span>正在加载评论...</span></div>' +
             '</div>' +
             '<div class="nc-stats-bar" id="nc-stats-' + id + '">' +
+            (reactionEnabled ? (
             '  <div class="nc-stat-like-group">' +
             '    <button class="nc-stat-like-btn" id="nc-like-toggle-' + id + '" type="button" title="点赞">' +
             '      <i class="nc-stat-icon ri-heart-line" id="nc-like-icon-' + id + '"></i>' +
             '      <span class="nc-stat-count" id="nc-likes-' + id + '">0</span>' +
             '    </button>' +
             '    <button class="nc-stat-link" id="nc-likers-' + id + '" type="button">赞</button>' +
-            '  </div>' +
+            '  </div>'
+            ) : '') +
             '  <div class="nc-stat-item"><i class="nc-stat-icon ri-chat-3-line"></i><span class="nc-stat-count" id="nc-count-' + id + '">0</span><span class="nc-stat-label">条评论</span></div>' +
             '  <button class="nc-share-btn" id="nc-share-' + id + '" title="分享"><i class="ri-share-forward-line"></i> 分享</button>' +
             '</div>' +
@@ -312,7 +414,9 @@
         }
 
         _ensureCommentScroll(id);
-        _loadReactions(id);
+        if (reactionEnabled) {
+            _loadReactions(id);
+        }
         requestAnimationFrame(function () {
             state.commentLimit = _estimateCommentPageSize(id);
             _loadComments(id, { reset: true });
@@ -320,6 +424,10 @@
     }
 
     function _loadReactions(noticeId) {
+        if (!_isFeatureEnabled('notice_reaction_enabled')) {
+            _renderReactions(noticeId, []);
+            return;
+        }
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
         if (!baseUrl) {
@@ -329,7 +437,9 @@
         var url = baseUrl + '/notice-reactions/' + noticeId;
         if (hwid) url += '?machine_id=' + encodeURIComponent(hwid);
 
-        fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+        _buildTelemetryHeaders('/notice-reactions/' + noticeId, 'GET', hwid, false).then(function (headers) {
+            return fetch(url, { method: 'GET', headers: headers });
+        }).then(function (r) { return r.json(); }).then(function (data) {
             _renderReactions(noticeId, data.reactions || []);
         }).catch(function () {
             _renderReactionsFromGlobal(noticeId);
@@ -363,7 +473,13 @@
         }
 
         var pills = visibleReactions.map(function (r) {
-            return '<div class="nc-reaction-pill' + (r.reacted ? ' active' : '') + '" data-emoji="' + escapeHtml(r.emoji) + '" data-nid="' + noticeId + '">' +
+            var userDetails = Array.isArray(r.user_details) ? r.user_details : [];
+            var tooltipParts = userDetails.slice(0, 5).map(function (u) {
+                return (u.alias && u.alias.trim()) ? u.alias.trim() : ('UID' + u.uid);
+            });
+            if (userDetails.length > 5) tooltipParts.push('...');
+            var titleText = tooltipParts.length ? tooltipParts.join(', ') : '';
+            return '<div class="nc-reaction-pill' + (r.reacted ? ' active' : '') + '" data-emoji="' + escapeHtml(r.emoji) + '" data-nid="' + noticeId + '"' + (titleText ? ' title="' + escapeHtml(titleText) + '"' : '') + '>' +
                 '<span class="nc-r-emoji">' + r.emoji + '</span>' +
                 '<span class="nc-r-count">' + r.count + '</span>' +
                 '</div>';
@@ -386,6 +502,7 @@
             '  <div class="nc-emoji-picker" id="nc-picker-' + noticeId + '">' + pickerItems + '</div>' +
             '</div>';
 
+        // 根据展开状态切换 class（CSS transition 在这里生效）
         if (state.reactionsExpanded) row.classList.add('nc-expanded');
         else row.classList.remove('nc-expanded');
 
@@ -401,16 +518,14 @@
         if (expandBtn) {
             expandBtn.addEventListener('click', function (e) {
                 e.stopPropagation();
-                state.reactionsExpanded = true;
-                _renderReactions(noticeId, reactions);
+                _animateReactionToggle(noticeId, reactions, true);
             });
         }
         var collapseBtn = document.getElementById('nc-collapse-' + noticeId);
         if (collapseBtn) {
             collapseBtn.addEventListener('click', function (e) {
                 e.stopPropagation();
-                state.reactionsExpanded = false;
-                _renderReactions(noticeId, reactions);
+                _animateReactionToggle(noticeId, reactions, false);
             });
         }
 
@@ -445,14 +560,17 @@
     }
 
     function _submitReaction(noticeId, emoji) {
+        if (!_isFeatureEnabled('notice_reaction_enabled')) return;
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
         if (!baseUrl || !hwid) return;
 
-        fetch(baseUrl + '/notice-reaction', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ notice_id: Number(noticeId), machine_id: hwid, emoji: emoji })
+        _buildTelemetryHeaders('/notice-reaction', 'POST', hwid, true).then(function (headers) {
+            return fetch(baseUrl + '/notice-reaction', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ notice_id: Number(noticeId), machine_id: hwid, emoji: emoji })
+            });
         }).then(function () {
             _loadReactions(noticeId);
         }).catch(function () { });
@@ -490,7 +608,9 @@
             '&limit=' + encodeURIComponent(state.commentLimit);
         if (hwid) url += '&machine_id=' + encodeURIComponent(hwid);
 
-        fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+        _buildTelemetryHeaders('/notice-comments/' + noticeId, 'GET', hwid, false).then(function (headers) {
+            return fetch(url, { method: 'GET', headers: headers });
+        }).then(function (r) { return r.json(); }).then(function (data) {
             var incoming = Array.isArray(data.comments) ? data.comments : [];
             if (append) {
                 var seen = {};
@@ -535,7 +655,9 @@
         var url = baseUrl + '/notice-comments/' + noticeId + '/replies/' + commentId;
         if (hwid) url += '?machine_id=' + encodeURIComponent(hwid);
 
-        fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+        _buildTelemetryHeaders('/notice-comments/' + noticeId + '/replies/' + commentId, 'GET', hwid, false).then(function (headers) {
+            return fetch(url, { method: 'GET', headers: headers });
+        }).then(function (r) { return r.json(); }).then(function (data) {
             replyState.items = Array.isArray(data.replies) ? data.replies : [];
             replyState.loaded = true;
         }).catch(function () {
@@ -599,6 +721,33 @@
         _bindCommentEvents(list, noticeId);
     }
 
+    // 赞助者/主播标签映射
+    var _COMMENT_TAG_MAP = {
+        'sponsor_1': { label: '一级赞助', color: '#b07c3b', bg: 'rgba(176,124,59,.1)' },
+        'sponsor_2': { label: '二级赞助', color: '#94a3b8', bg: 'rgba(148,163,184,.1)' },
+        'sponsor_3': { label: '三级赞助', color: '#d99a00', bg: 'rgba(217,154,0,.1)' },
+        'sponsor_4': { label: '四级赞助', color: '#1a1a1a', bg: 'rgba(26,26,26,.06)' },
+        'streamer':  { label: '主播',       color: '#dc2626', bg: 'rgba(220,38,38,.08)' }
+    };
+
+    function _renderTagBadges(tagsRaw) {
+        var tags = [];
+        if (typeof tagsRaw === 'string' && tagsRaw.length > 2) {
+            try { tags = JSON.parse(tagsRaw); } catch (e) { tags = []; }
+        } else if (Array.isArray(tagsRaw)) {
+            tags = tagsRaw;
+        }
+        if (!tags.length) return '';
+        var html = '';
+        tags.forEach(function (t) {
+            var def = _COMMENT_TAG_MAP[t];
+            if (def) {
+                html += '<span class="nc-tag-badge" style="color:' + def.color + ';background:' + def.bg + ';border:1px solid ' + def.color + '22;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:500;margin-left:4px;">' + def.label + '</span>';
+            }
+        });
+        return html;
+    }
+
     function _renderCommentItem(c, noticeId) {
         var state = _getState(noticeId);
         var uid = c.uid || '?';
@@ -633,6 +782,7 @@
             '<div class="nc-comment-head">' +
             '  <div class="nc-comment-avatar">' + escapeHtml(uid) + '</div>' +
             '  <span class="nc-comment-uid">用户#' + escapeHtml(uid) + '</span>' +
+            _renderTagBadges(c.tags) +
             '  <span class="nc-comment-score">权重 ' + escapeHtml(formatWeight(c.weight_score || 0)) + '</span>' +
             '  <span class="nc-comment-time">' + timeAgo(c.created_at) + '</span>' +
             '</div>' +
@@ -651,6 +801,7 @@
             '<div class="nc-reply-head">' +
             '  <div class="nc-reply-avatar">' + escapeHtml(uid) + '</div>' +
             '  <span class="nc-reply-uid">用户#' + escapeHtml(uid) + '</span>' +
+            _renderTagBadges(r.tags) +
             '  <span class="nc-comment-score nc-reply-score">权重 ' + escapeHtml(formatWeight(r.weight_score || 0)) + '</span>' +
             '  <span class="nc-reply-time">' + timeAgo(r.created_at) + '</span>' +
             '</div>' +
@@ -732,16 +883,19 @@
         var hwid = _getHWID();
         if (!baseUrl || !hwid) return;
 
-        fetch(baseUrl + '/notice-comment-like', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ comment_id: commentId, machine_id: hwid })
+        _buildTelemetryHeaders('/notice-comment-like', 'POST', hwid, true).then(function (headers) {
+            return fetch(baseUrl + '/notice-comment-like', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ comment_id: commentId, machine_id: hwid })
+            });
         }).then(function () {
             _loadComments(noticeId, { reset: true });
         }).catch(function () { });
     }
 
     function _toggleNoticeLike(noticeId) {
+        if (!_isFeatureEnabled('notice_reaction_enabled')) return;
         _submitReaction(noticeId, LIKE_EMOJI);
     }
 
@@ -765,15 +919,17 @@
 
         if (sendBtn) sendBtn.disabled = true;
 
-        fetch(baseUrl + '/notice-comment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                notice_id: Number(noticeId),
-                machine_id: hwid,
-                content: content,
-                parent_id: parentId
-            })
+        _buildTelemetryHeaders('/notice-comment', 'POST', hwid, true).then(function (headers) {
+            return fetch(baseUrl + '/notice-comment', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    notice_id: Number(noticeId),
+                    machine_id: hwid,
+                    content: content,
+                    parent_id: parentId
+                })
+            });
         }).then(function (r) { return r.json(); }).then(function (data) {
             if (data.status === 'success') {
                 input.value = '';

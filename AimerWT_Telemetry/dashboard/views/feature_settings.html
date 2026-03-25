@@ -1,0 +1,171 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(37, 99, 235, 0.14));display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgb(245, 158, 11)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:16px;color:var(--text);">功能设置</div>
+                    <div style="font-size:12px;color:var(--text-muted);">集中控制用户端的个人资料、互动系统与入口模块，保存后会随心跳同步给在线客户端。</div>
+                </div>
+            </div>
+            <div class="top-actions" style="margin-left:auto;display:flex;gap:8px;">
+                <button class="btn" onclick="app.initFeatureSettings()">刷新</button>
+                <button class="btn" onclick="app.resetFeatureSettings()">恢复推荐</button>
+                <button class="btn primary" onclick="app.saveFeatureSettings()">保存设置</button>
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:minmax(0, 1.45fr) 320px;gap:20px;align-items:start;">
+            <div style="display:flex;flex-direction:column;gap:20px;">
+                <div class="panel">
+                    <div class="panel-header" style="padding:14px 16px;">
+                        <div>
+                            <div class="panel-title">个人资料模块</div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">控制设置页顶部的个人信息区域，包含勋章、昵称与头像相关能力。</div>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;">
+                        <div style="display:flex;justify-content:space-between;gap:14px;padding:16px;border:1px solid var(--border);border-radius:14px;background:linear-gradient(180deg, rgba(245,158,11,0.05), rgba(245,158,11,0.01));">
+                            <div>
+                                <div style="font-size:13px;font-weight:700;color:var(--text);">显示勋章系统</div>
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">关闭后用户端不显示“我的勋章”半区，也不会返回勋章数据。</div>
+                            </div>
+                            <label class="switch" style="flex-shrink:0;">
+                                <input type="checkbox" id="featureBadgeSystem" onchange="app.updateFeatureSettingsSummary()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div style="display:flex;justify-content:space-between;gap:14px;padding:16px;border:1px solid var(--border);border-radius:14px;background:linear-gradient(180deg, rgba(59,130,246,0.05), rgba(59,130,246,0.01));">
+                            <div>
+                                <div style="font-size:13px;font-weight:700;color:var(--text);">允许修改昵称</div>
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">关闭后昵称输入框会禁用，后端也会拒绝昵称变更请求。</div>
+                            </div>
+                            <label class="switch" style="flex-shrink:0;">
+                                <input type="checkbox" id="featureNicknameChange" onchange="app.updateFeatureSettingsSummary()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div style="display:flex;justify-content:space-between;gap:14px;padding:16px;border:1px solid var(--border);border-radius:14px;background:linear-gradient(180deg, rgba(16,185,129,0.05), rgba(16,185,129,0.01));">
+                            <div>
+                                <div style="font-size:13px;font-weight:700;color:var(--text);">允许上传头像</div>
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">关闭后头像上传遮罩会失效，并阻止头像写入接口。</div>
+                            </div>
+                            <label class="switch" style="flex-shrink:0;">
+                                <input type="checkbox" id="featureAvatarUpload" onchange="app.updateFeatureSettingsSummary()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header" style="padding:14px 16px;">
+                        <div>
+                            <div class="panel-title">社区互动模块</div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">控制公告详情里的评论面板、点赞反应与互动区氛围。</div>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;">
+                        <div style="display:flex;justify-content:space-between;gap:14px;padding:16px;border:1px solid var(--border);border-radius:14px;background:linear-gradient(180deg, rgba(99,102,241,0.05), rgba(99,102,241,0.01));">
+                            <div>
+                                <div style="font-size:13px;font-weight:700;color:var(--text);">公告评论系统</div>
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">关闭后客户端不再显示评论侧栏，评论接口会整体进入关闭状态。</div>
+                            </div>
+                            <label class="switch" style="flex-shrink:0;">
+                                <input type="checkbox" id="featureNoticeComment" onchange="app.updateFeatureSettingsSummary()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div style="display:flex;justify-content:space-between;gap:14px;padding:16px;border:1px solid var(--border);border-radius:14px;background:linear-gradient(180deg, rgba(236,72,153,0.05), rgba(236,72,153,0.01));">
+                            <div>
+                                <div style="font-size:13px;font-weight:700;color:var(--text);">公告表情互动</div>
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">控制公告的表情反应、点赞入口和互动头部，适合切换成纯阅读模式。</div>
+                            </div>
+                            <label class="switch" style="flex-shrink:0;">
+                                <input type="checkbox" id="featureNoticeReaction" onchange="app.updateFeatureSettingsSummary()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header" style="padding:14px 16px;">
+                        <div>
+                            <div class="panel-title">用户入口模块</div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">控制设置页中能直接触达用户的入口卡片，适合活动期或稳定期做不同引导。</div>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;">
+                        <div style="display:flex;justify-content:space-between;gap:14px;padding:16px;border:1px solid var(--border);border-radius:14px;background:linear-gradient(180deg, rgba(234,88,12,0.05), rgba(234,88,12,0.01));">
+                            <div>
+                                <div style="font-size:13px;font-weight:700;color:var(--text);">CDK 兑换入口</div>
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">关闭后设置页不再展示兑换入口，适合活动结束后收口。</div>
+                            </div>
+                            <label class="switch" style="flex-shrink:0;">
+                                <input type="checkbox" id="featureRedeemCode" onchange="app.updateFeatureSettingsSummary()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div style="display:flex;justify-content:space-between;gap:14px;padding:16px;border:1px solid var(--border);border-radius:14px;background:linear-gradient(180deg, rgba(14,165,233,0.05), rgba(14,165,233,0.01));">
+                            <div>
+                                <div style="font-size:13px;font-weight:700;color:var(--text);">问题反馈入口</div>
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">关闭后设置页隐藏反馈入口，适合封版或维护窗口期。</div>
+                            </div>
+                            <label class="switch" style="flex-shrink:0;">
+                                <input type="checkbox" id="featureFeedback" onchange="app.updateFeatureSettingsSummary()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:20px;">
+                <div class="panel">
+                    <div class="panel-body" style="padding:18px;display:flex;flex-direction:column;gap:16px;">
+                        <div style="padding:16px;border-radius:16px;background:linear-gradient(135deg, rgba(245,158,11,0.16), rgba(59,130,246,0.12));color:#1f2937;">
+                            <div style="font-size:12px;font-weight:700;opacity:0.78;">当前启用</div>
+                            <div id="featureSettingsEnabledCount" style="font-size:32px;font-weight:800;line-height:1.1;margin-top:6px;">0 / 7</div>
+                            <div id="featureSettingsModeLabel" style="font-size:12px;margin-top:8px;opacity:0.82;">正在读取配置...</div>
+                        </div>
+                        <div>
+                            <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px;">模块状态</div>
+                            <div id="featureSettingsStatusList" style="display:flex;flex-wrap:wrap;gap:8px;">
+                                <span style="font-size:12px;color:var(--text-muted);">加载中...</span>
+                            </div>
+                        </div>
+                        <div style="padding:14px;border-radius:14px;border:1px dashed var(--border);background:var(--bg);font-size:12px;color:var(--text-muted);line-height:1.8;">
+                            <div>推荐默认：7 项全开，适合完整体验版本。</div>
+                            <div>轻社交模式：关闭评论与表情互动，保留公告阅读和个人资料。</div>
+                            <div>极简稳定模式：只保留基础资料与资源管理，适合维护窗口或封版阶段。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header" style="padding:14px 16px;">
+                        <div>
+                            <div class="panel-title">生效说明</div>
+                            <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">这些开关会即时写入服务端配置</div>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding:16px;font-size:12px;color:var(--text-muted);line-height:1.8;">
+                        <div>在线客户端会在下一次心跳同步后自动应用，无需重新发布版本。</div>
+                        <div>已关闭的接口在服务端也会同步收口，避免仅隐藏前端导致被绕过。</div>
+                        <div>旧数据不会被删除，例如历史勋章、历史评论记录会保留在数据库里。</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

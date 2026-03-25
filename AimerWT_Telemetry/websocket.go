@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,23 +14,47 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	webSocketPingInterval                 = 25 * time.Second
+	webSocketPongWait                     = 45 * time.Second
+	webSocketAuthTimeout                  = 10 * time.Second
+	webSocketWriteTimeout                 = 10 * time.Second
+	webSocketMaxMessageBytes        int64 = 64 * 1024
+	defaultWebSocketMaxClients            = 200
+	defaultWebSocketMaxClientsPerIP       = 8
+)
+
+func websocketLimitFromEnv(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
 // WebSocket 连接升级器
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		// 允许所有来源（生产环境应限制域名）
-		return true
+		return isAllowedOrigin(r, r.Header.Get("Origin"))
 	},
 }
 
 // ClientConnection 表示一个 WebSocket 客户端连接
 type ClientConnection struct {
 	Conn            *websocket.Conn
+	IP              string
 	MachineID       string
 	Version         string
+	ConnectedAt     time.Time
 	LastPing        time.Time
 	IsAuthenticated bool
+	writeMu         sync.Mutex
 }
 
 // WebSocketHub 管理所有 WebSocket 连接
@@ -54,7 +81,6 @@ func NewWebSocketHub() *WebSocketHub {
 
 // Run 启动 Hub 的事件循环
 func (h *WebSocketHub) Run() {
-	// 启动心跳检测协程
 	go h.heartbeatChecker()
 
 	for {
@@ -63,7 +89,7 @@ func (h *WebSocketHub) Run() {
 			h.mu.Lock()
 			h.clients[client] = true
 			h.mu.Unlock()
-			log.Printf("[WebSocket] 客户端连接: %s, 当前连接数: %d", client.MachineID, h.ClientCount())
+			log.Printf("[WebSocket] 客户端连接: %s, 当前连接数: %d", client.IP, h.ClientCount())
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -83,12 +109,10 @@ func (h *WebSocketHub) Run() {
 			h.mu.RUnlock()
 
 			for _, client := range clients {
-				// 只发送给已认证的客户端
 				if !client.IsAuthenticated {
 					continue
 				}
 				if !client.send(message) {
-					// 发送失败，关闭连接
 					go func(c *ClientConnection) {
 						h.unregister <- c
 					}(client)
@@ -103,6 +127,29 @@ func (h *WebSocketHub) ClientCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.clients)
+}
+
+func (h *WebSocketHub) ClientCountByIP(ip string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	count := 0
+	for client := range h.clients {
+		if client.IP == ip {
+			count++
+		}
+	}
+	return count
+}
+
+func (h *WebSocketHub) CanAccept(ip string) bool {
+	totalLimit := websocketLimitFromEnv("WS_MAX_CONNECTIONS", defaultWebSocketMaxClients)
+	if h.ClientCount() >= totalLimit {
+		return false
+	}
+
+	perIPLimit := websocketLimitFromEnv("WS_MAX_CONNECTIONS_PER_IP", defaultWebSocketMaxClientsPerIP)
+	return h.ClientCountByIP(ip) < perIPLimit
 }
 
 // BroadcastToAll 广播消息给所有已认证客户端
@@ -121,22 +168,27 @@ func (h *WebSocketHub) BroadcastToVersion(version string, message []byte) {
 
 	for client := range h.clients {
 		if client.IsAuthenticated && client.Version == version {
-			client.Conn.WriteMessage(websocket.TextMessage, message)
+			client.send(message)
 		}
 	}
 }
 
 // heartbeatChecker 定期检查连接健康状态
 func (h *WebSocketHub) heartbeatChecker() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(webSocketPingInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		h.mu.Lock()
 		now := time.Now()
 		for client := range h.clients {
-			// 60秒未收到 ping 则断开
-			if now.Sub(client.LastPing) > 60*time.Second {
+			if !client.IsAuthenticated && now.Sub(client.ConnectedAt) > webSocketAuthTimeout {
+				log.Printf("[WebSocket] 认证超时: %s", client.IP)
+				client.Conn.Close()
+				delete(h.clients, client)
+				continue
+			}
+			if now.Sub(client.LastPing) > webSocketPongWait {
 				log.Printf("[WebSocket] 连接超时: %s", client.MachineID)
 				client.Conn.Close()
 				delete(h.clients, client)
@@ -148,13 +200,30 @@ func (h *WebSocketHub) heartbeatChecker() {
 
 // send 发送消息到客户端（带超时保护）
 func (c *ClientConnection) send(message []byte) bool {
-	c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	c.Conn.SetWriteDeadline(time.Now().Add(webSocketWriteTimeout))
 	return c.Conn.WriteMessage(websocket.TextMessage, message) == nil
 }
 
 // HandleWebSocket WebSocket 连接处理函数
 func HandleWebSocket(c *gin.Context) {
-	// 升级 HTTP 连接到 WebSocket
+	if wsHub == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "WebSocket hub 未初始化"})
+		return
+	}
+	if !isAllowedOrigin(c.Request, c.GetHeader("Origin")) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Origin 不被允许"})
+		return
+	}
+
+	clientIP := c.ClientIP()
+	if !wsHub.CanAccept(clientIP) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "WebSocket 连接数已达上限"})
+		return
+	}
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Printf("[WebSocket] 升级失败: %v", err)
@@ -162,29 +231,33 @@ func HandleWebSocket(c *gin.Context) {
 	}
 
 	client := &ClientConnection{
-		Conn:     conn,
-		LastPing: time.Now(),
+		Conn:        conn,
+		IP:          clientIP,
+		ConnectedAt: time.Now(),
+		LastPing:    time.Now(),
 	}
+	conn.SetReadDeadline(time.Now().Add(webSocketAuthTimeout))
 
-	// 注册连接
-	wsHub.register <- client
+	hub := wsHub
+	hub.register <- client
 
-	// 启动读写协程
 	go client.writePump()
-	client.readPump()
+	client.readPump(hub)
 }
 
 // readPump 读取客户端消息
-func (c *ClientConnection) readPump() {
+func (c *ClientConnection) readPump(hub *WebSocketHub) {
 	defer func() {
-		wsHub.unregister <- c
+		if hub != nil {
+			hub.unregister <- c
+		}
 	}()
 
-	c.Conn.SetReadLimit(512 * 1024) // 最大 512KB
-	c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.Conn.SetReadLimit(webSocketMaxMessageBytes)
+	c.Conn.SetReadDeadline(time.Now().Add(webSocketAuthTimeout))
 	c.Conn.SetPongHandler(func(string) error {
 		c.LastPing = time.Now()
-		c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		c.Conn.SetReadDeadline(time.Now().Add(webSocketPongWait))
 		return nil
 	})
 
@@ -196,25 +269,26 @@ func (c *ClientConnection) readPump() {
 			}
 			break
 		}
-
-		// 处理客户端消息
 		c.handleMessage(message)
 	}
 }
 
 // writePump 向客户端发送消息
 func (c *ClientConnection) writePump() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(webSocketPingInterval)
 	defer func() {
 		ticker.Stop()
 		c.Conn.Close()
 	}()
 
 	for range ticker.C {
-		c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		c.writeMu.Lock()
+		c.Conn.SetWriteDeadline(time.Now().Add(webSocketWriteTimeout))
 		if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			c.writeMu.Unlock()
 			return
 		}
+		c.writeMu.Unlock()
 	}
 }
 
@@ -227,31 +301,53 @@ func (c *ClientConnection) handleMessage(message []byte) {
 	}
 
 	msgType, _ := msg["type"].(string)
-
 	switch msgType {
 	case "auth":
-		// 认证消息
 		c.handleAuth(msg)
 	case "ping":
-		// 心跳响应
 		c.LastPing = time.Now()
 	default:
 		log.Printf("[WebSocket] 未知消息类型: %s", msgType)
 	}
 }
 
+func (c *ClientConnection) failAuth(message string) {
+	c.sendJSON(map[string]interface{}{
+		"type":   "auth_result",
+		"status": "failed",
+		"error":  message,
+	})
+	c.Conn.Close()
+}
+
 // handleAuth 处理认证
 func (c *ClientConnection) handleAuth(msg map[string]interface{}) {
 	machineID, _ := msg["machine_id"].(string)
 	version, _ := msg["version"].(string)
+	timestamp, _ := msg["timestamp"].(string)
+	signature, _ := msg["signature"].(string)
+	deviceToken, _ := msg["device_token"].(string)
 
-	// 简单验证：machine_id 必须存在
+	machineID = strings.TrimSpace(machineID)
+	version = strings.TrimSpace(version)
+	timestamp = strings.TrimSpace(timestamp)
+	signature = strings.TrimSpace(signature)
+	deviceToken = strings.TrimSpace(deviceToken)
+
 	if machineID == "" {
-		c.sendJSON(map[string]interface{}{
-			"type":   "auth_result",
-			"status": "failed",
-			"error":  "machine_id required",
-		})
+		c.failAuth("machine_id 为必填")
+		return
+	}
+	if timestamp == "" || signature == "" {
+		c.failAuth("缺少签名参数")
+		return
+	}
+	if !verifyClientSignatureValues(http.MethodGet, "/ws", machineID, timestamp, signature) {
+		c.failAuth("签名验证失败")
+		return
+	}
+	if !verifyClientDeviceToken(machineID, deviceToken) {
+		c.failAuth("设备令牌无效")
 		return
 	}
 
@@ -259,6 +355,7 @@ func (c *ClientConnection) handleAuth(msg map[string]interface{}) {
 	c.Version = version
 	c.IsAuthenticated = true
 	c.LastPing = time.Now()
+	c.Conn.SetReadDeadline(time.Now().Add(webSocketPongWait))
 
 	c.sendJSON(map[string]interface{}{
 		"type":   "auth_result",

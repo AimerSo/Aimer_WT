@@ -14,12 +14,51 @@ import (
 
 var dashboardHTML []byte
 
-var sysConfig SystemConfig
+var sysConfig = SystemConfig{
+	BadgeSystemEnabled:    true,
+	NicknameChangeEnabled: true,
+	AvatarUploadEnabled:   true,
+	NoticeCommentEnabled:  true,
+	NoticeReactionEnabled: true,
+	RedeemCodeEnabled:     true,
+	FeedbackEnabled:       true,
+}
 
 var db *gorm.DB
 
 var adminUser = os.Getenv("TELEMETRY_ADMIN_USER")
 var adminPass = os.Getenv("TELEMETRY_ADMIN_PASS")
+
+func envBool(key string) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	return value == "1" || value == "true" || value == "yes" || value == "on"
+}
+
+func validateRuntimeConfig() {
+	missing := make([]string, 0, 3)
+	if strings.TrimSpace(clientAuthSecret) == "" {
+		missing = append(missing, "TELEMETRY_CLIENT_SECRET")
+	}
+	if strings.TrimSpace(adminUser) == "" {
+		missing = append(missing, "TELEMETRY_ADMIN_USER")
+	}
+	if strings.TrimSpace(adminPass) == "" {
+		missing = append(missing, "TELEMETRY_ADMIN_PASS")
+	}
+	if len(missing) > 0 {
+		log.Fatalf("缺少必填环境变量: %s", strings.Join(missing, ", "))
+	}
+
+	if envBool("TELEMETRY_TRUST_REVERSE_PROXY") {
+		return
+	}
+
+	certFile := strings.TrimSpace(os.Getenv("TLS_CERT_FILE"))
+	keyFile := strings.TrimSpace(os.Getenv("TLS_KEY_FILE"))
+	if certFile == "" || keyFile == "" {
+		log.Fatalf("请配置 HTTPS：要么设置 TELEMETRY_TRUST_REVERSE_PROXY=true 并放在 HTTPS 反向代理后，要么提供 TLS_CERT_FILE 与 TLS_KEY_FILE")
+	}
+}
 
 func initDB() {
 	var err error
@@ -41,9 +80,10 @@ func initDB() {
 		log.Printf("警告: 设置 SQLite busy_timeout 失败: %v", err)
 	}
 	if err := db.AutoMigrate(&TelemetryRecord{}, &ContentConfig{}, &NoticeItem{}, &FeedbackRecord{},
-		&AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{}, &AdClickEvent{},
+		&ClientDeviceToken{}, &AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{}, &AdClickEvent{},
 		&RedeemCode{}, &RedeemRecord{}, &NoticeReaction{},
-		&NoticeComment{}, &NoticeCommentLike{}, &NoticeCommentBan{}); err != nil {
+		&NoticeComment{}, &NoticeCommentLike{}, &NoticeCommentBan{},
+		&UserProfile{}, &NicknameRequest{}); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 }
@@ -60,6 +100,7 @@ func loadDashboard() {
 }
 
 func main() {
+	validateRuntimeConfig()
 	initDB()
 	seedSystemTags()
 	RestoreSysConfig()
@@ -85,10 +126,6 @@ func main() {
 
 	r := gin.Default()
 
-	if adminUser == "" || adminPass == "" {
-		log.Fatalf("请设置环境变量 TELEMETRY_ADMIN_USER 和 TELEMETRY_ADMIN_PASS")
-	}
-
 	initRouter(r)
 
 	// 从环境变量读取端口，默认 8080
@@ -97,8 +134,21 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("遥测后端已启动在 :%s (WebSocket: /ws)\n", port)
-	r.Run(":" + port)
+	addr := ":" + port
+	certFile := strings.TrimSpace(os.Getenv("TLS_CERT_FILE"))
+	keyFile := strings.TrimSpace(os.Getenv("TLS_KEY_FILE"))
+	if certFile != "" && keyFile != "" {
+		log.Printf("遥测后端已通过 HTTPS 启动在 %s (WebSocket: /ws)\n", addr)
+		if err := r.RunTLS(addr, certFile, keyFile); err != nil {
+			log.Fatalf("HTTPS 启动失败: %v", err)
+		}
+		return
+	}
+
+	log.Printf("遥测后端已启动在 %s (建议部署在 HTTPS 反向代理之后, WebSocket: /ws)\n", addr)
+	if err := r.Run(addr); err != nil {
+		log.Fatalf("服务启动失败: %v", err)
+	}
 }
 
 func buildWhereClause(c *gin.Context) string {

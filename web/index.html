@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="css/import-result-modal.css">
     <link rel="stylesheet" href="css/header_banner.css">
     <link rel="stylesheet" href="guide/guide.css">
+    <link rel="stylesheet" href="css/user_profile.css">
 </head>
 
 <body>
@@ -846,6 +847,68 @@
         </div>
 
         <div id="page-settings" class="page">
+
+            <!-- 个人信息卡片 -->
+            <div class="card up-card" id="user-profile-card">
+                <!-- 顶部装饰条 -->
+                <div class="up-hero-bar" id="up-hero-bar"></div>
+
+                <div class="up-body" id="up-body">
+                    <!-- 左侧：头像 + 等级 + 昵称 + 经验 -->
+                    <div class="up-panel up-panel-left">
+                        <!-- 头像区 -->
+                        <div class="up-avatar-area">
+                            <div class="up-avatar-wrap" id="up-avatar-wrap" title="点击更换头像（需达到1级）">
+                                <div class="up-avatar" id="up-avatar">
+                                    <i class="ri-user-line"></i>
+                                </div>
+                                <div class="up-avatar-mask"><i class="ri-camera-line"></i></div>
+                                <input type="file" id="up-avatar-input" accept="image/*" style="display:none;">
+                            </div>
+                            <div class="up-level-badge" id="up-level-badge">LV<span id="up-level-num">0</span></div>
+                        </div>
+
+                        <!-- 昵称输入 -->
+                        <div class="up-info-block">
+                            <div class="up-nickname-row">
+                                <input class="up-nickname-input" id="up-nickname-input"
+                                    type="text" maxlength="18" placeholder="设置昵称（需达到1级）">
+                                <button class="up-save-btn" id="up-save-btn" onclick="userProfile.saveNickname()">
+                                    <i class="ri-check-line"></i>
+                                </button>
+                            </div>
+                            <div class="up-request-hint" id="up-request-hint" style="display:none;"></div>
+
+                            <!-- 经验进度条 -->
+                            <div class="up-exp-block">
+                                <div class="up-exp-meta">
+                                    <span class="up-exp-tag">EXP</span>
+                                    <span class="up-exp-label" id="up-exp-label">0 / 0</span>
+                                </div>
+                                <div class="up-exp-bar"><div class="up-exp-fill" id="up-exp-fill" style="width:0%;"></div></div>
+                            </div>
+
+                            <!-- 0级锁定提示 -->
+                            <div class="up-locked-tip" id="up-locked-tip" style="display:none;">
+                                <i class="ri-lock-2-line"></i>
+                                <span>身份验证后解锁编辑权限</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 分隔线 -->
+                    <div class="up-divider"></div>
+
+                    <!-- 右侧：勋章展示区 -->
+                    <div class="up-panel up-panel-right">
+                        <div class="up-section-label"><i class="ri-medal-2-line"></i> 我的勋章</div>
+                        <div class="up-badges" id="up-badges">
+                            <span class="up-badge-placeholder">暂无勋章</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-header">
                     <h2>资源管理</h2>
@@ -1783,6 +1846,7 @@
     <script src="ai/ai_chat_messages.js"></script>
     <script src="ai/ai_chat.js"></script>
     <script src="ai/index.js"></script>
+    <script src="js/pages/user_profile.js"></script>
 </body>
 
 </html>

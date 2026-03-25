@@ -13,6 +13,15 @@ from utils.logger import get_logger
 log = get_logger(__name__)
 
 
+REQUIRED_BUILD_ENV_VARS = (
+    "REPORT_URL",
+    "TELEMETRY_CLIENT_SECRET",
+    "TELEMETRY_SALT",
+    "TELEMETRY_ADMIN_USER",
+    "TELEMETRY_ADMIN_PASS",
+)
+
+
 def calculate_checksum(file_path, algorithm='sha256'):
     """计算文件的校验和"""
     hash_func = getattr(hashlib, algorithm)()
@@ -57,6 +66,24 @@ def load_dotenv(path=".env"):
             print(f"   ! 加载 .env 失败: {e}")
 
 
+def require_build_env() -> dict[str, str]:
+    """校验生产打包所需的关键环境变量。"""
+    missing = []
+    values: dict[str, str] = {}
+    for key in REQUIRED_BUILD_ENV_VARS:
+        value = os.environ.get(key, "").strip()
+        if not value:
+            missing.append(key)
+            continue
+        values[key] = value
+
+    if missing:
+        raise RuntimeError(
+            "缺少必填环境变量: " + ", ".join(missing)
+        )
+    return values
+
+
 def build_exe():
     """执行打包任务"""
     log.info("🚀 开始打包程序...")
@@ -66,15 +93,16 @@ def build_exe():
 
     load_dotenv()
 
-    # 在打包前，从打包环境的环境变量中读取遥测配置。
-    salt = os.environ.get("TELEMETRY_SALT", "DEVELOPMENT_SALT")
-    url = os.environ.get("REPORT_URL", "").strip()
-    client_secret = os.environ.get("TELEMETRY_CLIENT_SECRET", "").strip()
+    try:
+        build_env = require_build_env()
+    except RuntimeError as exc:
+        log.error(f"[X] 打包终止: {exc}")
+        sys.exit(1)
 
-    if not url:
-        log.warning("未配置 REPORT_URL，打包产物将不会连接遥测/AI/兑换服务")
-    if not client_secret:
-        log.warning("未配置 TELEMETRY_CLIENT_SECRET，正式环境将退回旧版弱校验模式")
+    # 在打包前，从打包环境的环境变量中读取遥测配置。
+    salt = build_env["TELEMETRY_SALT"]
+    url = build_env["REPORT_URL"]
+    client_secret = build_env["TELEMETRY_CLIENT_SECRET"]
 
     # 生成临时的 app_secrets.py 供编译使用
     # 注意：该文件已被加入 .gitignore，不会被上传到 GitHub

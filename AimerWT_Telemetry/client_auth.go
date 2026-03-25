@@ -2,8 +2,11 @@ package main
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -15,26 +18,25 @@ import (
 
 var clientAuthSecret = strings.TrimSpace(os.Getenv("TELEMETRY_CLIENT_SECRET"))
 
-const clientAuthClockSkew = 5 * time.Minute
+const (
+	clientAuthClockSkew   = 5 * time.Minute
+	clientDeviceTokenSize = 32
+)
+
+const clientDeviceTokenHeader = "X-AimerWT-Device-Token"
 
 func isClientAuthEnabled() bool {
 	return clientAuthSecret != ""
 }
 
-func hasLegacyClientIdentity(c *gin.Context) bool {
-	ua := c.GetHeader("User-Agent")
-	clientHeader := c.GetHeader("X-AimerWT-Client")
-	return strings.HasPrefix(ua, "AimerWT-Client") || clientHeader != ""
-}
-
-func verifyClientSignature(c *gin.Context) bool {
+func verifyClientSignatureValues(method, path, machineID, timestamp, signature string) bool {
 	if !isClientAuthEnabled() {
-		return hasLegacyClientIdentity(c)
+		return false
 	}
 
-	timestamp := strings.TrimSpace(c.GetHeader("X-AimerWT-Timestamp"))
-	signature := strings.TrimSpace(c.GetHeader("X-AimerWT-Signature"))
-	machineID := strings.TrimSpace(c.GetHeader("X-AimerWT-Machine"))
+	timestamp = strings.TrimSpace(timestamp)
+	signature = strings.TrimSpace(signature)
+	machineID = strings.TrimSpace(machineID)
 	if timestamp == "" || signature == "" {
 		return false
 	}
@@ -51,8 +53,8 @@ func verifyClientSignature(c *gin.Context) bool {
 	}
 
 	canonical := strings.Join([]string{
-		strings.ToUpper(c.Request.Method),
-		c.Request.URL.Path,
+		strings.ToUpper(strings.TrimSpace(method)),
+		strings.TrimSpace(path),
 		machineID,
 		timestamp,
 	}, "\n")
@@ -68,24 +70,118 @@ func verifyClientSignature(c *gin.Context) bool {
 	return hmac.Equal(provided, expected)
 }
 
+func verifyClientSignature(c *gin.Context) bool {
+	return verifyClientSignatureValues(
+		c.Request.Method,
+		c.Request.URL.Path,
+		c.GetHeader("X-AimerWT-Machine"),
+		c.GetHeader("X-AimerWT-Timestamp"),
+		c.GetHeader("X-AimerWT-Signature"),
+	)
+}
+
 func requireClientRequest(c *gin.Context) bool {
 	if verifyClientSignature(c) {
 		return true
 	}
-	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Access Denied"})
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "访问被拒绝"})
+	return false
+}
+
+func hashClientDeviceToken(token string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(sum[:])
+}
+
+func lookupClientDeviceToken(machineID string) (ClientDeviceToken, error) {
+	var record ClientDeviceToken
+	err := db.Where("machine_id = ?", strings.TrimSpace(machineID)).First(&record).Error
+	return record, err
+}
+
+func generateClientDeviceToken() (string, error) {
+	buf := make([]byte, clientDeviceTokenSize)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func issueClientDeviceToken(machineID string) (string, error) {
+	normalizedMachineID := strings.TrimSpace(machineID)
+	if normalizedMachineID == "" {
+		return "", errors.New("machine_id required")
+	}
+
+	token, err := generateClientDeviceToken()
+	if err != nil {
+		return "", err
+	}
+
+	record := ClientDeviceToken{
+		MachineID:  normalizedMachineID,
+		TokenHash:  hashClientDeviceToken(token),
+		LastIssued: time.Now(),
+	}
+
+	if err := db.Create(&record).Error; err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func hasClientDeviceToken(machineID string) bool {
+	_, err := lookupClientDeviceToken(machineID)
+	return err == nil
+}
+
+func verifyClientDeviceToken(machineID, token string) bool {
+	if strings.TrimSpace(machineID) == "" || strings.TrimSpace(token) == "" {
+		return false
+	}
+
+	record, err := lookupClientDeviceToken(machineID)
+	if err != nil {
+		return false
+	}
+
+	expected := record.TokenHash
+	provided := hashClientDeviceToken(token)
+	return hmac.Equal([]byte(provided), []byte(expected))
+}
+
+func ensureClientDeviceToken(c *gin.Context, machineID string, allowBootstrap bool) bool {
+	normalizedMachineID := strings.TrimSpace(machineID)
+	if normalizedMachineID == "" {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "设备绑定不匹配"})
+		return false
+	}
+
+	token := strings.TrimSpace(c.GetHeader(clientDeviceTokenHeader))
+	if token != "" {
+		if verifyClientDeviceToken(normalizedMachineID, token) {
+			return true
+		}
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "设备令牌无效"})
+		return false
+	}
+
+	if allowBootstrap && !hasClientDeviceToken(normalizedMachineID) {
+		return true
+	}
+
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "缺少设备令牌"})
 	return false
 }
 
 func ensureClientMachineBinding(c *gin.Context, machineID string) bool {
-	if !isClientAuthEnabled() {
-		return true
-	}
-
 	expected := strings.TrimSpace(c.GetHeader("X-AimerWT-Machine"))
 	actual := strings.TrimSpace(machineID)
 	if expected == "" || actual == "" || expected != actual {
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Machine binding mismatch"})
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "设备绑定不匹配"})
 		return false
 	}
-	return true
+
+	allowBootstrap := c.Request.URL.Path == "/telemetry"
+	return ensureClientDeviceToken(c, actual, allowBootstrap)
 }

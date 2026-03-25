@@ -16,6 +16,7 @@
 
 import hashlib
 import hmac
+import json
 import os
 import platform
 import subprocess
@@ -27,12 +28,55 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import requests
+from utils.utils import get_docs_data_dir
 
 
 _PLACEHOLDER_REPORT_URLS = {
     "https://api.example.com/telemetry",
     "http://api.example.com/telemetry",
 }
+
+_DEVICE_TOKEN_FILE = get_docs_data_dir() / "telemetry_device_token.json"
+_device_token_lock = threading.Lock()
+
+
+def _load_device_token() -> str:
+    try:
+        if not _DEVICE_TOKEN_FILE.exists():
+            return ""
+        with open(_DEVICE_TOKEN_FILE, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return str(payload.get("device_token", "") or "").strip()
+    except Exception:
+        return ""
+
+
+_client_device_token = _load_device_token()
+
+
+def get_client_device_token() -> str:
+    with _device_token_lock:
+        return _client_device_token
+
+
+def set_client_device_token(token: str) -> None:
+    normalized = str(token or "").strip()
+    global _client_device_token
+    with _device_token_lock:
+        if _client_device_token == normalized:
+            return
+        _client_device_token = normalized
+        try:
+            _DEVICE_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+            if normalized:
+                tmp_path = _DEVICE_TOKEN_FILE.with_suffix(".tmp")
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump({"device_token": normalized}, f, ensure_ascii=False)
+                tmp_path.replace(_DEVICE_TOKEN_FILE)
+            elif _DEVICE_TOKEN_FILE.exists():
+                _DEVICE_TOKEN_FILE.unlink()
+        except Exception:
+            pass
 
 
 def resolve_report_url(report_url: Optional[str] = None) -> str:
@@ -96,7 +140,7 @@ def build_client_auth_headers(path_or_url: str, method: str = "POST", machine_id
     """
     构建客户端请求头。
 
-    - 未配置密钥时：保留兼容头，继续支持本地/旧版测试环境。
+    - 若已拿到服务端签发的设备令牌，则一并携带。
     - 配置密钥时：追加时间戳 + HMAC 签名，供服务端严格校验。
     """
     headers: dict[str, str] = {
@@ -104,6 +148,9 @@ def build_client_auth_headers(path_or_url: str, method: str = "POST", machine_id
     }
     if user_agent:
         headers["User-Agent"] = user_agent
+    device_token = get_client_device_token()
+    if device_token:
+        headers["X-AimerWT-Device-Token"] = device_token
 
     secret = resolve_client_auth_secret()
     if not secret:
@@ -333,6 +380,13 @@ class TelemetryManager:
                     self._server_connected = True
                     try:
                         data = response.json()
+                        issued_token = str(
+                            response.headers.get("X-AimerWT-Device-Token")
+                            or data.get("client_device_token", "")
+                            or ""
+                        ).strip()
+                        if issued_token:
+                            set_client_device_token(issued_token)
                         sys_config = data.get("sys_config")
                         if sys_config:
                             # 读取服务端下发的心跳间隔
@@ -365,6 +419,12 @@ class TelemetryManager:
                             self._user_seq_id = int(seq_id)
                     except Exception:
                         pass
+                elif response.status_code == 403:
+                    self._server_connected = False
+                    set_client_device_token("")
+                    if self._log_callback and not self._is_log_error:
+                        self._log_callback.error("[遥测] 客户端设备令牌无效，已清理本地会话")
+                        self._is_log_error = True
                 else:
                     self._server_connected = False
                     if self._log_callback and not self._is_log_error:

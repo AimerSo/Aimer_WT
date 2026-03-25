@@ -86,11 +86,23 @@
     flex-wrap: nowrap;
     overflow: visible;
     min-width: 0;
+    padding-top: 3px;
+    max-height: 41px;
+    transition: max-height 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.28s ease,
+        transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: max-height, opacity, transform;
 }
 
 .nc-reaction-row.nc-expanded {
     flex-wrap: wrap;
     row-gap: 8px;
+    max-height: 300px;
+}
+
+.nc-reaction-header.nc-animating,
+.nc-reaction-row.nc-animating {
+    overflow: hidden;
 }
 
 .nc-reaction-pill {

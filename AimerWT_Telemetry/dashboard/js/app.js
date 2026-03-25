@@ -16,6 +16,7 @@ const app = {
         currentView: null,
         charts: {},
         dashboardData: null,
+        recentUsersData: [],
         latestUsersData: [],
         selectedUser: null,
         markedUsers: new Set(),
@@ -52,6 +53,8 @@ const app = {
         this.startUpdateTimer();
         // 加载 RemixIcon CDN（标签图标渲染需要）
         this._ensureIconPickerCdn();
+        // 启动时提前加载服务端在线阈值配置
+        this._loadOnlineThresholdStatus();
         // 默认加载主页
         this.switchView('dashboard', document.querySelector('[data-view="dashboard"]'));
         // 启动定时刷新（动态读取配置间隔）
@@ -194,10 +197,10 @@ const app = {
             submenu.classList.add('show');
         }
 
-        // 展开后自动选择第一个子菜单项（用户列表）
+        // 展开后自动选择第一个子菜单项
         const firstSubmenuItem = submenu.querySelector('.submenu-item');
         if (firstSubmenuItem) {
-            this.switchView('userlist', firstSubmenuItem);
+            this.switchView(firstSubmenuItem.dataset.view || 'feature_settings', firstSubmenuItem);
         }
     },
 
@@ -327,6 +330,12 @@ const app = {
             case 'userlist':
                 this.initUserList();
                 break;
+            case 'feature_settings':
+                this.initFeatureSettings();
+                break;
+            case 'user_requests':
+                this.initUserRequests();
+                break;
             case 'userdetail':
                 this.initUserDetail();
                 break;
@@ -448,6 +457,9 @@ const app = {
     },
 
     getOnlineThresholdMinutes() {
+        if (this.state._serverOnlineThresholdMin > 0) {
+            return this.state._serverOnlineThresholdMin;
+        }
         const settings = this.loadSettings();
         const parsed = parseInt(settings.onlineThreshold || '5', 10);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
@@ -469,6 +481,13 @@ const app = {
             if (!response.ok) throw new Error('Failed to fetch');
             this.state.dashboardData = await response.json();
             this.updateDashboard(this.state.dashboardData);
+            if (this.state.currentView === 'userdetail' && this.state.selectedUser) {
+                const selectedId = this.state.selectedUser.hwid || this.state.selectedUser.hwid_hash || this.state.selectedUser.machine_id || '';
+                if (selectedId) {
+                    const updatedUser = await this.refreshUserCache(selectedId);
+                    if (updatedUser) this.renderUserDetailView(updatedUser);
+                }
+            }
         } catch (error) {
             console.warn('API fetch failed');
             this.loadEmptyState();
@@ -516,24 +535,33 @@ const app = {
         this.renderPieChart('localeChart', data.locale_stats || []);
         this.renderRecentUsers(data.recent_users || []);
 
-        this.state.latestUsersData = data.recent_users || [];
-
-        // 从后端同步星标/管理员状态到内存 Set
-        this.state.markedUsers.clear();
-        this.state.adminUsers.clear();
-        this.state.latestUsersData.forEach(u => {
-            const uid = u.hwid || u.hwid_hash || u.uid;
-            if (u.is_starred) this.state.markedUsers.add(uid);
-            if (u.is_admin) this.state.adminUsers.add(uid);
-        });
+        this.state.recentUsersData = data.recent_users || [];
+        if (!this.state.latestUsersData || !this.state.latestUsersData.length) {
+            this.state.latestUsersData = [...this.state.recentUsersData];
+        }
+        this._rebuildUserRoleSets([this.state.latestUsersData, this.state.recentUsersData]);
 
         if (this.state.currentView === 'userlist') {
-            this.renderUserList(this.state.latestUsersData);
+            this.initUserList();
         }
 
         this.updateFilters(data);
         this.checkAlerts(data);
         this.updateTimestamp();
+    },
+
+    _rebuildUserRoleSets(sources = []) {
+        this.state.markedUsers.clear();
+        this.state.adminUsers.clear();
+
+        sources.forEach((list) => {
+            (list || []).forEach((user) => {
+                const uid = user?.hwid || user?.hwid_hash || user?.machine_id || user?.uid || '';
+                if (!uid) return;
+                if (user.is_starred) this.state.markedUsers.add(uid);
+                if (user.is_admin) this.state.adminUsers.add(uid);
+            });
+        });
     },
 
     /**
@@ -3272,7 +3300,7 @@ const app = {
             settingLayout: settings.layout || 'comfortable',
             settingRefreshInterval: String(this.config.updateInterval),
             settingTimeRange: settings.timeRange || '30',
-            settingOnlineThreshold: settings.onlineThreshold || '5',
+            settingOnlineThreshold: String(this.state._serverOnlineThresholdMin || settings.onlineThreshold || '5'),
             settingExportFormat: settings.exportFormat || 'csv',
             settingDataRetention: settings.dataRetention || '0'
         };
@@ -3506,6 +3534,130 @@ const app = {
         } catch (e) { this.showAlert('更新失败: ' + e.message, 'danger'); }
     },
 
+    getDefaultUserFeatureSettings() {
+        return {
+            badge_system_enabled: true,
+            nickname_change_enabled: true,
+            avatar_upload_enabled: true,
+            notice_comment_enabled: true,
+            notice_reaction_enabled: true,
+            redeem_code_enabled: true,
+            feedback_enabled: true
+        };
+    },
+
+    normalizeUserFeatureSettings(raw = {}) {
+        return { ...this.getDefaultUserFeatureSettings(), ...(raw || {}) };
+    },
+
+    collectUserFeatureSettings() {
+        return this.normalizeUserFeatureSettings({
+            badge_system_enabled: document.getElementById('featureBadgeSystem')?.checked ?? true,
+            nickname_change_enabled: document.getElementById('featureNicknameChange')?.checked ?? true,
+            avatar_upload_enabled: document.getElementById('featureAvatarUpload')?.checked ?? true,
+            notice_comment_enabled: document.getElementById('featureNoticeComment')?.checked ?? true,
+            notice_reaction_enabled: document.getElementById('featureNoticeReaction')?.checked ?? true,
+            redeem_code_enabled: document.getElementById('featureRedeemCode')?.checked ?? true,
+            feedback_enabled: document.getElementById('featureFeedback')?.checked ?? true
+        });
+    },
+
+    applyFeatureSettingsForm(cfg = {}) {
+        const settings = this.normalizeUserFeatureSettings(cfg);
+        const map = {
+            featureBadgeSystem: settings.badge_system_enabled,
+            featureNicknameChange: settings.nickname_change_enabled,
+            featureAvatarUpload: settings.avatar_upload_enabled,
+            featureNoticeComment: settings.notice_comment_enabled,
+            featureNoticeReaction: settings.notice_reaction_enabled,
+            featureRedeemCode: settings.redeem_code_enabled,
+            featureFeedback: settings.feedback_enabled
+        };
+
+        Object.entries(map).forEach(([id, checked]) => {
+            const el = document.getElementById(id);
+            if (el) el.checked = !!checked;
+        });
+        this.updateFeatureSettingsSummary();
+    },
+
+    updateFeatureSettingsSummary() {
+        const settings = this.collectUserFeatureSettings();
+        const modules = [
+            { key: 'badge_system_enabled', label: '勋章系统' },
+            { key: 'nickname_change_enabled', label: '昵称修改' },
+            { key: 'avatar_upload_enabled', label: '头像上传' },
+            { key: 'notice_comment_enabled', label: '公告评论' },
+            { key: 'notice_reaction_enabled', label: '表情互动' },
+            { key: 'redeem_code_enabled', label: 'CDK兑换' },
+            { key: 'feedback_enabled', label: '问题反馈' }
+        ];
+        const enabledCount = modules.filter(item => settings[item.key]).length;
+
+        const countEl = document.getElementById('featureSettingsEnabledCount');
+        if (countEl) countEl.textContent = `${enabledCount} / ${modules.length}`;
+
+        const modeEl = document.getElementById('featureSettingsModeLabel');
+        if (modeEl) {
+            modeEl.textContent = enabledCount === modules.length
+                ? '完整体验模式'
+                : enabledCount >= 5
+                    ? '平衡开放模式'
+                    : enabledCount >= 3
+                        ? '轻社交模式'
+                        : '极简稳定模式';
+        }
+
+        const listEl = document.getElementById('featureSettingsStatusList');
+        if (listEl) {
+            listEl.innerHTML = modules.map(item => {
+                const enabled = !!settings[item.key];
+                const bg = enabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(148, 163, 184, 0.14)';
+                const color = enabled ? 'var(--secondary)' : 'var(--text-muted)';
+                const icon = enabled ? 'ri-checkbox-circle-line' : 'ri-eye-off-line';
+                return `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:${bg};color:${color};font-size:11px;font-weight:600;">
+                    <i class="${icon}"></i>${item.label}
+                </span>`;
+            }).join('');
+        }
+    },
+
+    async initFeatureSettings() {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/control`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: '_query' })
+            });
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            const data = await res.json();
+            this.applyFeatureSettingsForm(data.config || {});
+        } catch (error) {
+            this.applyFeatureSettingsForm(this.getDefaultUserFeatureSettings());
+            this.showAlert('加载功能设置失败: ' + error.message, 'danger');
+        }
+    },
+
+    async saveFeatureSettings(overrides = null) {
+        const settings = overrides ? this.normalizeUserFeatureSettings(overrides) : this.collectUserFeatureSettings();
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/control`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'user_features', ...settings })
+            });
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            this.applyFeatureSettingsForm(settings);
+            this.showAlert('用户功能设置已保存', 'success');
+        } catch (error) {
+            this.showAlert('保存失败: ' + error.message, 'danger');
+        }
+    },
+
+    async resetFeatureSettings() {
+        await this.saveFeatureSettings(this.getDefaultUserFeatureSettings());
+    },
+
     /**
      * 加载设置
      */
@@ -3535,6 +3687,13 @@ const app = {
             dataRetention: document.getElementById('settingDataRetention')?.value || '0',
             debugMode: document.getElementById('settingDebugMode')?.checked ?? false
         };
+
+        // 在线阈值变更时同步推送到服务端
+        const newThreshold = parseInt(settings.onlineThreshold) || 5;
+        const oldThreshold = this.state._serverOnlineThresholdMin || 5;
+        if (newThreshold !== oldThreshold) {
+            this._applyOnlineThreshold(newThreshold);
+        }
 
         try {
             localStorage.setItem('dashboard_settings', JSON.stringify(settings));
@@ -3785,16 +3944,65 @@ const app = {
     /**
      * 初始化用户列表视图
      */
-    initUserList() {
-        const users = this.state.dashboardData?.recent_users || this.state.latestUsersData;
-        // 保存原始数据用于排序
-        this.state.userListData = users && users.length > 0 ? [...users] : [];
-        // 应用当前排序
-        if (this.state.userListSort) {
-            this.applyUserListSort();
-        } else {
-            this.renderUserList(this.state.userListData);
+    async initUserList() {
+        const tbody = document.getElementById('fullUserListBody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);">正在加载完整用户列表...</td></tr>`;
         }
+
+        try {
+            const users = await this.fetchAllUsersForList();
+            this.state.latestUsersData = users;
+            this.state.userListData = users && users.length > 0 ? [...users] : [];
+            this._rebuildUserRoleSets([this.state.latestUsersData, this.state.recentUsersData]);
+
+            if (this.state.userListSort) {
+                this.applyUserListSort();
+            } else {
+                const defaultSorted = [...this.state.userListData].sort((a, b) => {
+                    const t1 = new Date(a.updated_at || a.last_seen_at || 0).getTime();
+                    const t2 = new Date(b.updated_at || b.last_seen_at || 0).getTime();
+                    if (isNaN(t1)) return 1;
+                    if (isNaN(t2)) return -1;
+                    return t2 - t1;
+                });
+                this.renderUserList(defaultSorted);
+                this.filterUserList();
+            }
+        } catch (error) {
+            console.error('加载完整用户列表失败:', error);
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--danger);">加载用户列表失败：${this.escapeHtmlSafe(error.message || '未知错误')}</td></tr>`;
+            }
+        }
+    },
+
+    async fetchAllUsersForList() {
+        const pageSize = 500;
+        let offset = 0;
+        let hasMore = true;
+        let page = 0;
+        const maxPages = 20;
+        const users = [];
+
+        while (hasMore && page < maxPages) {
+            const response = await fetch(`${this.config.apiBase}/admin/users?offset=${offset}&limit=${pageSize}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            const batch = Array.isArray(data.users) ? data.users : [];
+            users.push(...batch);
+            hasMore = data.has_more === true;
+            offset = Number(data.next_offset || users.length);
+            page += 1;
+        }
+
+        if (hasMore) {
+            this.showAlert('用户数量较多，当前仅加载最近 10000 条用户数据', 'warning');
+        }
+
+        return users;
     },
 
     /**
@@ -3871,6 +4079,7 @@ const app = {
         });
 
         this.renderUserList(sorted);
+        this.filterUserList();
     },
 
     /**
@@ -3893,15 +4102,6 @@ const app = {
         if (!tbody) return;
 
         const fullList = users && users.length ? [...users] : [];
-
-        fullList.sort((a, b) => {
-            const t1 = new Date(a.updated_at).getTime();
-            const t2 = new Date(b.updated_at).getTime();
-            if (isNaN(t1)) return 1;
-            if (isNaN(t2)) return -1;
-            return t2 - t1;
-        });
-
         this.state._renderedUserList = fullList;
         this._populateTagFilter();
         this._renderUserRows(fullList);
@@ -3947,7 +4147,7 @@ const app = {
         }
 
         if (!list.length) {
-            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:48px;color:var(--text-muted);">
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:48px;color:var(--text-muted);">
                 <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     <span>无匹配用户</span>
@@ -3974,9 +4174,10 @@ const app = {
 
             const originalName = this.getAutoUserName(user);
             const alias = this.normalizeUserName(user.alias);
-            let nameHtml = this.getDisplayUserName(user);
+            const displayName = this.getDisplayUserName(user);
+            let nameHtml = this.escapeHtmlSafe(displayName);
             if (alias && alias !== originalName) {
-                nameHtml = `${alias} <span style="color:var(--text-muted);font-weight:normal;font-size:0.85em;">(${originalName})</span>`;
+                nameHtml = `${this.escapeHtmlSafe(alias)} <span style="color:var(--text-muted);font-weight:normal;font-size:0.85em;">(${this.escapeHtmlSafe(originalName)})</span>`;
             }
 
             // 标签 badges
@@ -3992,13 +4193,16 @@ const app = {
                     const icon_cls = def.icon || 'ri-price-tag-3-line';
                     const label = this._getTagLabel(def);
                     const tc = this._getTagColor(tn);
-                    tag_badges += `<span class="user-tag" title="${def.display_name}" style="color:${tc.color};border-color:${tc.borderColor};background:${tc.bg};"><i class="${icon_cls}" style="font-size:10px;"></i>${label}</span>`;
+                    tag_badges += `<span class="user-tag" title="${this.escapeHtmlSafe(def.display_name)}" style="color:${tc.color};border-color:${tc.borderColor};background:${tc.bg};"><i class="${this.escapeHtmlSafe(icon_cls)}" style="font-size:10px;"></i>${this.escapeHtmlSafe(label)}</span>`;
                 }
             });
 
             const tagRow = tag_badges ? `<div class="user-tags">${tag_badges}</div>` : '';
 
             const userData = encodeURIComponent(JSON.stringify(user));
+            const safeVersion = this.escapeHtmlSafe(user.version || user.app_version || user.client_version || '-');
+            const safeOS = this.escapeHtmlSafe(user.os || '-');
+            const safeLocaleDisplay = this.escapeHtmlSafe(localeDisplay);
 
             return `
             <tr style="cursor:pointer;" onclick="app.openUserDetailByData('${userData}')">
@@ -4017,10 +4221,11 @@ const app = {
                         <span>${statusText}</span>
                     </div>
                 </td>
+                <td>${user.verified ? '<span style="color: var(--secondary); font-weight: 500;">已认证</span>' : '<span style="color: var(--text-muted);">未认证</span>'}</td>
                 <td><span style="color: var(--secondary);">正常</span></td>
-                <td>${user.version || user.app_version || user.client_version || '-'}</td>
-                <td>${user.os || '-'}</td>
-                <td>${localeDisplay}</td>
+                <td>${safeVersion}</td>
+                <td>${safeOS}</td>
+                <td>${safeLocaleDisplay}</td>
                 <td style="color:var(--text-muted);font-size:12px;">${this.formatTimeAgo(minutes)}</td>
             </tr>
         `}).join('');
@@ -4038,7 +4243,8 @@ const app = {
         // 关键字搜索：用户名、UID、备注、标签名
         if (keyword) {
             list = list.filter(u => {
-                const name = (u.username || u.name || '').toLowerCase();
+                const name = (u.username || u.name || u.user || '').toLowerCase();
+                const nickname = (u.nickname || '').toLowerCase();
                 const alias = (u.alias || '').toLowerCase();
                 const uid = String(u.id || '');
                 // 标签搜索
@@ -4051,7 +4257,7 @@ const app = {
                         return def ? (this._getTagLabel(def) + ' ' + tn) : tn;
                     }).join(' ').toLowerCase();
                 } catch {}
-                return name.includes(keyword) || alias.includes(keyword) || uid.includes(keyword) || tag_text.includes(keyword);
+                return name.includes(keyword) || nickname.includes(keyword) || alias.includes(keyword) || uid.includes(keyword) || tag_text.includes(keyword);
             });
         }
 
@@ -4108,6 +4314,7 @@ const app = {
         if (!machineId) return null;
         const pools = [
             this.state.latestUsersData || [],
+            this.state.recentUsersData || [],
             this.state.dashboardData?.recent_users || []
         ];
         for (const pool of pools) {
@@ -4118,6 +4325,44 @@ const app = {
             if (matched) return matched;
         }
         return null;
+    },
+
+    _replaceUserInPool(pool, updatedUser) {
+        if (!Array.isArray(pool) || !updatedUser) return false;
+        const hwid = updatedUser.hwid || updatedUser.hwid_hash || updatedUser.machine_id || updatedUser.uid || '';
+        if (!hwid) return false;
+
+        const index = pool.findIndex((user) => {
+            const currentId = user?.hwid || user?.hwid_hash || user?.machine_id || user?.uid || '';
+            return currentId === hwid;
+        });
+        if (index < 0) return false;
+        pool[index] = updatedUser;
+        return true;
+    },
+
+    _syncUserCaches(updatedUser) {
+        if (!updatedUser) return;
+
+        this._replaceUserInPool(this.state.latestUsersData, updatedUser);
+        this._replaceUserInPool(this.state.recentUsersData, updatedUser);
+        if (Array.isArray(this.state.dashboardData?.recent_users)) {
+            this._replaceUserInPool(this.state.dashboardData.recent_users, updatedUser);
+        }
+        this._rebuildUserRoleSets([this.state.latestUsersData, this.state.recentUsersData]);
+
+        const selectedId = this.state.selectedUser?.hwid || this.state.selectedUser?.hwid_hash || this.state.selectedUser?.machine_id || '';
+        const updatedId = updatedUser.hwid || updatedUser.hwid_hash || updatedUser.machine_id || '';
+        if (selectedId && updatedId && selectedId === updatedId) {
+            this.state.selectedUser = updatedUser;
+        }
+    },
+
+    async refreshUserCache(machineId) {
+        const updatedUser = await this.fetchUserByMachineId(machineId);
+        if (!updatedUser) return null;
+        this._syncUserCaches(updatedUser);
+        return updatedUser;
     },
 
     async fetchUserByMachineId(machineId) {
@@ -4169,9 +4414,9 @@ const app = {
 
         const originalName = this.getAutoUserName(user);
         const alias = this.normalizeUserName(user.alias);
-        let displayName = this.getDisplayUserName(user);
+        let displayName = this.escapeHtmlSafe(this.getDisplayUserName(user));
         if (alias && alias !== originalName) {
-            displayName = `${alias} <span style="color: var(--text-muted); font-size: 0.8em; font-weight: normal;">(${originalName})</span>`;
+            displayName = `${this.escapeHtmlSafe(alias)} <span style="color: var(--text-muted); font-size: 0.8em; font-weight: normal;">(${this.escapeHtmlSafe(originalName)})</span>`;
         }
 
         const localeMap = {
@@ -4220,27 +4465,27 @@ const app = {
                     { label: '在线状态', value: `<span class="status-dot ${statusClass}"></span>${statusText}` },
                     { label: '账户状态', value: `<span style="color: var(--secondary);">正常</span>` },
                     { label: '最近活跃', value: this.formatTimeAgo(minutes) },
-                    { label: '最后更新', value: lastSeen },
-                    { label: '注册时间', value: registerTime },
-                    { label: '区域', value: localeDisplay }
+                    { label: '最后更新', value: this.escapeHtmlSafe(lastSeen) },
+                    { label: '注册时间', value: this.escapeHtmlSafe(registerTime) },
+                    { label: '区域', value: this.escapeHtmlSafe(localeDisplay) }
                 ]
             },
             {
                 title: '设备信息',
                 items: [
-                    { label: '操作系统', value: osName },
-                    { label: '系统版本', value: osVersion },
-                    { label: '构建版本', value: osBuild },
-                    { label: '系统架构', value: arch },
-                    { label: '屏幕分辨率', value: resolution },
-                    { label: 'HWID', value: `<span style="font-family: monospace;">${displayHwid}</span>` }
+                    { label: '操作系统', value: this.escapeHtmlSafe(osName) },
+                    { label: '系统版本', value: this.escapeHtmlSafe(osVersion) },
+                    { label: '构建版本', value: this.escapeHtmlSafe(osBuild) },
+                    { label: '系统架构', value: this.escapeHtmlSafe(arch) },
+                    { label: '屏幕分辨率', value: this.escapeHtmlSafe(resolution) },
+                    { label: 'HWID', value: `<span style="font-family: monospace;">${this.escapeHtmlSafe(displayHwid)}</span>` }
                 ]
             },
             {
                 title: '应用环境',
                 items: [
-                    { label: '客户端版本', value: version },
-                    { label: 'Python环境', value: pythonVersion }
+                    { label: '客户端版本', value: this.escapeHtmlSafe(version) },
+                    { label: 'Python环境', value: this.escapeHtmlSafe(pythonVersion) }
                 ]
             },
             {
@@ -4258,7 +4503,7 @@ const app = {
         let html = `
         <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 30px; border-bottom: 1px solid var(--border); padding-bottom: 20px;">
             <div style="width: 64px; height: 64px; background: ${avatarBg}; border-radius: 16px; color: #fff; font-size: 24px; font-weight: bold; display: flex; align-items: center; justify-content: center;">
-                ${(alias || originalName).substring(0, 1).toUpperCase()}
+                ${this.escapeHtmlSafe((alias || originalName).substring(0, 1).toUpperCase())}
             </div>
             <div>
                 <h2 style="margin-bottom: 4px; font-size: 24px;">${displayName}</h2>
@@ -4268,7 +4513,7 @@ const app = {
                         <span style="color: ${statusColor}; font-weight: 500;">${statusText}</span>
                     </div>
                     <div>Numeric ID: #${user.id || '-'}</div>
-                    <div>HWID: ${displayHwid}</div>
+                    <div>HWID: ${this.escapeHtmlSafe(displayHwid)}</div>
                 </div>
             </div>
         </div>
@@ -4311,6 +4556,20 @@ const app = {
                             ${adminIcon}
                             ${adminText}
                         </button>
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">认证与昵称</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn" onclick="app.toggleUserVerified('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: ${user.verified ? 'var(--secondary)' : 'var(--text-muted)'}; color: ${user.verified ? 'var(--secondary)' : 'var(--text-muted)'}; min-width: 160px; justify-content: center;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="${user.verified ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                            ${user.verified ? '取消认证' : '认证用户'}
+                        </button>
+                        <button class="btn" onclick="app.setUserNickname('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: var(--primary); color: var(--primary);">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                            设置昵称
+                        </button>
+                    </div>
                     </div>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -4534,14 +4793,14 @@ const app = {
      * 更新用户备注
      */
     updateUserAlias(hwid) {
-        const user = (this.state.latestUsersData || []).find(u => u.hwid === hwid);
+        const user = this.getCachedUserByMachineId(hwid);
         const currentAlias = user ? (user.alias || '') : '';
         
         const title = '添加备注';
         const content = `
             <div class="form-group">
                 <label>备注名称</label>
-                <input type="text" class="input" style="width: 100%;" id="aliasInput" placeholder="请输入备注名称..." value="${currentAlias}">
+                <input type="text" class="input" style="width: 100%;" id="aliasInput" placeholder="请输入备注名称..." value="${this.escapeHtmlSafe(currentAlias)}">
             </div>
             <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">为用户添加便于识别的备注名称</div>
         `;
@@ -4579,11 +4838,18 @@ const app = {
                 })
             });
             if (res.ok) {
+                const updatedUser = await this.refreshUserCache(hwid);
                 this.showAlert('备注已更新', 'success');
-                await this.fetchData();
-                if (this.state.selectedUser && this.state.selectedUser.hwid === hwid) {
-                    const updated = (this.state.latestUsersData || []).find(u => u.hwid === hwid);
-                    if (updated) this.renderUserDetailView(updated);
+                if (this.state.currentView === 'userlist') {
+                    if (this.state.userListSort) {
+                        this.applyUserListSort();
+                    } else {
+                        this.renderUserList(this.state.latestUsersData || []);
+                        this.filterUserList();
+                    }
+                }
+                if (updatedUser && this.state.selectedUser && this.state.selectedUser.hwid === hwid) {
+                    this.renderUserDetailView(updatedUser);
                 }
             } else throw new Error();
         } catch (e) {
@@ -6175,6 +6441,7 @@ Aimer WT涂装系统：
         this._loadHeartbeatStatus();
         this._loadVersionOptionsForHeartbeat();
         this.initDashboardRefreshUI();
+        this._loadOnlineThresholdStatus();
     },
 
     /**
@@ -6314,6 +6581,103 @@ Aimer WT涂装系统：
             return;
         }
         this._applyHeartbeat(val);
+    },
+
+    // ── 在线判定阈值控制 ────────────────────────────────
+
+    /**
+     * 从服务端加载当前在线判定阈值
+     */
+    async _loadOnlineThresholdStatus() {
+        try {
+            const res = await fetch('/admin/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: '_query' })
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const minutes = data.config?.online_threshold_min || 0;
+            if (minutes > 0) {
+                this.state._serverOnlineThresholdMin = minutes;
+            }
+            this._updateOnlineThresholdUI(minutes || 5);
+        } catch (e) {
+            console.error('[在线阈值] 加载配置失败:', e);
+        }
+    },
+
+    /**
+     * 更新在线判定阈值 UI
+     */
+    _updateOnlineThresholdUI(minutes) {
+        const el = document.getElementById('otCurrentValue');
+        if (el) {
+            el.textContent = minutes + '分钟' + (minutes === 5 ? ' (默认)' : '');
+        }
+        document.querySelectorAll('[data-ot-preset]').forEach(btn => {
+            const val = parseInt(btn.dataset.otPreset);
+            if (val === minutes) {
+                btn.style.background = 'var(--primary)';
+                btn.style.color = '#fff';
+                btn.style.borderColor = 'var(--primary)';
+            } else {
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+            }
+        });
+    },
+
+    /**
+     * 应用在线判定阈值到服务端
+     */
+    async _applyOnlineThreshold(minutes) {
+        if (minutes < 1 || minutes > 120) {
+            this.showAlert('阈值范围: 1~120 分钟', 'warning');
+            return;
+        }
+        try {
+            const res = await fetch('/admin/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'online_threshold',
+                    online_threshold_min: minutes
+                })
+            });
+            if (res.ok) {
+                this.state._serverOnlineThresholdMin = minutes;
+                this._updateOnlineThresholdUI(minutes);
+                this.showAlert(`在线判定阈值已设为 ${minutes} 分钟`, 'success');
+                this.fetchData();
+            }
+        } catch (e) {
+            this.showAlert('设置失败: ' + e.message, 'error');
+        }
+    },
+
+    /**
+     * 在线阈值预设按钮
+     */
+    setOnlineThresholdPreset(minutes) {
+        const input = document.getElementById('otCustomInput');
+        if (input) input.value = '';
+        this._applyOnlineThreshold(minutes);
+    },
+
+    /**
+     * 在线阈值自定义输入
+     */
+    applyOnlineThresholdCustom() {
+        const input = document.getElementById('otCustomInput');
+        const val = parseInt(input?.value);
+        if (isNaN(val) || val < 1 || val > 120) {
+            this.showAlert('请输入 1~120 之间的分钟数', 'warning');
+            if (input) input.focus();
+            return;
+        }
+        this._applyOnlineThreshold(val);
     },
 
     // ── 仪表盘刷新控制 ──────────────────────────────────
@@ -7475,6 +7839,162 @@ Object.assign(app, {
         const countEl = document.getElementById('epSelectedCount');
         if (countEl) countEl.textContent = this._epClipboard.length;
         this.showAlert(`已用「${this._epClipboardGroupName}」的配置替换当前组（${this._epClipboard.length} 个）`, 'success');
+    },
+
+    // ============ 用户请求管理 ============
+
+    async initUserRequests() {
+        const tbody = document.getElementById('nickReqBody');
+        if (!tbody) return;
+        const status = document.getElementById('nickReqStatusFilter')?.value || '';
+        try {
+            const url = status
+                ? `${this.config.apiBase}/admin/nickname-requests?status=${status}`
+                : `${this.config.apiBase}/admin/nickname-requests`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            const requests = data.requests || [];
+
+            if (requests.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">暂无请求</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = requests.map(r => {
+                const userDisplay = this.escapeHtmlSafe(r.alias || `UID #${r.uid}`);
+                const statusMap = {
+                    'pending': '<span style="color: var(--warning); font-weight: 500;">待审批</span>',
+                    'approved': '<span style="color: var(--secondary);">已批准</span>',
+                    'rejected': '<span style="color: var(--danger);">已拒绝</span>'
+                };
+                const statusHtml = statusMap[r.status] || r.status;
+                const actions = r.status === 'pending'
+                    ? `<div style="display:flex;gap:4px;">
+                        <button class="btn" onclick="app.approveNicknameRequest(${r.id})" style="font-size:11px;padding:2px 8px;color:var(--secondary);border-color:var(--secondary);">批准</button>
+                        <button class="btn" onclick="app.rejectNicknameRequest(${r.id})" style="font-size:11px;padding:2px 8px;color:var(--danger);border-color:var(--danger);">拒绝</button>
+                       </div>`
+                    : '<span style="color:var(--text-muted);font-size:12px;">-</span>';
+
+                return `<tr>
+                    <td>
+                        <div style="display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="app.openUserDetailByMachineId('${r.machine_id}')">
+                            <div style="width:28px;height:28px;background:linear-gradient(135deg,#4a4a4a,#1a1a1a);border-radius:8px;color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;">#${r.uid}</div>
+                            <span style="font-weight:500;">${userDisplay}</span>
+                        </div>
+                    </td>
+                    <td style="color:var(--text-muted);">${this.escapeHtmlSafe(r.current_nickname || '-')}</td>
+                    <td style="font-weight:600;color:var(--primary);">${this.escapeHtmlSafe(r.requested_nickname || '')}</td>
+                    <td>${statusHtml}</td>
+                    <td style="font-size:12px;color:var(--text-muted);">${this.escapeHtmlSafe(r.created_at || '')}</td>
+                    <td>${actions}</td>
+                </tr>`;
+            }).join('');
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);">加载失败</td></tr>';
+        }
+    },
+
+    async approveNicknameRequest(id) {
+        if (!confirm('确认批准此昵称请求？')) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/nickname-requests/${id}/approve`, { method: 'POST' });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'HTTP ' + res.status);
+            }
+            const data = await res.json().catch(() => ({}));
+            if (data.machine_id) {
+                const updatedUser = await this.refreshUserCache(data.machine_id);
+                if (updatedUser && this.state.currentView === 'userdetail') {
+                    this.renderUserDetailView(updatedUser);
+                }
+            }
+            this.showAlert('昵称已批准并生效', 'success');
+            this.initUserRequests();
+        } catch (e) {
+            this.showAlert('操作失败: ' + e.message, 'danger');
+        }
+    },
+
+    async rejectNicknameRequest(id) {
+        if (!confirm('确认拒绝此昵称请求？')) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/nickname-requests/${id}/reject`, { method: 'POST' });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'HTTP ' + res.status);
+            }
+            this.showAlert('昵称请求已拒绝', 'success');
+            this.initUserRequests();
+        } catch (e) {
+            this.showAlert('操作失败: ' + e.message, 'danger');
+        }
+    },
+
+    async toggleUserVerified(hwid) {
+        const user = this.state.selectedUser;
+        const newVal = !(user?.verified);
+        const label = newVal ? '认证' : '取消认证';
+        if (!confirm(`确认${label}此用户？`)) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/user-profiles`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine_id: hwid, verified: newVal })
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'HTTP ' + res.status);
+            }
+            const updatedUser = await this.refreshUserCache(hwid);
+            this.showAlert(`已${label}`, 'success');
+            this.renderUserDetailView(updatedUser || user);
+        } catch (e) {
+            this.showAlert('操作失败: ' + e.message, 'danger');
+        }
+    },
+
+    async setUserNickname(hwid) {
+        const input = prompt('设置用户昵称（中英文/数字/横杠/下划线，最多18字符，留空清除）：');
+        if (input === null) return;
+        const normalized = String(input || '').trim();
+        if (normalized) {
+            const nicknameLen = Array.from(normalized).length;
+            let validNickname = false;
+            try {
+                validNickname = /^[\p{Script=Han}a-zA-Z0-9_-]+$/u.test(normalized);
+            } catch (_) {
+                validNickname = /^[\u3400-\u9fffa-zA-Z0-9_-]+$/.test(normalized);
+            }
+            if (!validNickname) {
+                this.showAlert('昵称仅支持中英文、数字、横杠和下划线', 'warning');
+                return;
+            }
+            if (nicknameLen > 18) {
+                this.showAlert('昵称最多 18 个字符', 'warning');
+                return;
+            }
+        }
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/user-profiles`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine_id: hwid, nickname: normalized })
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'HTTP ' + res.status);
+            }
+            const updatedUser = await this.refreshUserCache(hwid);
+            this.showAlert('昵称已更新', 'success');
+            this.renderUserDetailView(updatedUser || this.state.selectedUser);
+            if (this.state.currentView === 'user_requests') {
+                this.initUserRequests();
+            }
+        } catch (e) {
+            this.showAlert('操作失败: ' + e.message, 'danger');
+        }
     }
 });
 

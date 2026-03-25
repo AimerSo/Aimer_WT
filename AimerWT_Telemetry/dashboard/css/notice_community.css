@@ -23,6 +23,7 @@
     flex-direction: column;
     background: #fafbfc;
     overflow: hidden;
+    position: relative;
 }
 
 .nc-panel.nc-offline {
@@ -70,13 +71,16 @@
 
 /* 表情反应头部 */
 .nc-reaction-header {
-    padding: 14px 18px;
+    padding: 22px 18px 16px;
     border-bottom: 1px solid #f1f5f9;
     background: #ffffff;
-    transition: max-height 0.3s ease;
+    transition: max-height 0.46s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.28s ease,
+        transform 0.38s ease;
     overflow: visible;
     position: relative;
     z-index: 12;
+    min-height: 64px;
 }
 
 .nc-reaction-row {
@@ -86,11 +90,31 @@
     flex-wrap: nowrap;
     overflow: visible;
     min-width: 0;
+    min-height: 30px;
+    padding-top: 6px;
+    opacity: 1;
+    transform: translateY(0);
+    transition: max-height 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.32s ease,
+        transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: max-height, opacity, transform;
 }
 
 .nc-reaction-row.nc-expanded {
     flex-wrap: wrap;
     row-gap: 8px;
+}
+
+.nc-reaction-header.nc-animating {
+    overflow: hidden;
+}
+
+.nc-reaction-row.nc-animating {
+    overflow: hidden;
+}
+
+.nc-reaction-row.nc-animating > * {
+    animation: nc-reaction-fade-in 0.42s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nc-reaction-pill {
@@ -103,16 +127,21 @@
     background: #ffffff;
     font-size: 12px;
     cursor: pointer;
-    transition: all 0.18s ease;
+    transition: background-color 0.22s ease,
+        border-color 0.22s ease,
+        box-shadow 0.22s ease,
+        transform 0.22s ease;
     user-select: none;
     white-space: nowrap;
     flex-shrink: 0;
+    transform: translateY(0);
+    box-shadow: 0 0 0 rgba(148, 163, 184, 0);
 }
 
 .nc-reaction-pill:hover {
-    background: #f0f0f0;
-    border-color: #d1d5db;
-    transform: translateY(-1px);
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    box-shadow: 0 12px 18px -12px rgba(148, 163, 184, 0.5);
 }
 
 .nc-reaction-pill.active {
@@ -143,15 +172,20 @@
     font-weight: 600;
     color: #9ca3af;
     cursor: pointer;
-    transition: all 0.18s ease;
+    transition: background-color 0.22s ease,
+        border-color 0.22s ease,
+        color 0.22s ease,
+        box-shadow 0.22s ease;
     flex-shrink: 0;
     white-space: nowrap;
+    box-shadow: 0 0 0 rgba(148, 163, 184, 0);
 }
 
 .nc-more-btn:hover {
     background: #f3f4f6;
     border-color: #9ca3af;
     color: #6b7280;
+    box-shadow: 0 12px 18px -12px rgba(148, 163, 184, 0.42);
 }
 
 .nc-add-reaction-btn {
@@ -165,15 +199,20 @@
     background: transparent;
     font-size: 13px;
     cursor: pointer;
-    transition: all 0.18s ease;
+    transition: background-color 0.22s ease,
+        border-color 0.22s ease,
+        color 0.22s ease,
+        box-shadow 0.22s ease;
     color: #9ca3af;
     flex-shrink: 0;
+    box-shadow: 0 0 0 rgba(148, 163, 184, 0);
 }
 
 .nc-add-reaction-btn:hover {
     background: #f3f4f6;
     border-color: #9ca3af;
     color: #6b7280;
+    box-shadow: 0 12px 18px -12px rgba(148, 163, 184, 0.42);
 }
 
 .nc-picker-wrap {
@@ -850,6 +889,7 @@
 [data-theme="dark"] .nc-reaction-pill:hover {
     background: rgba(255, 255, 255, 0.1);
     border-color: rgba(255, 255, 255, 0.18);
+    box-shadow: 0 12px 18px -12px rgba(15, 23, 42, 0.8);
 }
 
 [data-theme="dark"] .nc-reaction-pill.active {
@@ -878,6 +918,22 @@
 
 [data-theme="dark"] .nc-emoji-picker-item:hover {
     background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .nc-more-btn:hover,
+[data-theme="dark"] .nc-add-reaction-btn:hover {
+    box-shadow: 0 12px 18px -12px rgba(15, 23, 42, 0.7);
+}
+
+@keyframes nc-reaction-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 [data-theme="dark"] .nc-stats-bar {

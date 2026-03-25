@@ -189,13 +189,13 @@ func initCommentWeightRoutes(admin *gin.RouterGroup) {
 	admin.PUT("/comment-weights", func(c *gin.Context) {
 		var req CommentWeightConfig
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(400, gin.H{"error": "Invalid JSON"})
+			c.JSON(400, gin.H{"error": "请求数据格式错误"})
 			return
 		}
 
 		cfg := normalizeCommentWeightConfig(req)
 		if err := SaveCommentWeightConfig(cfg); err != nil {
-			c.JSON(500, gin.H{"error": "Save failed"})
+			c.JSON(500, gin.H{"error": "保存失败"})
 			return
 		}
 

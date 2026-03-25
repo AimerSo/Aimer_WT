@@ -18,8 +18,12 @@
     function renderGeneralTemplate(item, helpers) {
         const data = helpers.parseArticleMarkdown(item.content || '', item.title || '公告详情');
         const blocksHtml = (data.content || []).map((block) => renderArticleBlock(block, helpers)).join('');
+        const commentEnabled = helpers.isFeatureEnabled ? helpers.isFeatureEnabled('notice_comment_enabled') : true;
+        const modalClass = commentEnabled
+            ? 'modal-content notice-detail-modal notice-article-modal nc-split-layout'
+            : 'modal-content notice-detail-modal notice-article-modal';
         return '' +
-            '<div class="modal-content notice-detail-modal notice-article-modal nc-split-layout">' +
+            '<div class="' + modalClass + '">' +
             '  <div class="nc-left-col">' +
             '  <div class="notice-article-header">' +
             '    <div class="notice-article-head-left">' +
@@ -37,7 +41,7 @@
             '    <button class="notice-ack-btn" type="button" data-notice-close="1"><i class="ri-check-line"></i> 我已知晓</button>' +
             '  </div>' +
             '  </div>' +
-            '  <div class="nc-panel" data-nc-notice-id="' + (item.id || '') + '"></div>' +
+            (commentEnabled ? ('  <div class="nc-panel" data-nc-notice-id="' + (item.id || '') + '"></div>') : '') +
             '</div>';
     }
 

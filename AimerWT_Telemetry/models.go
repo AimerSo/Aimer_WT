@@ -92,9 +92,21 @@ type SystemConfig struct {
 	HeartbeatInterval int    `json:"heartbeat_interval"`
 	HeartbeatScope    string `json:"heartbeat_scope"` // all 或指定版本号
 
+	// 在线判定阈值（分钟），超过此时间未上报视为离线
+	OnlineThresholdMin int `json:"online_threshold_min"`
+
 	// 项目状态（客户端信息库展示）
 	ProjectStatus     string `json:"project_status"`      // active / warning / danger
 	ProjectLastUpdate string `json:"project_last_update"` // 如 "2026 年 3 月 14 日"
+
+	// 用户功能总开关（默认全部开启）
+	BadgeSystemEnabled    bool `json:"badge_system_enabled"`
+	NicknameChangeEnabled bool `json:"nickname_change_enabled"`
+	AvatarUploadEnabled   bool `json:"avatar_upload_enabled"`
+	NoticeCommentEnabled  bool `json:"notice_comment_enabled"`
+	NoticeReactionEnabled bool `json:"notice_reaction_enabled"`
+	RedeemCodeEnabled     bool `json:"redeem_code_enabled"`
+	FeedbackEnabled       bool `json:"feedback_enabled"`
 }
 
 // ContentConfig KV 配置持久化表，用于服务重启后恢复运行时状态
@@ -102,6 +114,17 @@ type ContentConfig struct {
 	Key       string    `gorm:"primaryKey;type:varchar(128)" json:"key"`
 	Value     string    `gorm:"type:text" json:"value"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+// ClientDeviceToken 服务端签发给客户端的设备级访问令牌。
+// 用于避免把打包进客户端的共享密钥直接当作长期信任边界。
+type ClientDeviceToken struct {
+	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID  string    `gorm:"uniqueIndex;type:varchar(64);not null" json:"machine_id"`
+	TokenHash  string    `gorm:"type:varchar(64);not null" json:"-"`
+	LastIssued time.Time `gorm:"autoCreateTime" json:"last_issued"`
+	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // AdCarouselItem 广告轮播数据结构（序列化后存入 ContentConfig）
@@ -198,17 +221,17 @@ type UserTag struct {
 
 // RedeemCode 兑换码定义表
 type RedeemCode struct {
-	ID           uint       `gorm:"primaryKey;autoIncrement" json:"id"`
-	Code         string     `gorm:"uniqueIndex;type:varchar(32)" json:"code"`
-	Type         string     `gorm:"type:varchar(32)" json:"type"`
-	Payload      string     `gorm:"type:text" json:"payload"`
-	MaxUses      int        `json:"max_uses" gorm:"default:1"`
-	UsedCount    int        `json:"used_count" gorm:"default:0"`
-	ExpiresAt    *time.Time `json:"expires_at"`
-	IsActive     bool       `json:"is_active" gorm:"default:true"`
-	Note         string     `gorm:"type:text" json:"note"`
-	PopupTitle   string     `gorm:"type:varchar(128)" json:"popup_title"`
-	PopupMessage string     `gorm:"type:text" json:"popup_message"`
+	ID             uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	Code           string     `gorm:"uniqueIndex;type:varchar(32)" json:"code"`
+	Type           string     `gorm:"type:varchar(32)" json:"type"`
+	Payload        string     `gorm:"type:text" json:"payload"`
+	MaxUses        int        `json:"max_uses" gorm:"default:1"`
+	UsedCount      int        `json:"used_count" gorm:"default:0"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+	IsActive       bool       `json:"is_active" gorm:"default:true"`
+	Note           string     `gorm:"type:text" json:"note"`
+	PopupTitle     string     `gorm:"type:varchar(128)" json:"popup_title"`
+	PopupMessage   string     `gorm:"type:text" json:"popup_message"`
 	PopupStyle     string     `gorm:"type:varchar(32);default:'default'" json:"popup_style"`
 	PopupSubtitle  string     `gorm:"type:varchar(128)" json:"popup_subtitle"`
 	PopupLogo      string     `gorm:"type:varchar(32)" json:"popup_logo"`
@@ -232,3 +255,33 @@ type NoticeReaction struct {
 	Emoji     string    `gorm:"uniqueIndex:idx_notice_reaction_unique;type:varchar(32);not null" json:"emoji"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
+
+// UserProfile 用户个人资料（昵称、头像、等级、经验、勋章）
+// Level：0=未验证，1=已验证（管理员手动升级），2~9 由经验值自动计算
+// Badges：JSON 数组，如 [{"id":"supporter","name":"支持者","icon":"🏅","color":"#f59e0b"}]
+// Verified：管理员认证，认证后才可提交昵称/头像变更请求
+type UserProfile struct {
+	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID  string    `gorm:"uniqueIndex;type:varchar(64);not null" json:"machine_id"`
+	Nickname   string    `gorm:"type:varchar(32)" json:"nickname"`
+	AvatarData string    `gorm:"type:text" json:"avatar_data"` // Base64 encoded image（裁剪至 128×128）
+	Level      int       `gorm:"default:0;not null" json:"level"`
+	Exp        int       `gorm:"default:0;not null" json:"exp"`
+	Badges     string    `gorm:"type:text;default:'[]'" json:"badges"` // JSON 数组
+	Verified   bool      `gorm:"default:false;not null" json:"verified"`
+	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+// NicknameRequest 昵称变更请求（用户提交 → 管理员审批）
+type NicknameRequest struct {
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID string    `gorm:"index:idx_nickname_requests_machine_status_created,priority:1;type:varchar(64);not null" json:"machine_id"`
+	Nickname  string    `gorm:"type:varchar(64);not null" json:"nickname"`
+	Status    string    `gorm:"type:varchar(16);default:'pending';index;index:idx_nickname_requests_machine_status_created,priority:2" json:"status"` // pending / approved / rejected
+	CreatedAt time.Time `gorm:"autoCreateTime;index;index:idx_nickname_requests_machine_status_created,priority:3" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+// LevelExpThresholds 各等级所需的最低经验值（0~9，0级和1级无需经验值）
+var LevelExpThresholds = []int{0, 0, 200, 800, 2400, 4800, 9600, 19200, 38400, 76800}
