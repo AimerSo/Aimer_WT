@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="css/notice_template_update.css?v=20260319">
     <link rel="stylesheet" href="css/notice_template_general.css?v=20260319">
     <link rel="stylesheet" href="css/notice_reaction.css?v=20260323">
-    <link rel="stylesheet" href="css/notice_community.css?v=20260325b">
+    <link rel="stylesheet" href="css/notice_community.css?v=20260326">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.min.css">
     <link rel="stylesheet" href="css/image_cropper.css?v=1">
     <link rel="stylesheet" href="redeem/redeem.css?v=20260319">
@@ -129,6 +129,26 @@
                     </span>
                 </div>
                 <div class="submenu" id="communitySubmenu">
+                    <div class="submenu-item" data-view="notice_comment_manage" onclick="app.switchView('notice_comment_manage', this); event.stopPropagation();">
+                        <div class="submenu-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                <path d="M8 10h8"></path>
+                                <path d="M8 7h4"></path>
+                            </svg>
+                        </div>
+                        <span>公告评论</span>
+                    </div>
+                    <div class="submenu-item" data-view="report_inbox" onclick="app.switchView('report_inbox', this); event.stopPropagation();">
+                        <div class="submenu-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                <line x1="12" y1="9" x2="12" y2="13"></line>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                        </div>
+                        <span>举报接收</span>
+                    </div>
                     <div class="submenu-item" data-view="emoji_permission" onclick="app.switchView('emoji_permission', this); event.stopPropagation();">
                         <div class="submenu-icon">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -139,16 +159,6 @@
                             </svg>
                         </div>
                         <span>表情权限</span>
-                    </div>
-                    <div class="submenu-item" data-view="notice_comment_manage" onclick="app.switchView('notice_comment_manage', this); event.stopPropagation();">
-                        <div class="submenu-icon">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                                <path d="M8 10h8"></path>
-                                <path d="M8 7h4"></path>
-                            </svg>
-                        </div>
-                        <span>公告评论</span>
                     </div>
                 </div>
                 <div class="menu-item menu-item-with-submenu" id="userMenuItem" onclick="app.handleUserMenuClick(this)">
@@ -422,7 +432,7 @@
     <script src="js/notice_preview.js?v=20260324"></script>
     <script src="js/notice/templates/update_notice_template.js?v=20260324"></script>
     <script src="js/notice/templates/general_notice_template.js?v=20260324"></script>
-    <script src="js/notice/community/notice_comment_panel.js?v=20260325b"></script>
+    <script src="js/notice/community/notice_comment_panel.js?v=20260326"></script>
     <script src="js/emoji_data.js?v=20260324"></script>
     <script src="js/image_cropper.js?v=1"></script>
     <script src="redeem/redeem_module.js?v=20260320"></script>

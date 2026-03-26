@@ -1,0 +1,25 @@
+<div class="view-container active">
+    <div class="app">
+        <div class="panel">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">举报接收</div>
+                    <div class="panel-sub">评论举报管理</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="reportStatusFilter" class="form-select" style="min-width:120px;padding:6px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-secondary);font-size:13px;color:var(--text-primary);">
+                        <option value="">全部状态</option>
+                        <option value="pending">待处理</option>
+                        <option value="resolved">已处理</option>
+                        <option value="dismissed">已忽略</option>
+                    </select>
+                    <button class="btn primary" onclick="app.loadReportInbox()" style="white-space:nowrap;">刷新</button>
+                </div>
+            </div>
+            <div class="panel-body" id="reportInboxBody">
+                <div style="text-align:center;padding:40px;color:var(--text-muted);">加载中...</div>
+            </div>
+            <div id="reportInboxPagination" style="display:flex;justify-content:center;align-items:center;gap:8px;padding:12px 0;"></div>
+        </div>
+    </div>
+</div>

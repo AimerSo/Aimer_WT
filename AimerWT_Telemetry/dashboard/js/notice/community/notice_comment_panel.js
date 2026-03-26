@@ -4,6 +4,7 @@
     var LIKE_EMOJI = '❤️';
     var MAX_VISIBLE_REACTIONS = 5;
     var LIKERS_MODAL_ID = 'nc-likers-modal';
+    var DEFAULT_COMMENT_CHAR_LIMIT = 200;
 
     function escapeHtml(v) {
         return String(v == null ? '' : v)
@@ -33,6 +34,16 @@
         return rounded.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
     }
 
+    function countCharacters(value) {
+        return Array.from(String(value == null ? '' : value)).length;
+    }
+
+    function normalizeCommentCharLimit(value) {
+        var limit = Number(value || 0);
+        if (!isFinite(limit) || limit <= 0) return DEFAULT_COMMENT_CHAR_LIMIT;
+        return Math.max(1, Math.round(limit));
+    }
+
     var _panelState = {};
 
     function _getState(noticeId) {
@@ -55,7 +66,9 @@
                 commentLimit: 0,
                 hasMoreComments: false,
                 isLoadingComments: false,
-                isAppendingComments: false
+                isAppendingComments: false,
+                showWeightScore: false,
+                commentCharLimit: DEFAULT_COMMENT_CHAR_LIMIT
             };
         }
         return _panelState[noticeId];
@@ -102,6 +115,16 @@
         var panel = row ? row.closest('.nc-panel') : null;
         var panelWidth = panel ? panel.clientWidth : 0;
         return panelWidth && panelWidth <= 360 ? 4 : MAX_VISIBLE_REACTIONS;
+    }
+
+    function _getCommentCharLimit(noticeId) {
+        var state = _getState(noticeId);
+        return normalizeCommentCharLimit(state.commentCharLimit);
+    }
+
+    function _getRemainingCommentChars(noticeId) {
+        var input = document.getElementById('nc-input-' + noticeId);
+        return _getCommentCharLimit(noticeId) - countCharacters(input ? input.value : '');
     }
 
     function _prefersReducedMotion() {
@@ -362,7 +385,13 @@
             '</div>' +
             '<div class="nc-input-bar">' +
             '  <div class="nc-input-avatar" id="nc-my-avatar-' + id + '">?</div>' +
-            '  <input class="nc-input-field" id="nc-input-' + id + '" type="text" placeholder="添加评论..." maxlength="200" />' +
+            '  <div class="nc-input-main">' +
+            '    <input class="nc-input-field" id="nc-input-' + id + '" type="text" placeholder="添加评论..." />' +
+            '    <div class="nc-input-meta">' +
+            '      <span class="nc-input-limit" id="nc-limit-' + id + '">上限 ' + DEFAULT_COMMENT_CHAR_LIMIT + ' 字</span>' +
+            '      <span class="nc-input-counter" id="nc-counter-' + id + '"></span>' +
+            '    </div>' +
+            '  </div>' +
             '  <button class="nc-send-btn" id="nc-send-' + id + '" disabled><i class="ri-send-plane-2-fill"></i></button>' +
             '</div>';
 
@@ -379,7 +408,7 @@
         var sendBtn = document.getElementById('nc-send-' + id);
         if (input && sendBtn) {
             input.addEventListener('input', function () {
-                sendBtn.disabled = !input.value.trim();
+                _updateComposerState(id);
             });
             input.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter' && !e.shiftKey && input.value.trim()) {
@@ -413,6 +442,7 @@
             });
         }
 
+        _updateComposerState(id);
         _ensureCommentScroll(id);
         if (reactionEnabled) {
             _loadReactions(id);
@@ -627,6 +657,8 @@
             state.totalLikes = data.total_likes || 0;
             state.canComment = data.can_comment !== false;
             state.banReason = data.ban_reason || '';
+            state.showWeightScore = data.show_weight_score === true;
+            state.commentCharLimit = normalizeCommentCharLimit(data.comment_limit_chars);
             _renderComments(noticeId);
             _updateStats(noticeId);
             _updateComposerState(noticeId);
@@ -660,6 +692,12 @@
         }).then(function (r) { return r.json(); }).then(function (data) {
             replyState.items = Array.isArray(data.replies) ? data.replies : [];
             replyState.loaded = true;
+            if (typeof data.show_weight_score === 'boolean') {
+                state.showWeightScore = data.show_weight_score === true;
+            }
+            if (data.comment_limit_chars != null) {
+                state.commentCharLimit = normalizeCommentCharLimit(data.comment_limit_chars);
+            }
         }).catch(function () {
             _showToast('回复加载失败，请稍后重试');
         }).finally(function () {
@@ -687,13 +725,20 @@
         var state = _getState(noticeId);
         var input = document.getElementById('nc-input-' + noticeId);
         var sendBtn = document.getElementById('nc-send-' + noticeId);
+        var limitEl = document.getElementById('nc-limit-' + noticeId);
         if (!input || !sendBtn) return;
+
+        var charLimit = _getCommentCharLimit(noticeId);
+        if (limitEl) {
+            limitEl.textContent = '上限 ' + charLimit + ' 字';
+        }
 
         if (!state.canComment) {
             input.value = '';
             input.disabled = true;
             input.placeholder = state.banReason ? ('评论资格已封禁：' + state.banReason) : '评论资格已被封禁';
             sendBtn.disabled = true;
+            _updateComposerCounter(noticeId);
             return;
         }
 
@@ -701,7 +746,23 @@
         if (!state.replyingTo) {
             input.placeholder = '添加评论...';
         }
-        sendBtn.disabled = !input.value.trim();
+        sendBtn.disabled = !input.value.trim() || _getRemainingCommentChars(noticeId) < 0;
+        _updateComposerCounter(noticeId);
+    }
+
+    function _updateComposerCounter(noticeId) {
+        var counter = document.getElementById('nc-counter-' + noticeId);
+        var input = document.getElementById('nc-input-' + noticeId);
+        if (!counter || !input) return;
+
+        var remaining = _getRemainingCommentChars(noticeId);
+        var charLimit = _getCommentCharLimit(noticeId);
+        var shouldShow = !input.disabled && (countCharacters(input.value) >= Math.max(charLimit - 20, 0) || remaining < 0);
+
+        counter.textContent = shouldShow ? String(remaining) : '';
+        counter.classList.toggle('nc-warn', shouldShow && remaining <= 10 && remaining > 5);
+        counter.classList.toggle('nc-danger', shouldShow && remaining <= 5 && remaining >= 0);
+        counter.classList.toggle('nc-over', shouldShow && remaining < 0);
     }
 
     function _renderComments(noticeId) {
@@ -769,7 +830,7 @@
                 } else if (replyState.loaded && replyState.items.length) {
                     repliesHtml += '<div class="nc-replies-wrap nc-open">';
                     repliesHtml += replyState.items.map(function (r) {
-                        return _renderReplyItem(r);
+                        return _renderReplyItem(r, noticeId);
                     }).join('');
                     repliesHtml += '</div>';
                 } else if (replyState.loaded) {
@@ -783,32 +844,36 @@
             '  <div class="nc-comment-avatar">' + escapeHtml(uid) + '</div>' +
             '  <span class="nc-comment-uid">用户#' + escapeHtml(uid) + '</span>' +
             _renderTagBadges(c.tags) +
-            '  <span class="nc-comment-score">权重 ' + escapeHtml(formatWeight(c.weight_score || 0)) + '</span>' +
+            (state.showWeightScore ? ('  <span class="nc-comment-score">权重 ' + escapeHtml(formatWeight(c.weight_score || 0)) + '</span>') : '') +
             '  <span class="nc-comment-time">' + timeAgo(c.created_at) + '</span>' +
             '</div>' +
             '<div class="nc-comment-body">' + escapeHtml(c.content) + '</div>' +
             '<div class="nc-comment-actions">' +
             '  <button class="nc-action-btn' + (c.liked ? ' nc-liked' : '') + '" data-action="like" data-cid="' + c.id + '"><i class="' + (c.liked ? 'ri-heart-fill' : 'ri-heart-line') + '"></i> ' + (c.like_count || '') + '</button>' +
             '  <button class="nc-action-btn" data-action="reply" data-cid="' + c.id + '" data-root-cid="' + c.id + '" data-uid="' + escapeHtml(uid) + '">回复</button>' +
+            '  <span class="nc-more-dots" data-action="more" data-cid="' + c.id + '"><i class="ri-more-fill"></i></span>' +
             '</div>' +
             repliesHtml +
             '</div>';
     }
 
-    function _renderReplyItem(r) {
+    function _renderReplyItem(r, noticeId) {
+        var state = _getState(noticeId);
         var uid = r.uid || '?';
+        var bodyHtml = _highlightMention(escapeHtml(r.content));
         return '<div class="nc-reply-item" data-comment-id="' + r.id + '">' +
             '<div class="nc-reply-head">' +
             '  <div class="nc-reply-avatar">' + escapeHtml(uid) + '</div>' +
             '  <span class="nc-reply-uid">用户#' + escapeHtml(uid) + '</span>' +
             _renderTagBadges(r.tags) +
-            '  <span class="nc-comment-score nc-reply-score">权重 ' + escapeHtml(formatWeight(r.weight_score || 0)) + '</span>' +
+            (state.showWeightScore ? ('  <span class="nc-comment-score nc-reply-score">权重 ' + escapeHtml(formatWeight(r.weight_score || 0)) + '</span>') : '') +
             '  <span class="nc-reply-time">' + timeAgo(r.created_at) + '</span>' +
             '</div>' +
-            '<div class="nc-reply-body">' + escapeHtml(r.content) + '</div>' +
+            '<div class="nc-reply-body">' + bodyHtml + '</div>' +
             '<div class="nc-reply-actions">' +
             '  <button class="nc-action-btn' + (r.liked ? ' nc-liked' : '') + '" data-action="like" data-cid="' + r.id + '"><i class="' + (r.liked ? 'ri-heart-fill' : 'ri-heart-line') + '"></i> ' + (r.like_count || '') + '</button>' +
             '  <button class="nc-action-btn" data-action="reply" data-cid="' + r.id + '" data-root-cid="' + r.parent_id + '" data-uid="' + escapeHtml(uid) + '">回复</button>' +
+            '  <span class="nc-more-dots" data-action="more" data-cid="' + r.id + '"><i class="ri-more-fill"></i></span>' +
             '</div>' +
             '</div>';
     }
@@ -832,6 +897,14 @@
             btn.addEventListener('click', function () {
                 var cid = Number(btn.getAttribute('data-cid'));
                 _toggleReplies(noticeId, cid);
+            });
+        });
+
+        container.querySelectorAll('[data-action="more"]').forEach(function (dots) {
+            dots.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var cid = Number(dots.getAttribute('data-cid'));
+                _showMoreMenu(dots, cid, noticeId);
             });
         });
     }
@@ -883,15 +956,41 @@
         var hwid = _getHWID();
         if (!baseUrl || !hwid) return;
 
+        // 乐观更新：立即切换UI状态
+        var state = _getState(noticeId);
+        var allItems = state.comments.slice();
+        // 也检查回复缓存
+        Object.keys(state.replyCache).forEach(function (key) {
+            var rc = state.replyCache[key];
+            if (rc && rc.items) allItems = allItems.concat(rc.items);
+        });
+        var target = null;
+        for (var i = 0; i < allItems.length; i++) {
+            if (allItems[i].id === commentId) { target = allItems[i]; break; }
+        }
+        if (target) {
+            var wasLiked = !!target.liked;
+            target.liked = !wasLiked;
+            target.like_count = Math.max(0, (target.like_count || 0) + (wasLiked ? -1 : 1));
+            _renderComments(noticeId);
+        }
+
         _buildTelemetryHeaders('/notice-comment-like', 'POST', hwid, true).then(function (headers) {
             return fetch(baseUrl + '/notice-comment-like', {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({ comment_id: commentId, machine_id: hwid })
             });
-        }).then(function () {
-            _loadComments(noticeId, { reset: true });
-        }).catch(function () { });
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            // API 成功，状态已同步
+        }).catch(function () {
+            // 失败时回滚
+            if (target) {
+                target.liked = !target.liked;
+                target.like_count = Math.max(0, (target.like_count || 0) + (target.liked ? 1 : -1));
+                _renderComments(noticeId);
+            }
+        });
     }
 
     function _toggleNoticeLike(noticeId) {
@@ -914,6 +1013,12 @@
 
         var content = input.value.trim();
         if (!content) return;
+        var charLimit = _getCommentCharLimit(noticeId);
+        if (countCharacters(content) > charLimit) {
+            _showToast('当前用户组评论最多允许 ' + charLimit + ' 字');
+            _updateComposerState(noticeId);
+            return;
+        }
 
         var parentId = state.replyingTo || 0;
 
@@ -947,6 +1052,184 @@
         }).catch(function () {
             _showToast('网络错误，请重试');
             if (sendBtn) sendBtn.disabled = false;
+        });
+    }
+
+    // 将回复内容中 "回复 @xxx用户B:" 的 @部分 渲染为蓝色
+    function _highlightMention(htmlStr) {
+        // 匹配 "回复 @..." 开头的内容（已转义的HTML），提取到冒号为止
+        return htmlStr.replace(/^(回复\s*)(@[^:：]+[:：])/, function (_, prefix, mention) {
+            return prefix + '<span class="nc-reply-mention">' + mention + '</span>';
+        });
+    }
+
+    var _activeMoreMenu = null;
+
+    function _closeMoreMenu() {
+        if (_activeMoreMenu) {
+            _activeMoreMenu.remove();
+            _activeMoreMenu = null;
+        }
+    }
+
+    function _showMoreMenu(anchor, commentId, noticeId) {
+        _closeMoreMenu();
+        var menu = document.createElement('div');
+        menu.className = 'nc-more-popup';
+        menu.innerHTML =
+            '<div class="nc-more-popup-item nc-more-popup-report" data-action="report">举报</div>' +
+            '<div class="nc-more-popup-item nc-more-popup-cancel" data-action="cancel">取消</div>';
+        anchor.style.position = 'relative';
+        anchor.appendChild(menu);
+        _activeMoreMenu = menu;
+
+        menu.querySelector('[data-action="report"]').addEventListener('click', function (e) {
+            e.stopPropagation();
+            _closeMoreMenu();
+            _showReportDialog(commentId, noticeId);
+        });
+        menu.querySelector('[data-action="cancel"]').addEventListener('click', function (e) {
+            e.stopPropagation();
+            _closeMoreMenu();
+        });
+
+        // 外部点击关闭
+        setTimeout(function () {
+            function outsideClose(ev) {
+                if (!menu.contains(ev.target)) {
+                    _closeMoreMenu();
+                    document.removeEventListener('click', outsideClose);
+                }
+            }
+            document.addEventListener('click', outsideClose);
+        }, 0);
+    }
+
+    var REPORT_TYPES = [
+        { value: 'porn', label: '色情低俗' },
+        { value: 'hostile', label: '引战不友善言论' },
+        { value: 'privacy', label: '传播他人隐私信息' },
+        { value: 'minor', label: '涉未成年人不良信息' },
+        { value: 'ad', label: '违规广告引流' },
+        { value: 'political', label: '政治敏感' },
+        { value: 'rumor', label: '传播谣言' },
+        { value: 'spam', label: '无关内容刷屏' },
+        { value: 'other', label: '其他' }
+    ];
+
+    function _showReportDialog(commentId, noticeId) {
+        // 移除已存在的举报弹窗
+        var existing = document.getElementById('nc-report-overlay');
+        if (existing) existing.remove();
+
+        var overlay = document.createElement('div');
+        overlay.id = 'nc-report-overlay';
+        overlay.className = 'nc-report-overlay';
+
+        var options = REPORT_TYPES.map(function (t) {
+            return '<option value="' + t.value + '">' + t.label + '</option>';
+        }).join('');
+
+        overlay.innerHTML =
+            '<div class="nc-report-dialog">' +
+            '  <div class="nc-report-header">' +
+            '    <div class="nc-report-title">举报评论</div>' +
+            '    <button class="nc-report-close" id="nc-report-close" type="button">✕</button>' +
+            '  </div>' +
+            '  <div class="nc-report-body">' +
+            '    <div class="nc-report-field">' +
+            '      <label class="nc-report-label">举报类型</label>' +
+            '      <div class="nc-report-select-shell">' +
+            '        <div class="nc-report-dropdown-host" id="nc-report-type-dropdown"></div>' +
+            '        <div class="nc-report-select-native" id="nc-report-type-native-wrap">' +
+            '          <select class="nc-report-select" id="nc-report-type">' + options + '</select>' +
+            '          <i class="ri-arrow-down-s-line nc-report-select-arrow"></i>' +
+            '        </div>' +
+            '      </div>' +
+            '    </div>' +
+            '    <div class="nc-report-field">' +
+            '      <label class="nc-report-label">原因说明 <span style="color:#9ca3af;font-weight:400;">(选填，最多100字)</span></label>' +
+            '      <textarea class="nc-report-textarea" id="nc-report-reason" maxlength="100" rows="3" placeholder="请描述举报原因..."></textarea>' +
+            '    </div>' +
+            '  </div>' +
+            '  <div class="nc-report-footer">' +
+            '    <button class="nc-report-btn-cancel" id="nc-report-cancel">取消</button>' +
+            '    <button class="nc-report-btn-submit" id="nc-report-submit">提交举报</button>' +
+            '  </div>' +
+            '</div>';
+
+        document.body.appendChild(overlay);
+        if (window.AppDropdownMenu && document.getElementById('nc-report-type-dropdown')) {
+            var nativeWrap = document.getElementById('nc-report-type-native-wrap');
+            if (nativeWrap) nativeWrap.style.display = 'none';
+            overlay._reportTypeDropdown = new window.AppDropdownMenu({
+                id: 'nc-report-type',
+                containerId: 'nc-report-type-dropdown',
+                options: REPORT_TYPES.map(function (item) {
+                    return { value: item.value, label: item.label };
+                }),
+                placeholder: '请选择举报类型',
+                size: 'md'
+            });
+            overlay._reportTypeDropdown.setValue(REPORT_TYPES[0].value, false);
+        }
+        requestAnimationFrame(function () { overlay.classList.add('show'); });
+
+        function closeDialog() {
+            overlay.classList.remove('show');
+            setTimeout(function () {
+                if (overlay._reportTypeDropdown && typeof overlay._reportTypeDropdown.destroy === 'function') {
+                    overlay._reportTypeDropdown.destroy();
+                }
+                overlay.remove();
+            }, 200);
+        }
+
+        overlay.addEventListener('click', function (e) {
+            if (e.target === overlay) closeDialog();
+        });
+        document.getElementById('nc-report-close').addEventListener('click', closeDialog);
+        document.getElementById('nc-report-cancel').addEventListener('click', closeDialog);
+        document.getElementById('nc-report-submit').addEventListener('click', function () {
+            _submitReport(commentId, noticeId, closeDialog);
+        });
+    }
+
+    function _submitReport(commentId, noticeId, closeDialog) {
+        var baseUrl = _getBaseUrl();
+        var hwid = _getHWID();
+        if (!baseUrl || !hwid) { _showToast('未连接服务器'); return; }
+
+        var overlay = document.getElementById('nc-report-overlay');
+        var reportType = overlay && overlay._reportTypeDropdown
+            ? overlay._reportTypeDropdown.getValue()
+            : document.getElementById('nc-report-type').value;
+        var reason = (document.getElementById('nc-report-reason').value || '').trim();
+        var submitBtn = document.getElementById('nc-report-submit');
+        if (submitBtn) submitBtn.disabled = true;
+
+        _buildTelemetryHeaders('/notice-comment-report', 'POST', hwid, true).then(function (headers) {
+            return fetch(baseUrl + '/notice-comment-report', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    comment_id: commentId,
+                    machine_id: hwid,
+                    report_type: reportType,
+                    reason: reason
+                })
+            });
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data.status === 'success') {
+                _showToast('举报已提交，感谢反馈');
+                closeDialog();
+            } else {
+                _showToast(data.error || '举报失败');
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        }).catch(function () {
+            _showToast('网络错误，请重试');
+            if (submitBtn) submitBtn.disabled = false;
         });
     }
 

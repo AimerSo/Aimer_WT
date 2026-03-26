@@ -14,23 +14,32 @@ const (
 	defaultCommentLikeWeight  = 0.5
 	defaultCommentReplyWeight = 0.5
 	defaultCommentAuthorBase  = 1.0
+	defaultCommentCharLimit   = 200
 	defaultWeightValueMin     = -100.0
 	defaultWeightValueMax     = 100.0
+	defaultCommentLimitMin    = 1
+	defaultCommentLimitMax    = 5000
 )
 
 type CommentWeightConfig struct {
-	BaseUserWeight    float64            `json:"base_user_weight"`
-	StarredUserWeight float64            `json:"starred_user_weight"`
-	AdminUserWeight   float64            `json:"admin_user_weight"`
-	TagWeights        map[string]float64 `json:"tag_weights"`
+	BaseUserWeight       float64            `json:"base_user_weight"`
+	StarredUserWeight    float64            `json:"starred_user_weight"`
+	AdminUserWeight      float64            `json:"admin_user_weight"`
+	BaseUserCommentLimit int                `json:"base_user_comment_limit"`
+	StarredCommentLimit  int                `json:"starred_comment_limit"`
+	AdminCommentLimit    int                `json:"admin_comment_limit"`
+	TagWeights           map[string]float64 `json:"tag_weights"`
 }
 
 func defaultCommentWeightConfig() CommentWeightConfig {
 	return CommentWeightConfig{
-		BaseUserWeight:    defaultCommentAuthorBase,
-		StarredUserWeight: 0,
-		AdminUserWeight:   0,
-		TagWeights:        map[string]float64{},
+		BaseUserWeight:       defaultCommentAuthorBase,
+		StarredUserWeight:    0,
+		AdminUserWeight:      0,
+		BaseUserCommentLimit: defaultCommentCharLimit,
+		StarredCommentLimit:  defaultCommentCharLimit,
+		AdminCommentLimit:    defaultCommentCharLimit,
+		TagWeights:           map[string]float64{},
 	}
 }
 
@@ -52,6 +61,9 @@ func normalizeCommentWeightConfig(cfg CommentWeightConfig) CommentWeightConfig {
 	cfg.BaseUserWeight = normalizeCommentWeightValue(cfg.BaseUserWeight, defaults.BaseUserWeight)
 	cfg.StarredUserWeight = normalizeCommentWeightValue(cfg.StarredUserWeight, defaults.StarredUserWeight)
 	cfg.AdminUserWeight = normalizeCommentWeightValue(cfg.AdminUserWeight, defaults.AdminUserWeight)
+	cfg.BaseUserCommentLimit = normalizeCommentLimitValue(cfg.BaseUserCommentLimit, defaults.BaseUserCommentLimit)
+	cfg.StarredCommentLimit = normalizeCommentLimitValue(cfg.StarredCommentLimit, defaults.StarredCommentLimit)
+	cfg.AdminCommentLimit = normalizeCommentLimitValue(cfg.AdminCommentLimit, defaults.AdminCommentLimit)
 	if cfg.TagWeights == nil {
 		cfg.TagWeights = map[string]float64{}
 	}
@@ -65,6 +77,19 @@ func normalizeCommentWeightConfig(cfg CommentWeightConfig) CommentWeightConfig {
 	}
 	cfg.TagWeights = normalizedTags
 	return cfg
+}
+
+func normalizeCommentLimitValue(value int, fallback int) int {
+	if value <= 0 {
+		value = fallback
+	}
+	if value < defaultCommentLimitMin {
+		return defaultCommentLimitMin
+	}
+	if value > defaultCommentLimitMax {
+		return defaultCommentLimitMax
+	}
+	return value
 }
 
 func LoadCommentWeightConfig() CommentWeightConfig {
@@ -124,11 +149,26 @@ func computeAuthorWeight(record *TelemetryRecord, cfg CommentWeightConfig) float
 	return roundCommentWeight(total)
 }
 
-func computeCommentWeight(likeCount int, replyCount int, authorWeight float64) float64 {
+func resolveCommentCharacterLimit(record *TelemetryRecord, cfg CommentWeightConfig) int {
+	limit := normalizeCommentLimitValue(cfg.BaseUserCommentLimit, defaultCommentCharLimit)
+	if record == nil {
+		return limit
+	}
+	if record.IsStarred {
+		limit = normalizeCommentLimitValue(cfg.StarredCommentLimit, limit)
+	}
+	if record.IsAdmin {
+		limit = normalizeCommentLimitValue(cfg.AdminCommentLimit, limit)
+	}
+	return limit
+}
+
+func computeCommentWeight(likeCount int, replyCount int, authorWeight float64, manualAdjustment float64) float64 {
 	total := defaultBaseCommentWeight +
 		(float64(likeCount) * defaultCommentLikeWeight) +
 		(float64(replyCount) * defaultCommentReplyWeight) +
-		authorWeight
+		authorWeight +
+		normalizeCommentWeightValue(manualAdjustment, 0)
 	return roundCommentWeight(total)
 }
 

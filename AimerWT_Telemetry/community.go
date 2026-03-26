@@ -14,14 +14,16 @@ import (
 
 // NoticeComment 公告评论
 type NoticeComment struct {
-	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	NoticeID  uint      `gorm:"index:idx_notice_comment_notice_parent_status_created,priority:1;index:idx_notice_comment_notice_machine_created,priority:1;not null" json:"notice_id"`
-	ParentID  uint      `gorm:"index:idx_notice_comment_notice_parent_status_created,priority:2;default:0" json:"parent_id"`
-	MachineID string    `gorm:"index:idx_notice_comment_notice_machine_created,priority:2;type:varchar(64);not null" json:"machine_id"`
-	Content   string    `gorm:"type:text;not null" json:"content"`
-	LikeCount int       `gorm:"default:0" json:"like_count"`
-	Status    string    `gorm:"index:idx_notice_comment_notice_parent_status_created,priority:3;type:varchar(16);default:'visible'" json:"status"`
-	CreatedAt time.Time `gorm:"autoCreateTime;index:idx_notice_comment_notice_parent_status_created,priority:4;index:idx_notice_comment_notice_machine_created,priority:3" json:"created_at"`
+	ID               uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	NoticeID         uint      `gorm:"index:idx_notice_comment_notice_parent_status_created,priority:1;index:idx_notice_comment_notice_machine_created,priority:1;not null" json:"notice_id"`
+	ParentID         uint      `gorm:"index:idx_notice_comment_notice_parent_status_created,priority:2;default:0" json:"parent_id"`
+	ReplyToID        uint      `gorm:"index;default:0" json:"reply_to_id"`
+	MachineID        string    `gorm:"index:idx_notice_comment_notice_machine_created,priority:2;type:varchar(64);not null" json:"machine_id"`
+	Content          string    `gorm:"type:text;not null" json:"content"`
+	LikeCount        int       `gorm:"default:0" json:"like_count"`
+	WeightAdjustment float64   `gorm:"default:0" json:"weight_adjustment"`
+	Status           string    `gorm:"index:idx_notice_comment_notice_parent_status_created,priority:3;type:varchar(16);default:'visible'" json:"status"`
+	CreatedAt        time.Time `gorm:"autoCreateTime;index:idx_notice_comment_notice_parent_status_created,priority:4;index:idx_notice_comment_notice_machine_created,priority:3" json:"created_at"`
 }
 
 // NoticeCommentLike 评论点赞记录
@@ -34,11 +36,24 @@ type NoticeCommentLike struct {
 
 // NoticeCommentBan 公告评论资格封禁记录
 type NoticeCommentBan struct {
-	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	MachineID string    `gorm:"uniqueIndex;type:varchar(64);not null" json:"machine_id"`
-	Reason    string    `gorm:"type:text" json:"reason"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	ID                 uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID          string     `gorm:"uniqueIndex;type:varchar(64);not null" json:"machine_id"`
+	Reason             string     `gorm:"type:text" json:"reason"`
+	ExpiresAt          *time.Time `gorm:"index" json:"expires_at,omitempty"`
+	CreatedByMachineID string     `gorm:"type:varchar(64)" json:"created_by_machine_id,omitempty"`
+	CreatedAt          time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt          time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+// CommentReport 评论举报记录
+type CommentReport struct {
+	ID                uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	CommentID         uint      `gorm:"index;not null" json:"comment_id"`
+	ReporterMachineID string    `gorm:"type:varchar(64);not null" json:"reporter_machine_id"`
+	ReportType        string    `gorm:"type:varchar(32);not null" json:"report_type"`
+	Reason            string    `gorm:"type:text" json:"reason"`
+	Status            string    `gorm:"type:varchar(16);default:'pending'" json:"status"`
+	CreatedAt         time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
 type rankedNoticeComment struct {
@@ -67,16 +82,18 @@ func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint
 	}
 
 	return map[string]interface{}{
-		"id":         c.ID,
-		"notice_id":  c.NoticeID,
-		"parent_id":  c.ParentID,
-		"uid":        uid,
-		"content":    c.Content,
-		"like_count": c.LikeCount,
-		"liked":      liked,
-		"status":     c.Status,
-		"tags":       tags,
-		"created_at": c.CreatedAt.Format("2006-01-02 15:04:05"),
+		"id":                c.ID,
+		"notice_id":         c.NoticeID,
+		"parent_id":         c.ParentID,
+		"reply_to_id":       c.ReplyToID,
+		"uid":               uid,
+		"content":           c.Content,
+		"like_count":        c.LikeCount,
+		"liked":             liked,
+		"status":            c.Status,
+		"tags":              tags,
+		"weight_adjustment": roundCommentWeight(c.WeightAdjustment),
+		"created_at":        c.CreatedAt.Format("2006-01-02 15:04:05"),
 	}
 }
 
@@ -118,6 +135,38 @@ func buildTagsMap(machineIDs []string) map[string]string {
 	return result
 }
 
+func buildAliasMap(machineIDs []string) map[string]string {
+	if len(machineIDs) == 0 {
+		return map[string]string{}
+	}
+	type aliasRow struct {
+		MachineID string
+		Alias     string
+	}
+	var rows []aliasRow
+	db.Model(&TelemetryRecord{}).Where("machine_id IN ?", machineIDs).Select("machine_id, alias").Scan(&rows)
+	result := make(map[string]string, len(rows))
+	for _, row := range rows {
+		result[row.MachineID] = row.Alias
+	}
+	return result
+}
+
+func loadCommentUserRecord(machineID string) *TelemetryRecord {
+	machineID = strings.TrimSpace(machineID)
+	if machineID == "" {
+		return nil
+	}
+
+	var record TelemetryRecord
+	if err := db.Select("machine_id, is_starred, is_admin, tags").
+		Where("machine_id = ?", machineID).
+		First(&record).Error; err != nil {
+		return nil
+	}
+	return &record
+}
+
 func buildLikedCommentSet(machineID string, commentIDs []uint) map[uint]struct{} {
 	if strings.TrimSpace(machineID) == "" || len(commentIDs) == 0 {
 		return map[uint]struct{}{}
@@ -145,7 +194,102 @@ func getNoticeCommentBan(machineID string) *NoticeCommentBan {
 	if err := db.Where("machine_id = ?", machineID).First(&ban).Error; err != nil {
 		return nil
 	}
+	if ban.ExpiresAt != nil && !ban.ExpiresAt.After(time.Now()) {
+		db.Delete(&ban)
+		return nil
+	}
 	return &ban
+}
+
+func formatOptionalTimestamp(ts *time.Time) string {
+	if ts == nil {
+		return ""
+	}
+	return ts.Format("2006-01-02 15:04:05")
+}
+
+func extractLegacyReplyAlias(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if !strings.HasPrefix(trimmed, "回复") {
+		return ""
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "回复"))
+	if !strings.HasPrefix(rest, "@") {
+		return ""
+	}
+	rest = strings.TrimPrefix(rest, "@")
+	idx := strings.IndexAny(rest, ":：")
+	if idx <= 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:idx])
+}
+
+func resolveReplyTargetCommentID(comment NoticeComment, seqMap map[string]uint, aliasMap map[string]string, commentMap map[uint]NoticeComment) uint {
+	if comment.ReplyToID > 0 {
+		return comment.ReplyToID
+	}
+	if comment.ParentID == 0 || len(commentMap) == 0 {
+		return 0
+	}
+
+	legacyAlias := extractLegacyReplyAlias(comment.Content)
+	if legacyAlias == "" {
+		return 0
+	}
+
+	for id, candidate := range commentMap {
+		if id == comment.ID {
+			continue
+		}
+		if candidate.ID != comment.ParentID && candidate.ParentID != comment.ParentID {
+			continue
+		}
+		if strings.TrimSpace(aliasMap[candidate.MachineID]) == legacyAlias {
+			return candidate.ID
+		}
+		if seqID, ok := seqMap[candidate.MachineID]; ok && ("用户#"+fmt.Sprintf("%d", seqID) == legacyAlias || fmt.Sprintf("%d", seqID) == legacyAlias) {
+			return candidate.ID
+		}
+	}
+
+	return 0
+}
+
+func attachCommentMeta(item map[string]interface{}, comment NoticeComment, viewerMachineID string, viewerIsAdmin bool, seqMap map[string]uint, aliasMap map[string]string, commentMap map[uint]NoticeComment) {
+	item["can_delete"] = viewerIsAdmin || (viewerMachineID != "" && comment.MachineID == viewerMachineID)
+	item["can_manage"] = viewerIsAdmin
+
+	replyTargetID := resolveReplyTargetCommentID(comment, seqMap, aliasMap, commentMap)
+	if replyTargetID == 0 {
+		return
+	}
+
+	item["reply_to_comment_id"] = replyTargetID
+	if target, ok := commentMap[replyTargetID]; ok {
+		if seqID, found := seqMap[target.MachineID]; found {
+			item["reply_to_uid"] = fmt.Sprintf("%d", seqID)
+		}
+	}
+}
+
+func deleteNoticeCommentCascade(commentID uint) error {
+	var replyIDs []uint
+	if err := db.Model(&NoticeComment{}).Where("parent_id = ?", commentID).Pluck("id", &replyIDs).Error; err != nil {
+		return err
+	}
+	if len(replyIDs) > 0 {
+		if err := db.Where("comment_id IN ?", replyIDs).Delete(&NoticeCommentLike{}).Error; err != nil {
+			return err
+		}
+		if err := db.Where("parent_id = ?", commentID).Delete(&NoticeComment{}).Error; err != nil {
+			return err
+		}
+	}
+	if err := db.Where("comment_id = ?", commentID).Delete(&NoticeCommentLike{}).Error; err != nil {
+		return err
+	}
+	return db.Delete(&NoticeComment{}, commentID).Error
 }
 
 func parseNoticeUintParam(c *gin.Context, key string) (uint, bool) {
@@ -222,7 +366,7 @@ func buildRankedNoticeComments(noticeID uint) ([]rankedNoticeComment, error) {
 			Comment:      comment,
 			ReplyCount:   replyCount,
 			AuthorWeight: authorWeight,
-			WeightScore:  computeCommentWeight(comment.LikeCount, replyCount, authorWeight),
+			WeightScore:  computeCommentWeight(comment.LikeCount, replyCount, authorWeight, comment.WeightAdjustment),
 		})
 	}
 
@@ -248,17 +392,21 @@ func initCommunityClientRoutes(r *gin.Engine) {
 	r.GET("/notice-comments/:notice_id", func(c *gin.Context) {
 		if !sysConfig.NoticeCommentEnabled {
 			c.JSON(200, gin.H{
-				"comments":         []map[string]interface{}{},
-				"total_count":      0,
-				"total_top_count":  0,
-				"total_likes":      0,
-				"can_comment":      false,
-				"ban_reason":       "评论功能已关闭",
-				"offset":           0,
-				"limit":            0,
-				"next_offset":      0,
-				"has_more":         false,
-				"feature_disabled": true,
+				"comments":            []map[string]interface{}{},
+				"total_count":         0,
+				"total_top_count":     0,
+				"total_likes":         0,
+				"can_comment":         false,
+				"ban_reason":          "评论功能已关闭",
+				"ban_expires_at":      "",
+				"offset":              0,
+				"limit":               0,
+				"next_offset":         0,
+				"has_more":            false,
+				"viewer_is_admin":     false,
+				"show_weight_score":   false,
+				"comment_limit_chars": defaultCommentCharLimit,
+				"feature_disabled":    true,
 			})
 			return
 		}
@@ -267,6 +415,9 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			return
 		}
 		machineID := c.Query("machine_id")
+		viewerRecord := loadCommentUserRecord(machineID)
+		viewerIsAdmin := viewerRecord != nil && viewerRecord.IsAdmin
+		weightCfg := LoadCommentWeightConfig()
 		offset := parseCommentPageOffset(c.DefaultQuery("offset", "0"))
 		limit := parseCommentPageLimit(c.DefaultQuery("limit", "12"))
 
@@ -307,6 +458,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			item["reply_count"] = ranked.ReplyCount
 			item["author_weight"] = ranked.AuthorWeight
 			item["weight_score"] = ranked.WeightScore
+			attachCommentMeta(item, ranked.Comment, machineID, viewerIsAdmin, seqMap, nil, nil)
 			result = append(result, item)
 		}
 
@@ -322,27 +474,41 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		ban := getNoticeCommentBan(machineID)
 		canComment := ban == nil
 		banReason := ""
+		banExpiresAt := ""
 		if ban != nil {
 			banReason = ban.Reason
+			banExpiresAt = formatOptionalTimestamp(ban.ExpiresAt)
 		}
+		commentLimitChars := resolveCommentCharacterLimit(viewerRecord, weightCfg)
 
 		c.JSON(200, gin.H{
-			"comments":        result,
-			"total_count":     totalCount,
-			"total_top_count": totalTopCount,
-			"total_likes":     totalLikes,
-			"can_comment":     canComment,
-			"ban_reason":      banReason,
-			"offset":          offset,
-			"limit":           limit,
-			"next_offset":     end,
-			"has_more":        end < totalTopCount,
+			"comments":            result,
+			"total_count":         totalCount,
+			"total_top_count":     totalTopCount,
+			"total_likes":         totalLikes,
+			"can_comment":         canComment,
+			"ban_reason":          banReason,
+			"ban_expires_at":      banExpiresAt,
+			"offset":              offset,
+			"limit":               limit,
+			"next_offset":         end,
+			"has_more":            end < totalTopCount,
+			"viewer_is_admin":     viewerIsAdmin,
+			"show_weight_score":   viewerIsAdmin,
+			"comment_limit_chars": commentLimitChars,
 		})
 	})
 
 	r.GET("/notice-comments/:notice_id/replies/:comment_id", func(c *gin.Context) {
 		if !sysConfig.NoticeCommentEnabled {
-			c.JSON(200, gin.H{"replies": []map[string]interface{}{}, "reply_count": 0, "feature_disabled": true})
+			c.JSON(200, gin.H{
+				"replies":             []map[string]interface{}{},
+				"reply_count":         0,
+				"viewer_is_admin":     false,
+				"show_weight_score":   false,
+				"comment_limit_chars": defaultCommentCharLimit,
+				"feature_disabled":    true,
+			})
 			return
 		}
 		noticeID, ok := parseNoticeUintParam(c, "notice_id")
@@ -354,6 +520,8 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			return
 		}
 		machineID := c.Query("machine_id")
+		viewerRecord := loadCommentUserRecord(machineID)
+		viewerIsAdmin := viewerRecord != nil && viewerRecord.IsAdmin
 
 		var parent NoticeComment
 		if err := db.Where("id = ? AND notice_id = ? AND parent_id = 0 AND status = 'visible'", commentID, noticeID).
@@ -372,9 +540,14 @@ func initCommunityClientRoutes(r *gin.Engine) {
 
 		replyIDs := make([]uint, 0, len(replies))
 		idSet := map[string]bool{}
+		commentMap := map[uint]NoticeComment{
+			parent.ID: parent,
+		}
+		idSet[parent.MachineID] = true
 		for _, reply := range replies {
 			replyIDs = append(replyIDs, reply.ID)
 			idSet[reply.MachineID] = true
+			commentMap[reply.ID] = reply
 		}
 
 		idList := make([]string, 0, len(idSet))
@@ -386,6 +559,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		weightCfg := LoadCommentWeightConfig()
 		authorWeightMap := buildCommentAuthorWeightMap(idList, weightCfg)
 		tagsMap := buildTagsMap(idList)
+		aliasMap := buildAliasMap(idList)
 
 		result := make([]map[string]interface{}, 0, len(replies))
 		for _, reply := range replies {
@@ -393,13 +567,17 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			item := serializeComment(reply, seqMap, likedSet, tagsMap)
 			item["reply_count"] = 0
 			item["author_weight"] = authorWeight
-			item["weight_score"] = computeCommentWeight(reply.LikeCount, 0, authorWeight)
+			item["weight_score"] = computeCommentWeight(reply.LikeCount, 0, authorWeight, reply.WeightAdjustment)
+			attachCommentMeta(item, reply, machineID, viewerIsAdmin, seqMap, aliasMap, commentMap)
 			result = append(result, item)
 		}
 
 		c.JSON(200, gin.H{
-			"replies":     result,
-			"reply_count": len(result),
+			"replies":             result,
+			"reply_count":         len(result),
+			"viewer_is_admin":     viewerIsAdmin,
+			"show_weight_score":   viewerIsAdmin,
+			"comment_limit_chars": resolveCommentCharacterLimit(viewerRecord, weightCfg),
 		})
 	})
 
@@ -415,6 +593,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			MachineID string `json:"machine_id"`
 			Content   string `json:"content"`
 			ParentID  uint   `json:"parent_id"`
+			ReplyToID uint   `json:"reply_to_id"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": "请求数据格式错误"})
@@ -440,26 +619,59 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			return
 		}
 
+		weightCfg := LoadCommentWeightConfig()
+		commenterRecord := loadCommentUserRecord(req.MachineID)
+		commentLimit := resolveCommentCharacterLimit(commenterRecord, weightCfg)
+
 		// 内容长度限制
-		if len([]rune(content)) > 200 {
-			content = string([]rune(content)[:200])
+		if len([]rune(content)) > commentLimit {
+			c.JSON(400, gin.H{"error": fmt.Sprintf("当前用户组评论最多允许 %d 字", commentLimit)})
+			return
 		}
 
-		// 回复层级限制：parent_id 指向的评论本身不能是回复
+		var replyTarget *NoticeComment
+
+		// 回复层级限制：parent_id 始终指向顶级评论，reply_to_id 指向实际回复目标
 		if req.ParentID > 0 {
-			var parent NoticeComment
-			if err := db.First(&parent, req.ParentID).Error; err != nil {
+			var rootComment NoticeComment
+			if err := db.First(&rootComment, req.ParentID).Error; err != nil {
 				c.JSON(400, gin.H{"error": "回复的目标评论不存在"})
 				return
 			}
-			if parent.ParentID > 0 {
-				// 指向的已经是一条回复，强制改为回复其父评论
-				req.ParentID = parent.ParentID
+			if rootComment.ParentID > 0 {
+				if req.ReplyToID == 0 {
+					req.ReplyToID = rootComment.ID
+				}
+				req.ParentID = rootComment.ParentID
+				if err := db.First(&rootComment, req.ParentID).Error; err != nil {
+					c.JSON(400, gin.H{"error": "回复的目标评论不存在"})
+					return
+				}
 			}
-			if parent.NoticeID != req.NoticeID {
+			if rootComment.NoticeID != req.NoticeID {
 				c.JSON(400, gin.H{"error": "回复目标与公告不匹配"})
 				return
 			}
+			if req.ReplyToID == 0 {
+				req.ReplyToID = rootComment.ID
+			}
+
+			var target NoticeComment
+			if err := db.First(&target, req.ReplyToID).Error; err != nil {
+				c.JSON(400, gin.H{"error": "回复的目标评论不存在"})
+				return
+			}
+			if target.NoticeID != req.NoticeID {
+				c.JSON(400, gin.H{"error": "回复目标与公告不匹配"})
+				return
+			}
+			if target.ID != req.ParentID && target.ParentID != req.ParentID {
+				c.JSON(400, gin.H{"error": "回复目标不属于当前评论楼层"})
+				return
+			}
+			replyTarget = &target
+		} else {
+			req.ReplyToID = 0
 		}
 
 		// 频率限制：同一用户对同一公告 30 秒内最多 1 条
@@ -486,6 +698,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		comment := NoticeComment{
 			NoticeID:  req.NoticeID,
 			ParentID:  req.ParentID,
+			ReplyToID: req.ReplyToID,
 			MachineID: req.MachineID,
 			Content:   content,
 			Status:    "visible",
@@ -495,14 +708,24 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			return
 		}
 
-		seqMap := buildSeqMap([]string{req.MachineID})
-		weightCfg := LoadCommentWeightConfig()
+		machineIDs := []string{req.MachineID}
+		commentMap := map[uint]NoticeComment{
+			comment.ID: comment,
+		}
+		if replyTarget != nil {
+			machineIDs = append(machineIDs, replyTarget.MachineID)
+			commentMap[replyTarget.ID] = *replyTarget
+		}
+
+		seqMap := buildSeqMap(machineIDs)
 		authorWeight := buildCommentAuthorWeightMap([]string{req.MachineID}, weightCfg)[req.MachineID]
 		tagsMap := buildTagsMap([]string{req.MachineID})
+		aliasMap := buildAliasMap(machineIDs)
 		commentResp := serializeComment(comment, seqMap, nil, tagsMap)
 		commentResp["reply_count"] = 0
 		commentResp["author_weight"] = authorWeight
-		commentResp["weight_score"] = computeCommentWeight(comment.LikeCount, 0, authorWeight)
+		commentResp["weight_score"] = computeCommentWeight(comment.LikeCount, 0, authorWeight, comment.WeightAdjustment)
+		attachCommentMeta(commentResp, comment, req.MachineID, commenterRecord != nil && commenterRecord.IsAdmin, seqMap, aliasMap, commentMap)
 
 		c.JSON(200, gin.H{
 			"status":  "success",
@@ -563,6 +786,256 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		db.Model(&comment).Update("like_count", gorm.Expr("like_count + 1"))
 		c.JSON(200, gin.H{"status": "liked"})
 	})
+
+	// 举报评论
+	r.POST("/notice-comment-report", func(c *gin.Context) {
+		if !sysConfig.NoticeCommentEnabled {
+			c.JSON(403, gin.H{"error": "公告评论功能已关闭"})
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4<<10)
+		var req struct {
+			CommentID  uint   `json:"comment_id"`
+			MachineID  string `json:"machine_id"`
+			ReportType string `json:"report_type"`
+			Reason     string `json:"reason"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"error": "请求数据格式错误"})
+			return
+		}
+		if !ensureClientMachineBinding(c, req.MachineID) {
+			return
+		}
+		if req.CommentID == 0 || req.MachineID == "" || req.ReportType == "" {
+			c.JSON(400, gin.H{"error": "comment_id, machine_id, report_type 为必填"})
+			return
+		}
+		allowedTypes := map[string]bool{
+			"porn": true, "hostile": true, "privacy": true, "minor": true,
+			"ad": true, "political": true, "rumor": true, "spam": true, "other": true,
+		}
+		if !allowedTypes[req.ReportType] {
+			c.JSON(400, gin.H{"error": "无效的举报类型"})
+			return
+		}
+		var comment NoticeComment
+		if err := db.First(&comment, req.CommentID).Error; err != nil {
+			c.JSON(404, gin.H{"error": "评论不存在"})
+			return
+		}
+		// 防重复：同一用户对同一评论只能举报一次
+		var existingCount int64
+		db.Model(&CommentReport{}).Where("comment_id = ? AND reporter_machine_id = ?", req.CommentID, req.MachineID).Count(&existingCount)
+		if existingCount > 0 {
+			c.JSON(409, gin.H{"error": "您已举报过该评论"})
+			return
+		}
+		reason := strings.TrimSpace(req.Reason)
+		if len([]rune(reason)) > 100 {
+			reason = string([]rune(reason)[:100])
+		}
+		report := CommentReport{
+			CommentID:         req.CommentID,
+			ReporterMachineID: req.MachineID,
+			ReportType:        req.ReportType,
+			Reason:            reason,
+			Status:            "pending",
+		}
+		if err := db.Create(&report).Error; err != nil {
+			c.JSON(500, gin.H{"error": "保存失败"})
+			return
+		}
+		c.JSON(200, gin.H{"status": "success"})
+	})
+
+	// 删除评论（本人可删自己的评论，管理员可删除任意评论）
+	r.DELETE("/notice-comments/:comment_id", func(c *gin.Context) {
+		commentID, ok := parseNoticeUintParam(c, "comment_id")
+		if !ok {
+			return
+		}
+		machineID := strings.TrimSpace(c.Query("machine_id"))
+		if machineID == "" {
+			c.JSON(400, gin.H{"error": "machine_id 为必填"})
+			return
+		}
+		if !ensureClientMachineBinding(c, machineID) {
+			return
+		}
+
+		actor := loadCommentUserRecord(machineID)
+		var comment NoticeComment
+		if err := db.First(&comment, commentID).Error; err != nil {
+			c.JSON(404, gin.H{"error": "评论不存在"})
+			return
+		}
+		if !(actor != nil && actor.IsAdmin) && comment.MachineID != machineID {
+			c.JSON(403, gin.H{"error": "您没有权限删除该评论"})
+			return
+		}
+		if err := deleteNoticeCommentCascade(comment.ID); err != nil {
+			c.JSON(500, gin.H{"error": "删除失败"})
+			return
+		}
+		c.JSON(200, gin.H{"status": "success"})
+	})
+
+	// 管理员调整单条评论权重
+	r.POST("/notice-comments/:comment_id/weight", func(c *gin.Context) {
+		commentID, ok := parseNoticeUintParam(c, "comment_id")
+		if !ok {
+			return
+		}
+		var req struct {
+			MachineID string  `json:"machine_id"`
+			Action    string  `json:"action"`
+			Amount    float64 `json:"amount"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"error": "请求数据格式错误"})
+			return
+		}
+		if !ensureClientMachineBinding(c, req.MachineID) {
+			return
+		}
+
+		actor := loadCommentUserRecord(req.MachineID)
+		if actor == nil || !actor.IsAdmin {
+			c.JSON(403, gin.H{"error": "仅管理员可调整评论权重"})
+			return
+		}
+
+		action := strings.TrimSpace(req.Action)
+		if action != "increase" && action != "decrease" {
+			c.JSON(400, gin.H{"error": "action 仅支持 increase 或 decrease"})
+			return
+		}
+		if req.Amount <= 0 {
+			c.JSON(400, gin.H{"error": "amount 必须大于 0"})
+			return
+		}
+
+		var comment NoticeComment
+		if err := db.First(&comment, commentID).Error; err != nil {
+			c.JSON(404, gin.H{"error": "评论不存在"})
+			return
+		}
+
+		delta := normalizeCommentWeightValue(req.Amount, 0)
+		if action == "decrease" {
+			delta = -delta
+		}
+		newAdjustment := normalizeCommentWeightValue(comment.WeightAdjustment+delta, comment.WeightAdjustment+delta)
+		if err := db.Model(&comment).Update("weight_adjustment", newAdjustment).Error; err != nil {
+			c.JSON(500, gin.H{"error": "保存失败"})
+			return
+		}
+
+		replyCount := 0
+		if comment.ParentID == 0 {
+			replyCount = buildReplyCountMap(comment.NoticeID, []uint{comment.ID})[comment.ID]
+		}
+		authorWeight := buildCommentAuthorWeightMap([]string{comment.MachineID}, LoadCommentWeightConfig())[comment.MachineID]
+		c.JSON(200, gin.H{
+			"status":            "success",
+			"weight_adjustment": roundCommentWeight(newAdjustment),
+			"weight_score":      computeCommentWeight(comment.LikeCount, replyCount, authorWeight, newAdjustment),
+		})
+	})
+
+	// 管理员封禁评论权限
+	r.POST("/notice-comments/:comment_id/ban", func(c *gin.Context) {
+		commentID, ok := parseNoticeUintParam(c, "comment_id")
+		if !ok {
+			return
+		}
+		var req struct {
+			MachineID     string `json:"machine_id"`
+			DurationValue int    `json:"duration_value"`
+			DurationUnit  string `json:"duration_unit"`
+			Reason        string `json:"reason"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"error": "请求数据格式错误"})
+			return
+		}
+		if !ensureClientMachineBinding(c, req.MachineID) {
+			return
+		}
+
+		actor := loadCommentUserRecord(req.MachineID)
+		if actor == nil || !actor.IsAdmin {
+			c.JSON(403, gin.H{"error": "仅管理员可封禁评论权限"})
+			return
+		}
+		if req.DurationValue <= 0 {
+			c.JSON(400, gin.H{"error": "封禁时长必须大于 0"})
+			return
+		}
+
+		var duration time.Duration
+		switch strings.TrimSpace(req.DurationUnit) {
+		case "minute":
+			duration = time.Duration(req.DurationValue) * time.Minute
+		case "hour":
+			duration = time.Duration(req.DurationValue) * time.Hour
+		case "day":
+			duration = time.Duration(req.DurationValue) * 24 * time.Hour
+		default:
+			c.JSON(400, gin.H{"error": "duration_unit 仅支持 minute / hour / day"})
+			return
+		}
+		if duration > 365*24*time.Hour {
+			c.JSON(400, gin.H{"error": "封禁时长不能超过 365 天"})
+			return
+		}
+
+		var comment NoticeComment
+		if err := db.First(&comment, commentID).Error; err != nil {
+			c.JSON(404, gin.H{"error": "评论不存在"})
+			return
+		}
+
+		expiresAt := time.Now().Add(duration)
+		reason := strings.TrimSpace(req.Reason)
+		updateData := map[string]interface{}{
+			"reason":                reason,
+			"expires_at":            expiresAt,
+			"created_by_machine_id": req.MachineID,
+		}
+
+		var existing NoticeCommentBan
+		err := db.Where("machine_id = ?", comment.MachineID).First(&existing).Error
+		if err == nil {
+			if err := db.Model(&existing).Updates(updateData).Error; err != nil {
+				c.JSON(500, gin.H{"error": "保存失败"})
+				return
+			}
+		} else if err == gorm.ErrRecordNotFound {
+			ban := NoticeCommentBan{
+				MachineID:          comment.MachineID,
+				Reason:             reason,
+				ExpiresAt:          &expiresAt,
+				CreatedByMachineID: req.MachineID,
+			}
+			if err := db.Create(&ban).Error; err != nil {
+				c.JSON(500, gin.H{"error": "保存失败"})
+				return
+			}
+		} else {
+			c.JSON(500, gin.H{"error": "查询失败"})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"status":     "success",
+			"machine_id": comment.MachineID,
+			"reason":     reason,
+			"expires_at": expiresAt.Format("2006-01-02 15:04:05"),
+			"comment_id": comment.ID,
+		})
+	})
 }
 
 // initCommunityAdminRoutes 注册管理端评论管理 API
@@ -587,6 +1060,16 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 			}
 			if status := c.Query("status"); status != "" {
 				query = query.Where("status = ?", status)
+			}
+			if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+				// 搜索内容或查找UID对应的MachineID
+				var matchedMachineIDs []string
+				db.Model(&TelemetryRecord{}).Where("CAST(id AS TEXT) LIKE ?", "%"+keyword+"%").Pluck("machine_id", &matchedMachineIDs)
+				if len(matchedMachineIDs) > 0 {
+					query = query.Where("content LIKE ? OR machine_id IN ?", "%"+keyword+"%", matchedMachineIDs)
+				} else {
+					query = query.Where("content LIKE ?", "%"+keyword+"%")
+				}
 			}
 
 			var total int64
@@ -650,22 +1133,19 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 
 		// 删除评论（级联删除回复和点赞）
 		community.DELETE("/comments/:id", func(c *gin.Context) {
-			id := c.Param("id")
+			commentID, ok := parseNoticeUintParam(c, "id")
+			if !ok {
+				return
+			}
 			var comment NoticeComment
-			if err := db.First(&comment, id).Error; err != nil {
+			if err := db.First(&comment, commentID).Error; err != nil {
 				c.JSON(404, gin.H{"error": "评论不存在"})
 				return
 			}
-
-			// 级联删除：先删回复的点赞，再删回复，再删本评论点赞，再删本评论
-			var replyIDs []uint
-			db.Model(&NoticeComment{}).Where("parent_id = ?", comment.ID).Pluck("id", &replyIDs)
-			if len(replyIDs) > 0 {
-				db.Where("comment_id IN ?", replyIDs).Delete(&NoticeCommentLike{})
-				db.Where("parent_id = ?", comment.ID).Delete(&NoticeComment{})
+			if err := deleteNoticeCommentCascade(comment.ID); err != nil {
+				c.JSON(500, gin.H{"error": "删除失败"})
+				return
 			}
-			db.Where("comment_id = ?", comment.ID).Delete(&NoticeCommentLike{})
-			db.Delete(&comment)
 
 			c.JSON(200, gin.H{"status": "success"})
 		})
@@ -696,8 +1176,10 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 		})
 
 		community.GET("/comment-bans", func(c *gin.Context) {
+			db.Where("expires_at IS NOT NULL AND expires_at <= ?", time.Now()).Delete(&NoticeCommentBan{})
+
 			var bans []NoticeCommentBan
-			db.Order("created_at DESC").Find(&bans)
+			db.Where("expires_at IS NULL OR expires_at > ?", time.Now()).Order("created_at DESC").Find(&bans)
 
 			idSet := map[string]bool{}
 			for _, ban := range bans {
@@ -708,19 +1190,7 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 				idList = append(idList, machineID)
 			}
 			seqMap := buildSeqMap(idList)
-
-			type aliasRow struct {
-				MachineID string
-				Alias     string
-			}
-			var aliasRows []aliasRow
-			if len(idList) > 0 {
-				db.Model(&TelemetryRecord{}).Where("machine_id IN ?", idList).Select("machine_id, alias").Scan(&aliasRows)
-			}
-			aliasMap := map[string]string{}
-			for _, row := range aliasRows {
-				aliasMap[row.MachineID] = row.Alias
-			}
+			aliasMap := buildAliasMap(idList)
 
 			result := make([]map[string]interface{}, len(bans))
 			for i, ban := range bans {
@@ -734,6 +1204,7 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 					"uid":        uid,
 					"alias":      aliasMap[ban.MachineID],
 					"reason":     ban.Reason,
+					"expires_at": formatOptionalTimestamp(ban.ExpiresAt),
 					"created_at": ban.CreatedAt.Format("2006-01-02 15:04:05"),
 					"updated_at": ban.UpdatedAt.Format("2006-01-02 15:04:05"),
 				}
@@ -791,6 +1262,137 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 				c.JSON(500, gin.H{"error": "删除失败"})
 				return
 			}
+			c.JSON(200, gin.H{"status": "success"})
+		})
+
+		// 举报列表查询
+		community.GET("/comment-reports", func(c *gin.Context) {
+			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+			pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+			if page < 1 {
+				page = 1
+			}
+			if pageSize < 1 || pageSize > 100 {
+				pageSize = 20
+			}
+			statusFilter := c.Query("status")
+
+			query := db.Model(&CommentReport{})
+			if statusFilter != "" {
+				query = query.Where("status = ?", statusFilter)
+			}
+
+			var total int64
+			query.Count(&total)
+
+			var reports []CommentReport
+			query.Order("created_at desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&reports)
+
+			// 收集所有 comment_id 和 machine_id
+			commentIDSet := map[uint]bool{}
+			machineIDSet := map[string]bool{}
+			for _, r := range reports {
+				commentIDSet[r.CommentID] = true
+				machineIDSet[r.ReporterMachineID] = true
+			}
+
+			// 查评论详情
+			commentIDs := make([]uint, 0, len(commentIDSet))
+			for id := range commentIDSet {
+				commentIDs = append(commentIDs, id)
+			}
+			var comments []NoticeComment
+			if len(commentIDs) > 0 {
+				db.Where("id IN ?", commentIDs).Find(&comments)
+			}
+			commentMap := map[uint]NoticeComment{}
+			for _, cm := range comments {
+				commentMap[cm.ID] = cm
+				machineIDSet[cm.MachineID] = true
+			}
+
+			machineIDs := make([]string, 0, len(machineIDSet))
+			for mid := range machineIDSet {
+				machineIDs = append(machineIDs, mid)
+			}
+			seqMap := buildSeqMap(machineIDs)
+
+			type aliasRow struct {
+				MachineID string
+				Alias     string
+			}
+			var aliasRows []aliasRow
+			if len(machineIDs) > 0 {
+				db.Model(&TelemetryRecord{}).Where("machine_id IN ?", machineIDs).Select("machine_id, alias").Scan(&aliasRows)
+			}
+			aliasMap := map[string]string{}
+			for _, a := range aliasRows {
+				aliasMap[a.MachineID] = a.Alias
+			}
+
+			result := make([]map[string]interface{}, len(reports))
+			for i, r := range reports {
+				reporterUID := "?"
+				if seqID, ok := seqMap[r.ReporterMachineID]; ok {
+					reporterUID = fmt.Sprintf("%d", seqID)
+				}
+				item := map[string]interface{}{
+					"id":             r.ID,
+					"comment_id":     r.CommentID,
+					"report_type":    r.ReportType,
+					"reason":         r.Reason,
+					"status":         r.Status,
+					"reporter_uid":   reporterUID,
+					"reporter_alias": aliasMap[r.ReporterMachineID],
+					"created_at":     r.CreatedAt.Format("2006-01-02 15:04:05"),
+				}
+				if cm, ok := commentMap[r.CommentID]; ok {
+					reportedUID := "?"
+					if seqID, ok2 := seqMap[cm.MachineID]; ok2 {
+						reportedUID = fmt.Sprintf("%d", seqID)
+					}
+					item["reported_uid"] = reportedUID
+					item["reported_alias"] = aliasMap[cm.MachineID]
+					item["comment_content"] = cm.Content
+					item["comment_notice_id"] = cm.NoticeID
+				} else {
+					item["reported_uid"] = "?"
+					item["reported_alias"] = ""
+					item["comment_content"] = "[评论已删除]"
+					item["comment_notice_id"] = 0
+				}
+				result[i] = item
+			}
+
+			c.JSON(200, gin.H{
+				"reports":   result,
+				"total":     total,
+				"page":      page,
+				"page_size": pageSize,
+			})
+		})
+
+		// 更新举报状态（已处理/忽略）
+		community.PUT("/comment-reports/:id", func(c *gin.Context) {
+			id := c.Param("id")
+			var req struct {
+				Status string `json:"status"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
+				return
+			}
+			allowed := map[string]bool{"pending": true, "resolved": true, "dismissed": true}
+			if !allowed[req.Status] {
+				c.JSON(400, gin.H{"error": "无效的状态值"})
+				return
+			}
+			var report CommentReport
+			if err := db.First(&report, id).Error; err != nil {
+				c.JSON(404, gin.H{"error": "举报记录不存在"})
+				return
+			}
+			db.Model(&report).Update("status", req.Status)
 			c.JSON(200, gin.H{"status": "success"})
 		})
 	}

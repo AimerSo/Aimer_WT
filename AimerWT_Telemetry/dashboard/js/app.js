@@ -284,7 +284,7 @@ const app = {
 
             const firstSubmenuItem = submenu.querySelector('.submenu-item');
             if (firstSubmenuItem) {
-                this.switchView('emoji_permission', firstSubmenuItem);
+                this.switchView('notice_comment_manage', firstSubmenuItem);
             }
         }
     },
@@ -389,6 +389,9 @@ const app = {
                 break;
             case 'notice_comment_manage':
                 this.initNoticeCommentManage();
+                break;
+            case 'report_inbox':
+                this.loadReportInbox();
                 break;
             default:
                 break;
@@ -2709,9 +2712,12 @@ const app = {
     _noticeCommentBans: [],
     _noticeCommentFilter: {
         noticeId: '',
-        status: ''
+        status: '',
+        keyword: '',
+        page: 1
     },
     _noticeCommentTotal: 0,
+    _noticeCommentPageSize: 10,
 
     async initNoticeCommentManage() {
         this._noticeCommentRecords = [];
@@ -2770,6 +2776,13 @@ const app = {
     onNoticeCommentFilterChange() {
         this._noticeCommentFilter.noticeId = document.getElementById('ncmNoticeFilter')?.value || '';
         this._noticeCommentFilter.status = document.getElementById('ncmStatusFilter')?.value || '';
+        this._noticeCommentFilter.keyword = document.getElementById('ncmSearchInput')?.value?.trim() || '';
+        this._noticeCommentFilter.page = 1;
+        this.loadNoticeCommunityComments();
+    },
+
+    onNoticeCommentPageChange(page) {
+        this._noticeCommentFilter.page = page;
         this.loadNoticeCommunityComments();
     },
 
@@ -2788,12 +2801,14 @@ const app = {
             container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;">加载评论中...</div>';
         }
 
+        const page = this._noticeCommentFilter.page || 1;
         const params = new URLSearchParams({
-            page: '1',
-            page_size: '100'
+            page: String(page),
+            page_size: String(this._noticeCommentPageSize)
         });
         if (this._noticeCommentFilter.noticeId) params.set('notice_id', this._noticeCommentFilter.noticeId);
         if (this._noticeCommentFilter.status) params.set('status', this._noticeCommentFilter.status);
+        if (this._noticeCommentFilter.keyword) params.set('keyword', this._noticeCommentFilter.keyword);
 
         try {
             const res = await fetch(`${this.config.apiBase}/admin/community/comments?${params.toString()}`);
@@ -2872,6 +2887,124 @@ const app = {
                 </div>
             `;
         }).join('');
+
+        // 分页控件
+        const totalPages = Math.ceil(this._noticeCommentTotal / this._noticeCommentPageSize);
+        const currentPage = this._noticeCommentFilter.page || 1;
+        const paginationEl = document.getElementById('ncmPagination');
+        if (paginationEl && totalPages > 1) {
+            let pHtml = '';
+            pHtml += `<button class="btn" style="padding:4px 12px;font-size:12px;" ${currentPage <= 1 ? 'disabled' : ''} onclick="app.onNoticeCommentPageChange(${currentPage - 1})">上一页</button>`;
+            pHtml += `<span style="font-size:12px;color:var(--text-muted);">第 ${currentPage} / ${totalPages} 页</span>`;
+            pHtml += `<button class="btn" style="padding:4px 12px;font-size:12px;" ${currentPage >= totalPages ? 'disabled' : ''} onclick="app.onNoticeCommentPageChange(${currentPage + 1})">下一页</button>`;
+            paginationEl.innerHTML = pHtml;
+            paginationEl.style.display = 'flex';
+        } else if (paginationEl) {
+            paginationEl.innerHTML = '';
+            paginationEl.style.display = 'none';
+        }
+    },
+
+    // ================= 举报接收 =================
+    _reportInboxPage: 1,
+    _reportInboxData: [],
+    _reportInboxTotal: 0,
+
+    async loadReportInbox() {
+        const body = document.getElementById('reportInboxBody');
+        if (body) body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">加载中...</div>';
+
+        const statusFilter = document.getElementById('reportStatusFilter')?.value || '';
+        const params = new URLSearchParams({
+            page: String(this._reportInboxPage),
+            page_size: '20'
+        });
+        if (statusFilter) params.set('status', statusFilter);
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/community/comment-reports?${params.toString()}`);
+            if (!res.ok) throw new Error('服务器返回 ' + res.status);
+            const data = await res.json();
+            this._reportInboxData = data.reports || [];
+            this._reportInboxTotal = data.total || 0;
+            this.renderReportInbox();
+        } catch (error) {
+            if (body) body.innerHTML = `<div style="text-align:center;color:var(--danger);padding:40px;">加载失败：${this.escapeHtmlSafe(error.message)}</div>`;
+        }
+    },
+
+    renderReportInbox() {
+        const body = document.getElementById('reportInboxBody');
+        if (!body) return;
+        if (!this._reportInboxData.length) {
+            body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:48px 20px;"><div style="font-size:13px;font-weight:600;margin-bottom:6px;">暂无举报记录</div></div>';
+            return;
+        }
+
+        const REPORT_TYPE_LABELS = {
+            porn: '色情低俗', hostile: '引战不友善', privacy: '隐私泄露', minor: '涉未成年人',
+            ad: '广告引流', political: '政治敏感', rumor: '传播谣言', spam: '刷屏', other: '其他'
+        };
+        const STATUS_LABELS = { pending: '待处理', resolved: '已处理', dismissed: '已忽略' };
+        const STATUS_COLORS = { pending: '#f59e0b', resolved: '#10b981', dismissed: '#94a3b8' };
+
+        body.innerHTML = this._reportInboxData.map(r => {
+            const typeLabel = REPORT_TYPE_LABELS[r.report_type] || r.report_type;
+            const statusLabel = STATUS_LABELS[r.status] || r.status;
+            const statusColor = STATUS_COLORS[r.status] || '#6b7280';
+            const reporterName = r.reporter_alias || ('用户#' + r.reporter_uid);
+            const reportedName = r.reported_alias || ('用户#' + r.reported_uid);
+            const contentPreview = this.escapeHtmlSafe((r.comment_content || '').substring(0, 80));
+
+            return `
+                <div style="border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;background:var(--bg-secondary);">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+                        <div>
+                            <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:${statusColor}22;color:${statusColor};font-weight:600;">${statusLabel}</span>
+                            <span style="font-size:12px;margin-left:8px;padding:2px 8px;border-radius:999px;background:rgba(239,68,68,0.08);color:#dc2626;font-weight:600;">${typeLabel}</span>
+                        </div>
+                        <span style="font-size:11px;color:var(--text-muted);">${r.created_at}</span>
+                    </div>
+                    <div style="font-size:13px;margin-bottom:8px;">
+                        <span style="color:var(--text-muted);">举报人:</span> <a href="#" onclick="app.navigateToUser('${r.reporter_uid}');return false;" style="color:var(--primary);font-weight:600;text-decoration:none;">${this.escapeHtmlSafe(reporterName)}</a>
+                        <span style="color:var(--text-muted);margin-left:12px;">被举报人:</span> <a href="#" onclick="app.navigateToUser('${r.reported_uid}');return false;" style="color:var(--primary);font-weight:600;text-decoration:none;">${this.escapeHtmlSafe(reportedName)}</a>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary);padding:8px 12px;background:var(--bg-primary);border-radius:8px;margin-bottom:8px;">${contentPreview || '<span style="color:var(--text-muted);">[无内容]</span>'}</div>
+                    ${r.reason ? `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">原因: ${this.escapeHtmlSafe(r.reason)}</div>` : ''}
+                    <div style="display:flex;gap:6px;justify-content:flex-end;">
+                        ${r.status === 'pending' ? `
+                            <button class="btn" style="padding:4px 10px;font-size:11px;height:26px;color:var(--success);border-color:rgba(16,185,129,0.2);" onclick="app.updateReportStatus(${r.id}, 'resolved')">标记已处理</button>
+                            <button class="btn" style="padding:4px 10px;font-size:11px;height:26px;" onclick="app.updateReportStatus(${r.id}, 'dismissed')">忽略</button>
+                        ` : `
+                            <button class="btn" style="padding:4px 10px;font-size:11px;height:26px;" onclick="app.updateReportStatus(${r.id}, 'pending')">重新打开</button>
+                        `}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    async updateReportStatus(reportId, status) {
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/community/comment-reports/${reportId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            if (!res.ok) throw new Error('操作失败');
+            this.loadReportInbox();
+        } catch (error) {
+            this.showAlert('更新失败: ' + error.message, 'danger');
+        }
+    },
+
+    navigateToUser(uid) {
+        if (!uid || uid === '?') return;
+        const uidInput = document.getElementById('userIdInput');
+        if (uidInput) {
+            uidInput.value = uid;
+        }
+        this.switchView('userdetail', document.querySelector('[data-view="userdetail"]'));
     },
 
     async loadNoticeCommentBans() {
@@ -3754,6 +3887,12 @@ const app = {
         return Number.isFinite(parsed) ? parsed : fallback;
     },
 
+    _readUserWeightLimit(value, fallback = 200) {
+        const parsed = parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+        return Math.min(Math.max(parsed, 1), 5000);
+    },
+
     _formatWeightNumber(value) {
         const normalized = Math.round(Number(value || 0) * 100) / 100;
         return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
@@ -3773,6 +3912,9 @@ const app = {
             base_user_weight: this._readUserWeightNumber(document.getElementById('weightBaseUser')?.value, 1),
             starred_user_weight: this._readUserWeightNumber(document.getElementById('weightStarredUser')?.value, 0),
             admin_user_weight: this._readUserWeightNumber(document.getElementById('weightAdminUser')?.value, 0),
+            base_user_comment_limit: this._readUserWeightLimit(document.getElementById('commentLimitBaseUser')?.value, 200),
+            starred_comment_limit: this._readUserWeightLimit(document.getElementById('commentLimitStarredUser')?.value, 200),
+            admin_comment_limit: this._readUserWeightLimit(document.getElementById('commentLimitAdminUser')?.value, 200),
             tag_weights: tagWeights
         };
     },
@@ -3821,6 +3963,9 @@ const app = {
 
         const baseAuthor = cfg.base_user_weight || 0;
         const starredAuthor = baseAuthor + (cfg.starred_user_weight || 0);
+        const baseLimit = this._readUserWeightLimit(cfg.base_user_comment_limit, 200);
+        const starredLimit = this._readUserWeightLimit(cfg.starred_comment_limit, baseLimit);
+        const adminLimit = this._readUserWeightLimit(cfg.admin_comment_limit, baseLimit);
         const tags = this.state.userWeightTags || [];
         const sampleTag = tags.find((tag) => Math.abs(cfg.tag_weights?.[tag.name] || 0) > 0.0001) || tags[0] || null;
         const sampleTagWeight = sampleTag ? (cfg.tag_weights?.[sampleTag.name] || 0) : 0;
@@ -3861,6 +4006,27 @@ const app = {
                 tagEl.innerHTML = '<div style="font-size: 12px; color: var(--text-muted);">当前没有标签，先在“设置”页里创建标签后，这里就能继续配置。</div>';
             }
         }
+
+        const limitPreviewEl = document.getElementById('userWeightCommentLimitPreview');
+        if (limitPreviewEl) {
+            limitPreviewEl.innerHTML = `
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">评论字数限制预览</div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px;">
+                    <div style="padding: 10px 12px; border-radius: 10px; background: rgba(37,99,235,0.06); color: var(--text);">
+                        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">普通用户</div>
+                        <div style="font-size: 16px; font-weight: 700; color: var(--primary);">${this.escapeHtmlSafe(String(baseLimit))} 字</div>
+                    </div>
+                    <div style="padding: 10px 12px; border-radius: 10px; background: rgba(16,185,129,0.08); color: var(--text);">
+                        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">星标用户</div>
+                        <div style="font-size: 16px; font-weight: 700; color: var(--secondary);">${this.escapeHtmlSafe(String(starredLimit))} 字</div>
+                    </div>
+                    <div style="padding: 10px 12px; border-radius: 10px; background: rgba(245,158,11,0.10); color: var(--text);">
+                        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">管理员</div>
+                        <div style="font-size: 16px; font-weight: 700; color: #d97706;">${this.escapeHtmlSafe(String(adminLimit))} 字</div>
+                    </div>
+                </div>
+            `;
+        }
     },
 
     async initUserWeight() {
@@ -3878,6 +4044,9 @@ const app = {
                 base_user_weight: this._readUserWeightNumber(cfg.base_user_weight, 1),
                 starred_user_weight: this._readUserWeightNumber(cfg.starred_user_weight, 0),
                 admin_user_weight: this._readUserWeightNumber(cfg.admin_user_weight, 0),
+                base_user_comment_limit: this._readUserWeightLimit(cfg.base_user_comment_limit, 200),
+                starred_comment_limit: this._readUserWeightLimit(cfg.starred_comment_limit, 200),
+                admin_comment_limit: this._readUserWeightLimit(cfg.admin_comment_limit, 200),
                 tag_weights: cfg.tag_weights || {}
             };
             this.state.userWeightTags = data.tags || [];
@@ -3886,11 +4055,16 @@ const app = {
             const fields = {
                 weightBaseUser: this.state.userWeightConfig.base_user_weight,
                 weightStarredUser: this.state.userWeightConfig.starred_user_weight,
-                weightAdminUser: this.state.userWeightConfig.admin_user_weight
+                weightAdminUser: this.state.userWeightConfig.admin_user_weight,
+                commentLimitBaseUser: this.state.userWeightConfig.base_user_comment_limit,
+                commentLimitStarredUser: this.state.userWeightConfig.starred_comment_limit,
+                commentLimitAdminUser: this.state.userWeightConfig.admin_comment_limit
             };
             Object.entries(fields).forEach(([id, value]) => {
                 const el = document.getElementById(id);
-                if (el) el.value = this._formatWeightNumber(value);
+                if (!el) return;
+                const isLimitField = id.startsWith('commentLimit');
+                el.value = isLimitField ? String(value) : this._formatWeightNumber(value);
             });
 
             this._renderUserWeightTagInputs();
@@ -3914,7 +4088,7 @@ const app = {
             if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
             this.state.userWeightConfig = cfg;
             this.updateUserWeightPreview();
-            this.showAlert('用户权重已保存', 'success');
+            this.showAlert('用户权重与评论字数限制已保存', 'success');
         } catch (error) {
             this.showAlert(`保存失败：${error.message}`, 'danger');
         }
@@ -3925,6 +4099,9 @@ const app = {
             base_user_weight: 1,
             starred_user_weight: 0,
             admin_user_weight: 0,
+            base_user_comment_limit: 200,
+            starred_comment_limit: 200,
+            admin_comment_limit: 200,
             tag_weights: {}
         };
         try {
@@ -3935,7 +4112,7 @@ const app = {
             });
             if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
             await this.initUserWeight();
-            this.showAlert('用户权重已恢复默认值', 'success');
+            this.showAlert('用户权重与评论字数限制已恢复默认值', 'success');
         } catch (error) {
             this.showAlert(`恢复默认失败：${error.message}`, 'danger');
         }

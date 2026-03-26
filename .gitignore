@@ -115,3 +115,6 @@ AimerWT_Telemetry/uploads/
 AimerWT_Telemetry/telemetry.db
 AimerWT_Telemetry/telemetry.db-shm
 AimerWT_Telemetry/telemetry.db-wal
+
+# 评论系统本地测试数据目录（含测试脚本和说明，不上传）
+公告评论测试专用/

@@ -48,12 +48,16 @@
                                 <option value="hidden">已隐藏</option>
                                 <option value="reported">已标记</option>
                             </select>
+                        <div class="form-group" style="margin:0;width:180px;">
+                            <label style="font-size:11px;margin-bottom:4px;">搜索</label>
+                            <input type="text" class="input" id="ncmSearchInput" placeholder="输入UID或关键字" style="width:100%;padding:6px 10px;font-size:12px;" onkeydown="if(event.key==='Enter')app.onNoticeCommentFilterChange()">
                         </div>
                     </div>
 
                     <div id="noticeCommentListContainer" style="display:flex;flex-direction:column;gap:12px;">
                         <div style="text-align:center;color:var(--text-muted);padding:40px;">加载中...</div>
                     </div>
+                    <div id="ncmPagination" style="display:none;justify-content:center;align-items:center;gap:8px;padding:12px 0;"></div>
                 </div>
             </div>
 

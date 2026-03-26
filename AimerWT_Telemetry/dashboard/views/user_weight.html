@@ -11,13 +11,13 @@
                 </div>
                 <div>
                     <div style="font-weight: 700; font-size: 16px; color: var(--text);">用户权重</div>
-                    <div style="color: var(--text-muted); font-size: 12px;">设置评论排序时用到的作者权重。评论总分 = 评论基础 1 + 点赞 × 0.5 + 回复 × 0.5 + 作者权重。</div>
+                    <div style="color: var(--text-muted); font-size: 12px;">设置评论排序时用到的作者权重，并单独控制不同用户组的评论字数上限。</div>
                 </div>
             </div>
             <div class="top-actions" style="margin-left: auto; display: flex; gap: 8px;">
                 <button class="btn" onclick="app.resetUserWeightConfig()">恢复默认</button>
                 <button class="btn" onclick="app.initUserWeight()">刷新</button>
-                <button class="btn primary" onclick="app.saveUserWeightConfig()">保存权重</button>
+                <button class="btn primary" onclick="app.saveUserWeightConfig()">保存配置</button>
             </div>
         </div>
 
@@ -52,6 +52,39 @@
                             </div>
                             <input class="input" id="weightAdminUser" type="number" step="0.5" style="width: 110px; text-align: right;" oninput="app.updateUserWeightPreview()">
                         </label>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header" style="padding: 14px 16px;">
+                        <div>
+                            <div class="panel-title">评论字数限制</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">普通用户默认 200 字，管理员优先级高于星标用户。</div>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding: 16px; display: flex; flex-direction: column; gap: 14px;">
+                        <label style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+                            <div>
+                                <div style="font-size: 13px; font-weight: 600; color: var(--text);">所有用户</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">未命中特殊身份时使用的评论上限</div>
+                            </div>
+                            <input class="input" id="commentLimitBaseUser" type="number" min="1" step="1" style="width: 110px; text-align: right;" oninput="app.updateUserWeightPreview()">
+                        </label>
+                        <label style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+                            <div>
+                                <div style="font-size: 13px; font-weight: 600; color: var(--text);">星标用户</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">命中星标身份后的评论上限</div>
+                            </div>
+                            <input class="input" id="commentLimitStarredUser" type="number" min="1" step="1" style="width: 110px; text-align: right;" oninput="app.updateUserWeightPreview()">
+                        </label>
+                        <label style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+                            <div>
+                                <div style="font-size: 13px; font-weight: 600; color: var(--text);">管理员</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">命中管理员身份后的评论上限</div>
+                            </div>
+                            <input class="input" id="commentLimitAdminUser" type="number" min="1" step="1" style="width: 110px; text-align: right;" oninput="app.updateUserWeightPreview()">
+                        </label>
+                        <div id="userWeightCommentLimitPreview" style="padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg);"></div>
                     </div>
                 </div>
 
