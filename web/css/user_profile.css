@@ -243,6 +243,29 @@
     line-height: 1.4;
 }
 
+.up-verify-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 10px;
+    margin-left: auto;
+    border: 1px solid rgba(249, 115, 22, 0.3);
+    border-radius: 6px;
+    background: rgba(249, 115, 22, 0.08);
+    color: #ea580c;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+}
+.up-verify-btn:hover {
+    background: rgba(249, 115, 22, 0.15);
+    border-color: rgba(249, 115, 22, 0.5);
+}
+
 /* ===== 竖向分隔线 ===== */
 .up-divider {
     width: 1px;

@@ -1736,7 +1736,7 @@ const app = {
     },
 
     // 自定义提示弹窗（替代原生 alert）
-    showAlert(title, message, iconType = 'info', linkUrl = null) {
+    showAlert(title, message, iconType = 'info', linkUrl = null, options = null) {
         const modal = document.getElementById('modal-alert');
         if (!modal) {
             console.error('modal-alert not found, falling back to native alert');
@@ -1748,9 +1748,13 @@ const app = {
         const msgEl = document.getElementById('alert-message');
         const iconEl = document.getElementById('alert-icon');
         const linkBtn = document.getElementById('alert-link-btn');
+        const allowHtml = !!(options && options.allowHtml);
 
         if (titleEl) titleEl.textContent = title || '提示';
-        if (msgEl) msgEl.textContent = message || '';
+        if (msgEl) {
+            if (allowHtml) msgEl.innerHTML = message || '';
+            else msgEl.textContent = message || '';
+        }
 
         // 处理跳转链接按钮
         if (linkBtn) {
@@ -1804,7 +1808,7 @@ const app = {
             this.telemetryConnected = !!connected;
             if (window.pywebview?.api?.init_app_state && connected && (!this.userSeqId || wasDisconnected)) {
                 const st = await pywebview.api.init_app_state();
-                if (st && st.user_seq_id) this.userSeqId = st.user_seq_id;
+                if (st && st.user_seq_id) { this.userSeqId = st.user_seq_id; window._userSeqId = st.user_seq_id; }
                 if (st && st.telemetry_base_url) window._telemetryBaseUrl = st.telemetry_base_url;
                 if (st && st.hwid) window._telemetryHWID = st.hwid;
             }
@@ -3649,6 +3653,7 @@ app.init = async function () {
             }
         }
         this.userSeqId = state.user_seq_id || 0;
+        window._userSeqId = this.userSeqId;
         this.applyServerUserFeatures(state.server_user_features || {});
         this.currentLaunchMode = state.launch_mode || 'launcher';
         this.updatePathUI(state.game_path, state.path_valid);

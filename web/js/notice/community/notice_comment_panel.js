@@ -17,13 +17,24 @@
     function timeAgo(dateStr) {
         if (!dateStr) return '';
         var d = new Date(dateStr.replace(' ', 'T') + '+08:00');
+        if (!isFinite(d.getTime())) return '';
         var now = new Date();
         var diff = Math.floor((now - d) / 1000);
+        var days = 0;
+        function formatDate(date, includeYear) {
+            var year = date.getFullYear();
+            var month = date.getMonth() + 1;
+            var day = date.getDate();
+            return includeYear ? (year + '年' + month + '月' + day + '日') : (month + '月' + day + '日');
+        }
+        if (diff < 0) diff = 0;
+        days = Math.floor(diff / 86400);
         if (diff < 60) return '刚刚';
         if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
-        if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
-        if (diff < 604800) return Math.floor(diff / 86400) + '天前';
-        return dateStr.substring(5, 10);
+        if (diff <= 86400) return Math.floor(diff / 3600) + '小时前';
+        if (days <= 3) return days + '天前';
+        if (now.getFullYear() !== d.getFullYear()) return formatDate(d, true);
+        return formatDate(d, false);
     }
 
     function formatWeight(value) {
@@ -44,6 +55,37 @@
         var limit = Number(value || 0);
         if (!isFinite(limit) || limit <= 0) return DEFAULT_COMMENT_CHAR_LIMIT;
         return Math.max(1, Math.round(limit));
+    }
+
+    function normalizeUidValue(uid) {
+        var text = String(uid == null ? '' : uid).trim();
+        return text || '?';
+    }
+
+    function getUidLengthClass(uid) {
+        var len = Array.from(normalizeUidValue(uid)).length;
+        if (len >= 6) return 'nc-uid-len-6p';
+        if (len === 5) return 'nc-uid-len-5';
+        if (len === 4) return 'nc-uid-len-4';
+        return '';
+    }
+
+    function renderUidAvatar(baseClass, uid, titleText) {
+        var text = normalizeUidValue(uid);
+        var lengthClass = getUidLengthClass(text);
+        return '<div class="' + baseClass + (lengthClass ? (' ' + lengthClass) : '') + '"' +
+            (titleText ? (' title="' + escapeHtml(titleText) + '"') : '') +
+            '><span class="nc-uid-text">' + escapeHtml(text) + '</span></div>';
+    }
+
+    function applyUidAvatar(el, uid, titleText) {
+        if (!el) return;
+        var text = normalizeUidValue(uid);
+        var lengthClass = getUidLengthClass(text);
+        el.classList.remove('nc-uid-len-4', 'nc-uid-len-5', 'nc-uid-len-6p');
+        if (lengthClass) el.classList.add(lengthClass);
+        el.innerHTML = '<span class="nc-uid-text">' + escapeHtml(text) + '</span>';
+        el.title = titleText || '';
     }
 
     var _panelState = {};
@@ -72,7 +114,9 @@
                 viewerIsAdmin: false,
                 showWeightScore: false,
                 commentCharLimit: DEFAULT_COMMENT_CHAR_LIMIT,
-                banExpiresAt: ''
+                banExpiresAt: '',
+                localPinnedComments: {},
+                localPinnedCommentOrder: []
             };
         }
         return _panelState[noticeId];
@@ -118,7 +162,8 @@
         var row = document.getElementById('nc-rr-' + noticeId);
         var panel = row ? row.closest('.nc-panel') : null;
         var panelWidth = panel ? panel.clientWidth : 0;
-        return panelWidth && panelWidth <= 360 ? 4 : MAX_VISIBLE_REACTIONS;
+        if (panelWidth && panelWidth <= 340) return 3;
+        return panelWidth && panelWidth <= 400 ? 4 : MAX_VISIBLE_REACTIONS;
     }
 
     function _getCommentCharLimit(noticeId) {
@@ -131,76 +176,13 @@
         return _getCommentCharLimit(noticeId) - countCharacters(input ? input.value : '');
     }
 
-    function _prefersReducedMotion() {
-        return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-    }
-
     function _animateReactionToggle(noticeId, reactions, expand) {
-        var header = document.getElementById('nc-rh-' + noticeId);
-        var row = document.getElementById('nc-rr-' + noticeId);
         var state = _getState(noticeId);
-        if (!row || !header || _prefersReducedMotion()) {
-            state.reactionsExpanded = expand;
-            _renderReactions(noticeId, reactions);
-            return;
-        }
-
-        var startHeight = Math.max(row.getBoundingClientRect().height, row.scrollHeight, 28);
-        var startHeaderHeight = Math.max(header.getBoundingClientRect().height, header.scrollHeight, 48);
-        header.classList.add('nc-animating');
-        row.classList.add('nc-animating');
-        header.style.maxHeight = startHeaderHeight + 'px';
-        row.style.maxHeight = startHeight + 'px';
-        row.style.opacity = '1';
-        row.style.transform = 'translateY(0)';
-
+        document.querySelectorAll('.nc-emoji-picker.show').forEach(function (picker) {
+            picker.classList.remove('show');
+        });
         state.reactionsExpanded = expand;
         _renderReactions(noticeId, reactions);
-
-        var endHeight = Math.max(row.scrollHeight, 28);
-        var endHeaderHeight = Math.max(header.scrollHeight, 48);
-        if (startHeight === endHeight) {
-            header.classList.remove('nc-animating');
-            row.classList.remove('nc-animating');
-            header.style.maxHeight = '';
-            row.style.maxHeight = '';
-            row.style.opacity = '';
-            row.style.transform = '';
-            return;
-        }
-
-        header.style.maxHeight = startHeaderHeight + 'px';
-        row.style.maxHeight = startHeight + 'px';
-        row.style.opacity = '0.5';
-        row.style.transform = expand ? 'translateY(6px)' : 'translateY(-6px)';
-        header.offsetHeight;
-
-        var cleaned = false;
-        function cleanup() {
-            if (cleaned) return;
-            cleaned = true;
-            header.classList.remove('nc-animating');
-            row.classList.remove('nc-animating');
-            header.style.maxHeight = '';
-            row.style.maxHeight = '';
-            row.style.opacity = '';
-            row.style.transform = '';
-            row.removeEventListener('transitionend', onEnd);
-            window.clearTimeout(fallback);
-        }
-        function onEnd(e) {
-            if (e.target !== row || e.propertyName !== 'max-height') return;
-            cleanup();
-        }
-        row.addEventListener('transitionend', onEnd);
-        var fallback = window.setTimeout(cleanup, 550);
-
-        requestAnimationFrame(function () {
-            header.style.maxHeight = endHeaderHeight + 'px';
-            row.style.maxHeight = endHeight + 'px';
-            row.style.opacity = '1';
-            row.style.transform = 'translateY(0)';
-        });
     }
 
     function _normalizeLiker(entry) {
@@ -264,12 +246,13 @@
             body.innerHTML = '<div class="nc-likers-empty">暂时还没有人点赞</div>';
         } else {
             body.innerHTML = users.map(function (user) {
-                var uid = escapeHtml(user.uid || '?');
+                var uid = normalizeUidValue(user.uid);
+                var safeUid = escapeHtml(uid);
                 var alias = escapeHtml((user.alias || '').trim() || '暂无昵称');
                 return '<div class="nc-likers-item">' +
-                    '  <div class="nc-likers-avatar">' + uid + '</div>' +
+                    '  ' + renderUidAvatar('nc-likers-avatar', uid, '用户#' + uid) +
                     '  <div class="nc-likers-meta">' +
-                    '    <div class="nc-likers-name">用户#' + uid + '</div>' +
+                    '    <div class="nc-likers-name">用户#' + safeUid + '</div>' +
                     '    <div class="nc-likers-alias">' + alias + '</div>' +
                     '  </div>' +
                     '</div>';
@@ -345,6 +328,7 @@
         if (!container || !noticeId) return;
         var id = noticeId;
         _panelState[id] = null;
+        container.setAttribute('data-nc-notice-id', id);
 
         var baseUrl = _getBaseUrl();
         if (!baseUrl) {
@@ -403,9 +387,7 @@
 
         var myUid = _getUserSeqId();
         var avatarEl = document.getElementById('nc-my-avatar-' + id);
-        if (avatarEl && myUid) {
-            avatarEl.textContent = myUid;
-        }
+        applyUidAvatar(avatarEl, myUid || '?', myUid ? ('用户#' + normalizeUidValue(myUid)) : '');
 
         var input = document.getElementById('nc-input-' + id);
         var sendBtn = document.getElementById('nc-send-' + id);
@@ -530,13 +512,16 @@
             return '<span class="nc-emoji-picker-item" data-emoji="' + e + '" data-nid="' + noticeId + '">' + e + '</span>';
         }).join('');
 
-        row.innerHTML = pills + moreBtn +
+        row.innerHTML =
+            '<div class="nc-reaction-list' + (state.reactionsExpanded ? ' nc-expanded' : '') + '">' + pills + '</div>' +
+            '<div class="nc-reaction-tools">' +
+            moreBtn +
             '<div class="nc-picker-wrap">' +
             '  <button class="nc-add-reaction-btn" id="nc-add-r-' + noticeId + '" type="button" title="添加表情">😀</button>' +
             '  <div class="nc-emoji-picker" id="nc-picker-' + noticeId + '">' + pickerItems + '</div>' +
+            '</div>' +
             '</div>';
 
-        // 根据展开状态切换 class（CSS transition 在这里生效）
         if (state.reactionsExpanded) row.classList.add('nc-expanded');
         else row.classList.remove('nc-expanded');
 
@@ -735,18 +720,62 @@
             if (Number(state.comments[i].id) === Number(commentId)) {
                 return state.comments[i];
             }
+            var topReplies = Array.isArray(state.comments[i].top_replies) ? state.comments[i].top_replies : [];
+            for (var j = 0; j < topReplies.length; j++) {
+                if (Number(topReplies[j].id) === Number(commentId)) {
+                    return topReplies[j];
+                }
+            }
         }
         var replyKeys = Object.keys(state.replyCache || {});
-        for (var j = 0; j < replyKeys.length; j++) {
-            var replyState = state.replyCache[replyKeys[j]];
+        for (var k = 0; k < replyKeys.length; k++) {
+            var replyState = state.replyCache[replyKeys[k]];
             if (!replyState || !Array.isArray(replyState.items)) continue;
-            for (var k = 0; k < replyState.items.length; k++) {
-                if (Number(replyState.items[k].id) === Number(commentId)) {
-                    return replyState.items[k];
+            for (var m = 0; m < replyState.items.length; m++) {
+                if (Number(replyState.items[m].id) === Number(commentId)) {
+                    return replyState.items[m];
                 }
             }
         }
         return null;
+    }
+
+    function _upsertLocalPinnedComment(noticeId, comment) {
+        if (!comment || Number(comment.parent_id || 0) !== 0 || !comment.id) return;
+        var state = _getState(noticeId);
+        state.localPinnedComments[comment.id] = comment;
+        state.localPinnedCommentOrder = state.localPinnedCommentOrder.filter(function (id) {
+            return Number(id) !== Number(comment.id);
+        });
+        state.localPinnedCommentOrder.unshift(comment.id);
+    }
+
+    function _removeLocalPinnedComment(noticeId, commentId) {
+        var state = _getState(noticeId);
+        delete state.localPinnedComments[commentId];
+        state.localPinnedCommentOrder = state.localPinnedCommentOrder.filter(function (id) {
+            return Number(id) !== Number(commentId);
+        });
+    }
+
+    function _getDisplayComments(state) {
+        var display = [];
+        var seen = {};
+        state.localPinnedCommentOrder.forEach(function (id) {
+            var item = state.localPinnedComments[id];
+            if (!item) return;
+            display.push(item);
+            seen[item.id] = true;
+        });
+        state.comments.forEach(function (item) {
+            if (seen[item.id]) {
+                state.localPinnedComments[item.id] = item;
+                return;
+            }
+            display.push(item);
+            seen[item.id] = true;
+        });
+        return display;
     }
 
     function _syncComposerHeight(noticeId) {
@@ -815,18 +844,19 @@
         var list = document.getElementById('nc-cl-' + noticeId);
         if (!list) return;
         var state = _getState(noticeId);
+        var displayComments = _getDisplayComments(state);
 
-        if (!state.comments.length && !state.isLoadingComments) {
+        if (!displayComments.length && !state.isLoadingComments) {
             list.innerHTML = _renderCommentFooter(state);
             return;
         }
 
-        var html = state.comments.map(function (c) {
+        var html = displayComments.map(function (c) {
             return _renderCommentItem(c, noticeId);
         }).join('') + _renderCommentFooter(state);
         list.innerHTML = html;
         _bindCommentEvents(list, noticeId);
-        state.comments.forEach(function (comment) {
+        displayComments.forEach(function (comment) {
             if (!state.expandedReplies[comment.id] || Number(comment.reply_count || 0) <= 0) return;
             var replyState = state.replyCache[comment.id];
             if (!replyState || (!replyState.loaded && !replyState.loading)) {
@@ -864,20 +894,38 @@
 
     function _renderCommentItem(c, noticeId) {
         var state = _getState(noticeId);
-        var uid = c.uid || '?';
+        var uid = normalizeUidValue(c.uid);
         var replyCount = Number(c.reply_count || 0);
         var isExpanded = !!state.expandedReplies[c.id];
         var replyState = state.replyCache[c.id] || { items: [], loading: false, loaded: false, visibleCount: REPLY_BATCH_SIZE };
         var repliesHtml = '';
 
         if (replyCount > 0) {
-            var toggleLabel = isExpanded ? '收起回复' : ('查看 ' + replyCount + ' 条回复');
-            repliesHtml += '<div class="nc-reply-toggle">' +
-                '<button class="nc-reply-toggle-btn" data-cid="' + c.id + '" data-nid="' + noticeId + '">' +
-                '── ' + toggleLabel +
-                '</button></div>';
-
-            if (isExpanded) {
+            if (!isExpanded) {
+                // 未展开：显示预览子评论（最多2条高权重）
+                var topReplies = Array.isArray(c.top_replies) ? c.top_replies : [];
+                if (topReplies.length > 0) {
+                    repliesHtml += '<div class="nc-preview-replies">';
+                    repliesHtml += topReplies.slice(0, 2).map(function (r) {
+                        var rUid = r.uid || '?';
+                        var rName = (r.alias && r.alias.trim()) ? escapeHtml(r.alias.trim()) : ('用户#' + escapeHtml(rUid));
+                        var rContent = escapeHtml(String(r.content || '').replace(/^\s*回复\s*@[^:：]+[:：]\s*/, ''));
+                        var likeCount = Number(r.like_count || 0);
+                        var likeHtml = '<button class="nc-preview-reply-like' + (r.liked ? ' nc-liked' : '') + '" type="button" data-action="like" data-cid="' + r.id + '">' +
+                            '<i class="' + (r.liked ? 'ri-heart-fill' : 'ri-heart-line') + '"></i>' +
+                            '<span>' + likeCount + '</span>' +
+                            '</button>';
+                        return '<div class="nc-preview-reply">' +
+                            '<span class="nc-preview-reply-name">' + rName + '：</span>' +
+                            '<span class="nc-preview-reply-content">' + rContent + '</span>' +
+                            likeHtml + '</div>';
+                    }).join('');
+                    repliesHtml += '</div>';
+                }
+                // "共X条回复 >" 链接
+                repliesHtml += '<div class="nc-reply-toggle" style="padding-left:36px;"><button class="nc-reply-total-link" data-cid="' + c.id + '" data-nid="' + noticeId + '">共' + replyCount + '条回复 <i class="ri-arrow-right-s-line"></i></button></div>';
+            } else {
+                // 已展开：显示完整回复列表
                 if (replyState.loading) {
                     repliesHtml += '<div class="nc-replies-wrap nc-open"><div class="nc-reply-loading"><i class="ri-loader-4-line"></i><span>正在加载回复...</span></div></div>';
                 } else if (replyState.loaded && replyState.items.length) {
@@ -894,13 +942,18 @@
                 } else if (replyState.loaded) {
                     repliesHtml += '<div class="nc-replies-wrap nc-open"><div class="nc-reply-loading"><span>暂时还没有可显示的回复</span></div></div>';
                 }
+                // 展开状态下的收起按钮
+                repliesHtml += '<div class="nc-reply-toggle" style="padding-left:36px;"><button class="nc-reply-total-link" data-cid="' + c.id + '" data-nid="' + noticeId + '">收起回复</button></div>';
             }
         }
 
+        var selfBadge = (String(_getUserSeqId()) === String(uid) && uid !== '?') ? '<span class="nc-self-badge">我</span>' : '';
+
         return '<div class="nc-comment-item" data-comment-id="' + c.id + '">' +
             '<div class="nc-comment-head">' +
-            '  <div class="nc-comment-avatar">' + escapeHtml(uid) + '</div>' +
+            '  ' + renderUidAvatar('nc-comment-avatar', uid, '用户#' + uid) +
             '  <span class="nc-comment-uid">用户#' + escapeHtml(uid) + '</span>' +
+            selfBadge +
             _renderTagBadges(c.tags) +
             (state.showWeightScore ? ('  <span class="nc-comment-score">权重 ' + escapeHtml(formatWeight(c.weight_score || 0)) + '</span>') : '') +
             '  <span class="nc-comment-time">' + timeAgo(c.created_at) + '</span>' +
@@ -917,12 +970,14 @@
 
     function _renderReplyItem(r, noticeId) {
         var state = _getState(noticeId);
-        var uid = r.uid || '?';
+        var uid = normalizeUidValue(r.uid);
         var bodyHtml = _renderReplyBody(r);
+        var selfBadge = (String(_getUserSeqId()) === String(uid) && uid !== '?') ? '<span class="nc-self-badge">我</span>' : '';
         return '<div class="nc-reply-item" data-comment-id="' + r.id + '">' +
             '<div class="nc-reply-head">' +
-            '  <div class="nc-reply-avatar">' + escapeHtml(uid) + '</div>' +
+            '  ' + renderUidAvatar('nc-reply-avatar', uid, '用户#' + uid) +
             '  <span class="nc-reply-uid">用户#' + escapeHtml(uid) + '</span>' +
+            selfBadge +
             _renderTagBadges(r.tags) +
             (state.showWeightScore ? ('  <span class="nc-comment-score nc-reply-score">权重 ' + escapeHtml(formatWeight(r.weight_score || 0)) + '</span>') : '') +
             '  <span class="nc-reply-time">' + timeAgo(r.created_at) + '</span>' +
@@ -953,6 +1008,14 @@
         });
 
         container.querySelectorAll('.nc-reply-toggle-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var cid = Number(btn.getAttribute('data-cid'));
+                _toggleReplies(noticeId, cid);
+            });
+        });
+
+        // "共X条回复" 和 "收起回复" 链接
+        container.querySelectorAll('.nc-reply-total-link').forEach(function (btn) {
             btn.addEventListener('click', function () {
                 var cid = Number(btn.getAttribute('data-cid'));
                 _toggleReplies(noticeId, cid);
@@ -1040,6 +1103,11 @@
         // 乐观更新：立即切换UI状态
         var state = _getState(noticeId);
         var allItems = state.comments.slice();
+        state.comments.forEach(function (comment) {
+            if (Array.isArray(comment.top_replies) && comment.top_replies.length) {
+                allItems = allItems.concat(comment.top_replies);
+            }
+        });
         // 也检查回复缓存
         Object.keys(state.replyCache).forEach(function (key) {
             var rc = state.replyCache[key];
@@ -1063,13 +1131,23 @@
                 body: JSON.stringify({ comment_id: commentId, machine_id: hwid })
             });
         }).then(function (r) { return r.json(); }).then(function (data) {
-            // API 成功，状态已同步
+            // 用后端返回的精确数据同步权重
+            if (target && data) {
+                if (typeof data.like_count === 'number') target.like_count = data.like_count;
+                if (typeof data.liked !== 'undefined') target.liked = !!data.liked;
+                if (typeof data.weight_score !== 'undefined') target.weight_score = data.weight_score;
+                _renderComments(noticeId);
+            } else {
+                _loadComments(noticeId, { reset: true });
+            }
         }).catch(function () {
             // 失败时回滚
             if (target) {
                 target.liked = !target.liked;
                 target.like_count = Math.max(0, (target.like_count || 0) + (target.liked ? 1 : -1));
                 _renderComments(noticeId);
+            } else {
+                _showToast('点赞失败，请重试');
             }
         });
     }
@@ -1122,12 +1200,38 @@
             if (data.status === 'success') {
                 input.value = '';
                 if (sendBtn) sendBtn.disabled = true;
+                if (data.comment) {
+                    state.totalCount = Number(state.totalCount || 0) + 1;
+                    if (parentId === 0) {
+                        _upsertLocalPinnedComment(noticeId, data.comment);
+                    }
+                }
                 if (parentId > 0) {
                     state.expandedReplies[parentId] = true;
                     delete state.replyCache[parentId];
+                    var parentComment = _findCommentById(noticeId, parentId);
+                    if (parentComment) {
+                        parentComment.reply_count = Number(parentComment.reply_count || 0) + 1;
+                    }
                 }
                 _cancelReply(noticeId);
+                _renderComments(noticeId);
+                _updateStats(noticeId);
+                var scrollToCommentId = (data.comment && data.comment.id) ? data.comment.id : null;
                 _loadComments(noticeId, { reset: true });
+                // 发评论成功后滚动定位到新评论
+                if (scrollToCommentId) {
+                    setTimeout(function () {
+                        var container = document.querySelector('.nc-panel[data-nc-notice-id="' + noticeId + '"] .nc-comment-list');
+                        var el = container && container.querySelector('[data-comment-id="' + scrollToCommentId + '"]');
+                        if (el && container) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            el.style.transition = 'background 0.3s ease';
+                            el.style.background = 'rgba(249, 115, 22, 0.08)';
+                            setTimeout(function () { el.style.background = ''; }, 2000);
+                        }
+                    }, 600);
+                }
             } else {
                 _showToast(data.error || '发送失败');
                 if (sendBtn) sendBtn.disabled = false;
@@ -1154,15 +1258,28 @@
     }
 
     var _activeMoreMenu = null;
+    var _activeMoreMenuAnchor = null;
+    var _activeMoreMenuCommentId = null;
+    var _activeMoreMenuOutsideClose = null;
 
     function _closeMoreMenu() {
         if (_activeMoreMenu) {
             _activeMoreMenu.remove();
             _activeMoreMenu = null;
         }
+        if (_activeMoreMenuOutsideClose) {
+            document.removeEventListener('click', _activeMoreMenuOutsideClose);
+            _activeMoreMenuOutsideClose = null;
+        }
+        _activeMoreMenuAnchor = null;
+        _activeMoreMenuCommentId = null;
     }
 
     function _showMoreMenu(anchor, commentId, noticeId) {
+        if (_activeMoreMenu && _activeMoreMenuAnchor === anchor && Number(_activeMoreMenuCommentId) === Number(commentId)) {
+            _closeMoreMenu();
+            return;
+        }
         _closeMoreMenu();
         var state = _getState(noticeId);
         var entry = _findCommentById(noticeId, commentId) || {};
@@ -1183,9 +1300,25 @@
         menu.innerHTML = items.map(function (item) {
             return '<div class="nc-more-popup-item ' + item.className + '" data-action="' + item.action + '">' + item.label + '</div>';
         }).join('');
-        anchor.style.position = 'relative';
-        anchor.appendChild(menu);
+
+        // 挂载到 body 上以避免父容器 overflow 裁剪
+        document.body.appendChild(menu);
         _activeMoreMenu = menu;
+        _activeMoreMenuAnchor = anchor;
+        _activeMoreMenuCommentId = commentId;
+
+        // 基于 anchor 位置定位菜单
+        var rect = anchor.getBoundingClientRect();
+        var menuHeight = menu.offsetHeight || 120;
+        var spaceAbove = rect.top;
+        var topPos;
+        if (spaceAbove > menuHeight + 8) {
+            topPos = rect.top - menuHeight - 4;
+        } else {
+            topPos = rect.bottom + 4;
+        }
+        menu.style.top = topPos + 'px';
+        menu.style.left = Math.max(4, rect.right - menu.offsetWidth) + 'px';
 
         menu.querySelectorAll('[data-action]').forEach(function (item) {
             item.addEventListener('click', function (e) {
@@ -1209,9 +1342,9 @@
             function outsideClose(ev) {
                 if (!menu.contains(ev.target)) {
                     _closeMoreMenu();
-                    document.removeEventListener('click', outsideClose);
                 }
             }
+            _activeMoreMenuOutsideClose = outsideClose;
             document.addEventListener('click', outsideClose);
         }, 0);
     }
@@ -1295,6 +1428,7 @@
             if (data.status === 'success') {
                 _showToast('评论已删除', 'success');
                 var state = _getState(noticeId);
+                _removeLocalPinnedComment(noticeId, commentId);
                 if (state.replyingTo && Number(state.replyingTo.targetId) === Number(commentId)) {
                     _cancelReply(noticeId);
                 }
@@ -1371,7 +1505,15 @@
             if (data.status === 'success') {
                 closeDialog();
                 _showToast('评论权重已更新', 'success');
-                _loadComments(noticeId, { reset: true });
+                // 实时更新权重分数，避免全量刷新
+                var target = _findCommentById(noticeId, commentId);
+                if (target && typeof data.weight_score !== 'undefined') {
+                    target.weight_score = data.weight_score;
+                    if (typeof data.weight_adjustment !== 'undefined') target.weight_adjustment = data.weight_adjustment;
+                    _renderComments(noticeId);
+                } else {
+                    _loadComments(noticeId, { reset: true });
+                }
             } else {
                 _showToast(data.error || '调整失败');
             }

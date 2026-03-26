@@ -339,6 +339,78 @@ func buildReplyCountMap(noticeID uint, parentIDs []uint) map[uint]int {
 	return result
 }
 
+// buildTopRepliesMap 为每条主评论获取前2条最高权重子评论用于预览
+func buildTopRepliesMap(noticeID uint, parentIDs []uint, viewerMachineID string, weightCfg CommentWeightConfig) map[uint][]map[string]interface{} {
+	result := make(map[uint][]map[string]interface{}, len(parentIDs))
+	if len(parentIDs) == 0 {
+		return result
+	}
+
+	var allReplies []NoticeComment
+	db.Where("notice_id = ? AND parent_id IN ? AND status = 'visible'", noticeID, parentIDs).
+		Find(&allReplies)
+
+	if len(allReplies) == 0 {
+		return result
+	}
+
+	// 收集所有 machine_id
+	idSet := map[string]bool{}
+	replyIDs := make([]uint, 0, len(allReplies))
+	for _, r := range allReplies {
+		idSet[r.MachineID] = true
+		replyIDs = append(replyIDs, r.ID)
+	}
+	idList := make([]string, 0, len(idSet))
+	for k := range idSet {
+		idList = append(idList, k)
+	}
+
+	seqMap := buildSeqMap(idList)
+	aliasMap := buildAliasMap(idList)
+	authorWeightMap := buildCommentAuthorWeightMap(idList, weightCfg)
+	likedSet := buildLikedCommentSet(viewerMachineID, replyIDs)
+	tagsMap := buildTagsMap(idList)
+
+	// 按 parent_id 分组并排序取 top 2
+	grouped := map[uint][]rankedNoticeComment{}
+	for _, r := range allReplies {
+		authorWeight := authorWeightMap[r.MachineID]
+		ws := computeCommentWeight(r.LikeCount, 0, authorWeight, r.WeightAdjustment)
+		grouped[r.ParentID] = append(grouped[r.ParentID], rankedNoticeComment{
+			Comment:      r,
+			WeightScore:  ws,
+			AuthorWeight: authorWeight,
+		})
+	}
+
+	for pid, items := range grouped {
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].WeightScore != items[j].WeightScore {
+				return items[i].WeightScore > items[j].WeightScore
+			}
+			return items[i].Comment.ID > items[j].Comment.ID
+		})
+		topN := 2
+		if len(items) < topN {
+			topN = len(items)
+		}
+		previews := make([]map[string]interface{}, 0, topN)
+		for _, ranked := range items[:topN] {
+			item := serializeComment(ranked.Comment, seqMap, likedSet, tagsMap)
+			// 附加 alias 用于前端显示用户名
+			if alias, ok := aliasMap[ranked.Comment.MachineID]; ok && strings.TrimSpace(alias) != "" {
+				item["alias"] = alias
+			}
+			item["weight_score"] = ranked.WeightScore
+			previews = append(previews, item)
+		}
+		result[pid] = previews
+	}
+
+	return result
+}
+
 func buildRankedNoticeComments(noticeID uint) ([]rankedNoticeComment, error) {
 	var comments []NoticeComment
 	if err := db.Where("notice_id = ? AND parent_id = 0 AND status = 'visible'", noticeID).
@@ -452,12 +524,27 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		tagsMap := buildTagsMap(idList)
 
 		result := make([]map[string]interface{}, 0, len(pageItems))
+		// 收集所有主评论 ID 用于批量查询子评论预览
+		allParentIDs := make([]uint, 0, len(pageItems))
+		for _, ranked := range pageItems {
+			if ranked.ReplyCount > 0 {
+				allParentIDs = append(allParentIDs, ranked.Comment.ID)
+			}
+		}
+		// 批量查询每条主评论的 top 2 子评论（按权重排序）
+		topRepliesMap := buildTopRepliesMap(noticeID, allParentIDs, machineID, weightCfg)
+
 		for _, ranked := range pageItems {
 			item := serializeComment(ranked.Comment, seqMap, likedSet, tagsMap)
 			item["replies"] = []map[string]interface{}{}
 			item["reply_count"] = ranked.ReplyCount
 			item["author_weight"] = ranked.AuthorWeight
 			item["weight_score"] = ranked.WeightScore
+			if topReplies, ok := topRepliesMap[ranked.Comment.ID]; ok {
+				item["top_replies"] = topReplies
+			} else {
+				item["top_replies"] = []map[string]interface{}{}
+			}
 			attachCommentMeta(item, ranked.Comment, machineID, viewerIsAdmin, seqMap, nil, nil)
 			result = append(result, item)
 		}
@@ -770,7 +857,19 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			// 已点赞 → 取消
 			db.Delete(&existing)
 			db.Model(&comment).Update("like_count", gorm.Expr("CASE WHEN like_count > 0 THEN like_count - 1 ELSE 0 END"))
-			c.JSON(200, gin.H{"status": "unliked"})
+			db.First(&comment, req.CommentID)
+			weightCfg := LoadCommentWeightConfig()
+			replyCount := 0
+			if comment.ParentID == 0 {
+				replyCount = buildReplyCountMap(comment.NoticeID, []uint{comment.ID})[comment.ID]
+			}
+			authorWeight := buildCommentAuthorWeightMap([]string{comment.MachineID}, weightCfg)[comment.MachineID]
+			c.JSON(200, gin.H{
+				"status":       "unliked",
+				"liked":        false,
+				"like_count":   comment.LikeCount,
+				"weight_score": computeCommentWeight(comment.LikeCount, replyCount, authorWeight, comment.WeightAdjustment),
+			})
 			return
 		}
 
@@ -784,7 +883,19 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			return
 		}
 		db.Model(&comment).Update("like_count", gorm.Expr("like_count + 1"))
-		c.JSON(200, gin.H{"status": "liked"})
+		db.First(&comment, req.CommentID)
+		weightCfg := LoadCommentWeightConfig()
+		replyCount := 0
+		if comment.ParentID == 0 {
+			replyCount = buildReplyCountMap(comment.NoticeID, []uint{comment.ID})[comment.ID]
+		}
+		authorWeight := buildCommentAuthorWeightMap([]string{comment.MachineID}, weightCfg)[comment.MachineID]
+		c.JSON(200, gin.H{
+			"status":       "liked",
+			"liked":        true,
+			"like_count":   comment.LikeCount,
+			"weight_score": computeCommentWeight(comment.LikeCount, replyCount, authorWeight, comment.WeightAdjustment),
+		})
 	})
 
 	// 举报评论

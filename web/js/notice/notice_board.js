@@ -81,19 +81,49 @@
         return [];
     }
 
+    function parseNoticeDateParts(dateStr) {
+        if (!dateStr) return null;
+        var s = String(dateStr).trim();
+        var match = null;
+
+        if (!s) return null;
+        if (s === '今天') {
+            var today = new Date();
+            return { month: today.getMonth() + 1, day: today.getDate() };
+        }
+
+        match = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+        if (match) {
+            return { month: parseInt(match[2], 10), day: parseInt(match[3], 10) };
+        }
+
+        match = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:\s+.*)?$/);
+        if (match) {
+            return { month: parseInt(match[2], 10), day: parseInt(match[3], 10) };
+        }
+
+        match = s.match(/^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日?$/);
+        if (match) {
+            return { month: parseInt(match[2], 10), day: parseInt(match[3], 10) };
+        }
+
+        match = s.match(/^(\d{1,2})月\s*(\d{1,2})日?$/);
+        if (match) {
+            return { month: parseInt(match[1], 10), day: parseInt(match[2], 10) };
+        }
+
+        match = s.match(/^(\d{1,2})[\/\-.](\d{1,2})$/);
+        if (match) {
+            return { month: parseInt(match[1], 10), day: parseInt(match[2], 10) };
+        }
+
+        return null;
+    }
+
     /* 将日期文本简化为 M.D 格式（如 "3.16"），用于往期动态列表展示 */
     function formatShortDate(dateStr) {
-        if (!dateStr) return '';
-        var s = String(dateStr).trim();
-        if (s === '今天') {
-            var d = new Date();
-            return (d.getMonth() + 1) + '.' + d.getDate();
-        }
-        var m = s.match(/(\d{1,2})\s*月\s*(\d{1,2})/);
-        if (m) return m[1] + '.' + m[2];
-        m = s.match(/(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.]|$)/);
-        if (m) return parseInt(m[1], 10) + '.' + parseInt(m[2], 10);
-        return '';
+        var parts = parseNoticeDateParts(dateStr);
+        return parts ? (parts.month + '.' + parts.day) : '';
     }
 
     function renderNoticeBoard(app) {

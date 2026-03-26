@@ -21,7 +21,7 @@
     max-width: 400px;
     display: flex;
     flex-direction: column;
-    background: #fafbfc;
+    background: #ffffff;
     overflow: hidden;
 }
 
@@ -73,36 +73,43 @@
     padding: 14px 18px;
     border-bottom: 1px solid #f1f5f9;
     background: #ffffff;
-    transition: max-height 0.3s ease;
     overflow: visible;
     position: relative;
     z-index: 12;
 }
 
 .nc-reaction-row {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    flex-wrap: nowrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: flex-start;
+    column-gap: 8px;
     overflow: visible;
     min-width: 0;
     padding-top: 3px;
-    max-height: 41px;
-    transition: max-height 0.38s cubic-bezier(0.22, 1, 0.36, 1),
-        opacity 0.28s ease,
-        transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: max-height, opacity, transform;
+    height: auto;
 }
 
-.nc-reaction-row.nc-expanded {
+.nc-reaction-list {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+.nc-reaction-list.nc-expanded {
+    align-items: flex-start;
     flex-wrap: wrap;
     row-gap: 8px;
-    max-height: 300px;
 }
 
-.nc-reaction-header.nc-animating,
-.nc-reaction-row.nc-animating {
-    overflow: hidden;
+.nc-reaction-tools {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 .nc-reaction-pill {
@@ -115,7 +122,7 @@
     background: #ffffff;
     font-size: 12px;
     cursor: pointer;
-    transition: all 0.18s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
     user-select: none;
     white-space: nowrap;
     flex-shrink: 0;
@@ -124,12 +131,11 @@
 .nc-reaction-pill:hover {
     background: #f0f0f0;
     border-color: #d1d5db;
-    transform: translateY(-1px);
 }
 
 .nc-reaction-pill.active {
-    border-color: #3b82f6;
-    background: #eff6ff;
+    border-color: #d1d5db;
+    background: #f9fafb;
 }
 
 .nc-reaction-pill .nc-r-emoji {
@@ -155,7 +161,7 @@
     font-weight: 600;
     color: #9ca3af;
     cursor: pointer;
-    transition: all 0.18s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     flex-shrink: 0;
     white-space: nowrap;
 }
@@ -177,7 +183,7 @@
     background: transparent;
     font-size: 13px;
     cursor: pointer;
-    transition: all 0.18s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     color: #9ca3af;
     flex-shrink: 0;
 }
@@ -191,7 +197,6 @@
 .nc-picker-wrap {
     position: relative;
     display: inline-flex;
-    margin-left: auto;
 }
 
 .nc-emoji-picker {
@@ -208,15 +213,15 @@
     grid-template-columns: repeat(7, 1fr);
     gap: 2px;
     opacity: 0;
-    transform: translateY(-6px) scale(0.95);
-    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform: translateY(4px);
+    transition: opacity 0.14s ease, transform 0.14s ease;
     pointer-events: none;
     min-width: 260px;
 }
 
 .nc-emoji-picker.show {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
     pointer-events: auto;
 }
 
@@ -234,7 +239,7 @@
 
 .nc-emoji-picker-item:hover {
     background: #f3f4f6;
-    transform: scale(1.2);
+    transform: scale(1.05);
 }
 
 /* 统计栏 */
@@ -874,6 +879,69 @@
     font-size: 13px;
 }
 
+.nc-comment-avatar,
+.nc-reply-avatar,
+.nc-input-avatar,
+.nc-likers-avatar {
+    box-sizing: border-box;
+    overflow: hidden;
+    padding: 0 2px;
+    font-size: var(--nc-uid-font-size);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.nc-comment-avatar,
+.nc-input-avatar {
+    --nc-uid-font-size: 11px;
+    --nc-uid-font-size-4: 9px;
+    --nc-uid-font-size-5: 7px;
+    --nc-uid-font-size-6p: 6px;
+}
+
+.nc-reply-avatar {
+    --nc-uid-font-size: 9px;
+    --nc-uid-font-size-4: 7px;
+    --nc-uid-font-size-5: 6px;
+    --nc-uid-font-size-6p: 5px;
+}
+
+.nc-likers-avatar {
+    --nc-uid-font-size: 12px;
+    --nc-uid-font-size-4: 10px;
+    --nc-uid-font-size-5: 8px;
+    --nc-uid-font-size-6p: 7px;
+}
+
+.nc-comment-avatar.nc-uid-len-4,
+.nc-reply-avatar.nc-uid-len-4,
+.nc-input-avatar.nc-uid-len-4,
+.nc-likers-avatar.nc-uid-len-4 {
+    font-size: var(--nc-uid-font-size-4);
+}
+
+.nc-comment-avatar.nc-uid-len-5,
+.nc-reply-avatar.nc-uid-len-5,
+.nc-input-avatar.nc-uid-len-5,
+.nc-likers-avatar.nc-uid-len-5 {
+    font-size: var(--nc-uid-font-size-5);
+}
+
+.nc-comment-avatar.nc-uid-len-6p,
+.nc-reply-avatar.nc-uid-len-6p,
+.nc-input-avatar.nc-uid-len-6p,
+.nc-likers-avatar.nc-uid-len-6p {
+    font-size: var(--nc-uid-font-size-6p);
+}
+
+.nc-uid-text {
+    display: block;
+    max-width: 100%;
+    white-space: nowrap;
+    line-height: 1;
+    letter-spacing: -0.03em;
+}
+
 
 /* @用户 蓝色高亮 */
 .nc-reply-mention {
@@ -934,10 +1002,8 @@
 
 /* 三点弹出小菜单 */
 .nc-more-popup {
-    position: absolute;
-    bottom: calc(100% + 4px);
-    right: -4px;
-    z-index: 200;
+    position: fixed;
+    z-index: 20050;
     background: #ffffff;
     border: 1px solid #e5e7eb;
     border-radius: 10px;
@@ -1189,7 +1255,7 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
-    z-index: 10010;
+    z-index: 20000;
     opacity: 0;
     transition: opacity 0.2s ease;
     pointer-events: none;
@@ -1346,6 +1412,134 @@
     background: #0f172a;
 }
 
+/* 「我」标识 */
+.nc-self-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: #f97316;
+    background: rgba(249, 115, 22, 0.1);
+    border: 1px solid rgba(249, 115, 22, 0.25);
+    border-radius: 4px;
+    padding: 0 4px;
+    height: 16px;
+    line-height: 16px;
+    margin-left: 4px;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+/* 子评论预览区 */
+.nc-preview-replies {
+    margin-top: 6px;
+    padding-left: 36px;
+}
+
+.nc-preview-reply {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 4px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #4b5563;
+}
+
+.nc-preview-reply-name {
+    font-weight: 700;
+    color: #111827;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.nc-preview-reply-content {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.nc-preview-reply-like {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: #9ca3af;
+    font-size: 11px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 0.15s ease;
+}
+
+.nc-preview-reply-like:hover {
+    color: #6b7280;
+}
+
+.nc-preview-reply-like.nc-liked {
+    color: #ef4444;
+}
+
+.nc-preview-reply-like.nc-liked:hover {
+    color: #dc2626;
+}
+
+.nc-reply-total-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #9ca3af;
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 4px 0;
+    margin-top: 2px;
+    font-family: inherit;
+    transition: color 0.15s ease;
+}
+
+.nc-reply-total-link:hover {
+    color: #3b82f6;
+}
+
+/* 表情选择器分组分界线 */
+.nc-emoji-picker-divider {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 4px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #9ca3af;
+    white-space: nowrap;
+}
+
+.nc-emoji-picker-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e5e7eb;
+}
+
+/* UID 显示 */
+.up-uid-display {
+    font-size: 12px;
+    color: #9ca3af;
+    font-weight: 500;
+    flex-shrink: 0;
+    white-space: nowrap;
+    user-select: all;
+}
+
 /* 暗色主题 */
 [data-theme="dark"] .nc-panel {
     background: #0f172a;
@@ -1388,8 +1582,8 @@
 }
 
 [data-theme="dark"] .nc-reaction-pill.active {
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="dark"] .nc-reaction-pill .nc-r-count {

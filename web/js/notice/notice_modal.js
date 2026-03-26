@@ -347,29 +347,58 @@
             '<div class="notice-reaction-picker">' + pickerItems + '</div>';
     }
 
+    function _closeReactionPicker(picker) {
+        if (!picker) return;
+        if (picker._noticeReactionCloseTimer) {
+            clearTimeout(picker._noticeReactionCloseTimer);
+            picker._noticeReactionCloseTimer = null;
+        }
+        picker.classList.remove('show');
+        picker.classList.add('closing');
+        if (picker._noticeReactionDocHandler) {
+            document.removeEventListener('click', picker._noticeReactionDocHandler);
+            picker._noticeReactionDocHandler = null;
+        }
+        picker._noticeReactionCloseTimer = setTimeout(function() {
+            picker.classList.remove('closing');
+            picker._noticeReactionCloseTimer = null;
+        }, 220);
+    }
+
     /* 切换表情选择浮层 */
     function _toggleReactionPicker(btn) {
         var picker = btn.parentElement.querySelector('.notice-reaction-picker');
         if (!picker) return;
         var isOpen = picker.classList.contains('show');
-        document.querySelectorAll('.notice-reaction-picker.show').forEach(function(p) { p.classList.remove('show'); });
-        if (!isOpen) {
-            picker.classList.add('show');
-            setTimeout(function() {
-                function closePicker(e) {
-                    if (!picker.contains(e.target) && e.target !== btn) {
-                        picker.classList.remove('show');
-                        document.removeEventListener('click', closePicker);
-                    }
-                }
-                document.addEventListener('click', closePicker);
-            }, 0);
+        document.querySelectorAll('.notice-reaction-picker.show, .notice-reaction-picker.closing').forEach(function(p) {
+            if (p !== picker) _closeReactionPicker(p);
+        });
+        if (isOpen) {
+            _closeReactionPicker(picker);
+            return;
         }
+        if (picker._noticeReactionCloseTimer) {
+            clearTimeout(picker._noticeReactionCloseTimer);
+            picker._noticeReactionCloseTimer = null;
+        }
+        picker.classList.remove('closing');
+        requestAnimationFrame(function() {
+            picker.classList.add('show');
+        });
+        setTimeout(function() {
+            function closePicker(e) {
+                if (!picker.contains(e.target) && e.target !== btn) {
+                    _closeReactionPicker(picker);
+                }
+            }
+            picker._noticeReactionDocHandler = closePicker;
+            document.addEventListener('click', closePicker);
+        }, 0);
     }
 
     /* 从选择器选中表情 */
     function _onPickerSelect(emoji, noticeId) {
-        document.querySelectorAll('.notice-reaction-picker.show').forEach(function(p) { p.classList.remove('show'); });
+        document.querySelectorAll('.notice-reaction-picker.show, .notice-reaction-picker.closing').forEach(function(p) { _closeReactionPicker(p); });
         _submitReaction(noticeId, emoji);
     }
 

@@ -137,6 +137,24 @@ type AdCarouselItem struct {
 	PositionY int    `json:"position_y"` // object-position y% (0-100，默认 50)
 }
 
+// KnowledgeAdItem 信息库广告位数据结构（固定 4 个槽位）
+type KnowledgeAdItem struct {
+	ID           string `json:"id"`
+	Enabled      bool   `json:"enabled"`
+	Title        string `json:"title"`
+	Subtitle     string `json:"subtitle"`
+	Avatar       string `json:"avatar"`
+	Background   string `json:"background"`
+	URL          string `json:"url"`
+	Action       string `json:"action"` // link / popup
+	PopupContent string `json:"popup_content"`
+}
+
+// KnowledgeAdsConfig 信息库广告位配置
+type KnowledgeAdsConfig struct {
+	Items []KnowledgeAdItem `json:"items"`
+}
+
 // AdClickEvent 广告点击事件（客户端上报，用于流量统计与广告效果分析）
 type AdClickEvent struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`

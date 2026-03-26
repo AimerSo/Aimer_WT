@@ -156,3 +156,95 @@ func LoadAdCarouselInterval() int {
 	}
 	return value
 }
+
+func defaultKnowledgeAdsConfig() KnowledgeAdsConfig {
+	items := make([]KnowledgeAdItem, 4)
+	for i := range items {
+		items[i] = KnowledgeAdItem{
+			ID:     "kb_ad_" + strconv.Itoa(i+1),
+			Action: "link",
+		}
+	}
+	return KnowledgeAdsConfig{Items: items}
+}
+
+func normalizeKnowledgeAdsConfig(cfg KnowledgeAdsConfig) KnowledgeAdsConfig {
+	normalized := defaultKnowledgeAdsConfig()
+	for i := range normalized.Items {
+		if i >= len(cfg.Items) {
+			continue
+		}
+		src := cfg.Items[i]
+		dst := &normalized.Items[i]
+		dst.Enabled = src.Enabled
+		dst.Title = strings.TrimSpace(src.Title)
+		dst.Subtitle = strings.TrimSpace(src.Subtitle)
+		dst.Avatar = strings.TrimSpace(src.Avatar)
+		dst.Background = strings.TrimSpace(src.Background)
+		dst.URL = strings.TrimSpace(src.URL)
+		dst.PopupContent = strings.TrimSpace(src.PopupContent)
+		if src.ID != "" {
+			dst.ID = src.ID
+		}
+		if src.Action == "popup" {
+			dst.Action = "popup"
+		}
+	}
+	return normalized
+}
+
+func loadKnowledgeAdsConfigData() KnowledgeAdsConfig {
+	raw := LoadConfig("knowledge_ads_config")
+	if raw == "" {
+		return defaultKnowledgeAdsConfig()
+	}
+
+	var cfg KnowledgeAdsConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err == nil {
+		return normalizeKnowledgeAdsConfig(cfg)
+	}
+
+	var generic map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &generic); err == nil {
+		if itemsRaw, ok := generic["items"]; ok {
+			var items []KnowledgeAdItem
+			if err := json.Unmarshal(itemsRaw, &items); err == nil {
+				return normalizeKnowledgeAdsConfig(KnowledgeAdsConfig{Items: items})
+			}
+		}
+	}
+
+	log.Printf("[Config] 信息库广告配置反序列化失败，已回退默认配置")
+	return defaultKnowledgeAdsConfig()
+}
+
+// LoadKnowledgeAdsConfig 从数据库加载信息库广告位配置
+func LoadKnowledgeAdsConfig() string {
+	cfg := loadKnowledgeAdsConfigData()
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		log.Printf("[Config] 信息库广告配置序列化失败: %v", err)
+		fallback, _ := json.Marshal(defaultKnowledgeAdsConfig())
+		return string(fallback)
+	}
+	return string(data)
+}
+
+// SaveKnowledgeAdsConfig 将信息库广告位配置持久化
+func SaveKnowledgeAdsConfig(data string) {
+	var cfg KnowledgeAdsConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		log.Printf("[Config] 信息库广告配置保存失败，JSON 非法: %v", err)
+		safe, _ := json.Marshal(defaultKnowledgeAdsConfig())
+		SaveConfig("knowledge_ads_config", string(safe))
+		return
+	}
+
+	normalized := normalizeKnowledgeAdsConfig(cfg)
+	safe, err := json.Marshal(normalized)
+	if err != nil {
+		log.Printf("[Config] 信息库广告配置保存失败，序列化异常: %v", err)
+		return
+	}
+	SaveConfig("knowledge_ads_config", string(safe))
+}

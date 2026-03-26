@@ -84,9 +84,12 @@
         // 仅当文字宽度超出容器时才启用滚动动画（所有类型统一逻辑）
         requestAnimationFrame(function () {
             var textEl = el.querySelector('.header_banner_text');
+            var clipEl = textEl ? textEl.parentElement : null;
             if (!textEl) return;
             var clipWidth = textEl.parentElement.clientWidth;
             var textWidth = textEl.scrollWidth;
+            if (clipEl) clipEl.classList.remove('is-scrolling');
+            textEl.classList.remove('is_scrolling');
             // 文字能够完全容纳在容器内，则静态显示
             if (textWidth <= clipWidth + 2) return;
             // 文字超出容器，启用滚动
@@ -95,6 +98,7 @@
             var totalTravel = clipWidth + textWidth;
             var duration = Math.max(5, totalTravel / 30);
             textEl.style.setProperty('--scroll-duration', duration + 's');
+            if (clipEl) clipEl.classList.add('is-scrolling');
             textEl.classList.add('is_scrolling');
         });
 

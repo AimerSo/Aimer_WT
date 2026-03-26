@@ -17,6 +17,7 @@
         nickname_change_enabled: true,
         avatar_upload_enabled: true
     };
+    var VERIFY_GROUP_URL = 'https://qun.qq.com/universal-share/share?ac=1&authKey=%2FDJOR1E72xAQKvLD%2BNQmaZmD7py%2F5PUY7xHORJX4kmmKdabaRF4%2BwIJkp6s8I10U&busi_data=eyJncm91cENvZGUiOiIxMDc4MzQzNjI5IiwidG9rZW4iOiJmSUNpVXErcnNMMVhlemRNR25EbVF5TWJrbmc5bm02UmRIS0c0WHFxemdWQkRzUlVmSkVZQW11NXFkRXZkMXBDIiwidWluIjoiMTA3OTY0OTM2OSJ9&data=4qfEzEByH95wqWw0I5ButymAfP5Aj5bjksqrXyh3uAoIWg5ChDGQ3w6cocqmRaRaGbDRpFunhEYQYBHwC46GHg&svctype=4&tempid=h5_group_info';
 
     function normalizeFeatureConfig(raw) {
         return {
@@ -200,9 +201,11 @@
             var showLockedTip = !canSetNickname && !canSetAvatar;
             lockedTip.style.display = showLockedTip ? 'flex' : 'none';
             if (showLockedTip) {
-                lockedTip.innerHTML = '<i class="ri-lock-2-line"></i><span>' +
-                    (canSetProfile ? '管理员暂时关闭了资料编辑功能' : '身份验证后解锁编辑权限') +
-                    '</span>';
+                var tipText = canSetProfile ? '管理员暂时关闭了资料编辑功能' : '身份验证后解锁编辑权限';
+                var spanEl = lockedTip.querySelector('span');
+                if (spanEl) spanEl.textContent = tipText;
+                var verifyBtn = lockedTip.querySelector('.up-verify-btn');
+                if (verifyBtn) verifyBtn.style.display = canSetProfile ? 'none' : '';
             }
         }
     }
@@ -216,6 +219,13 @@
         });
         var level = profile.level || 0;
         var exp = profile.exp || 0;
+
+        // UID 显示
+        var uidEl = document.getElementById('up-uid-display');
+        var seqId = profile.seq_id || window._userSeqId || '';
+        if (uidEl && seqId) {
+            uidEl.textContent = 'UID：' + seqId;
+        }
 
         renderBadge(level);
         renderExpBar(level, exp);
@@ -398,12 +408,31 @@
         loadProfile();
     }
 
+    function showVerifyDialog() {
+        if (window.app && typeof window.app.showAlert === 'function') {
+            window.app.showAlert(
+                '请求身份认证',
+                '<div style="text-align:left; line-height:1.8; font-size:14px;">' +
+                '<p style="text-align:center; margin:0;">本功能目前仍在测试中，并不稳定。如需进行身份认证，可加群：</p>' +
+                '<p style="text-align:center; margin: 12px 0;"><a href="#" onclick="app.openExternal(\'' + VERIFY_GROUP_URL + '\'); return false;" style="font-size:20px; font-weight:700; color:#f97316; text-decoration:none; user-select:all; letter-spacing:1px;">1078343629</a></p>' +
+                '<p style="text-align:center; margin:0;">群号可跳转链接，完成认证后，您将可以<span style="color:#111827; font-weight:800;">设置昵称</span>和<span style="color:#111827; font-weight:800;">发送评论</span>。</p>' +
+                '<p style="margin-top:12px; padding:10px 12px; background:rgba(249,115,22,0.06); border-radius:8px; border-left:3px solid #f97316; font-size:13px; color:var(--text-sec);">' +
+                '<i class="ri-information-line" style="color:#f97316; margin-right:4px;"></i>受服务器资源限制，上传头像功能当前暂时仅对作者、UP主及赞助者开放上传权限。</p>' +
+                '</div>',
+                'info',
+                null,
+                { allowHtml: true }
+            );
+        }
+    }
+
     window.userProfile = {
         init: init,
         loadProfile: loadProfile,
         saveNickname: saveNickname,
         renderProfile: renderProfile,
-        applyFeatureSettings: applyFeatureSettings
+        applyFeatureSettings: applyFeatureSettings,
+        showVerifyDialog: showVerifyDialog
     };
 
     // 如果已有全局 machine_id，延迟初始化

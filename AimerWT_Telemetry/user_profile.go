@@ -206,8 +206,12 @@ func serializeProfile(p UserProfile) map[string]interface{} {
 	if p.Level >= 0 && p.Level < len(LevelExpThresholds)-1 {
 		nextLevelExp = LevelExpThresholds[p.Level+1]
 	}
+	// 查询用户 UID 序号（TelemetryRecord.ID）
+	var seqID uint
+	db.Model(&TelemetryRecord{}).Where("machine_id = ?", p.MachineID).Select("id").Scan(&seqID)
 	return map[string]interface{}{
 		"id":                      p.ID,
+		"seq_id":                  seqID,
 		"nickname":                p.Nickname,
 		"avatar_data":             p.AvatarData,
 		"level":                   p.Level,

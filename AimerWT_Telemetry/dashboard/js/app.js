@@ -393,6 +393,9 @@ const app = {
             case 'report_inbox':
                 this.loadReportInbox();
                 break;
+            case 'knowledge_ads':
+                this.loadKnowledgeAds();
+                break;
             default:
                 break;
         }
@@ -3145,6 +3148,347 @@ const app = {
             ]);
         } catch (error) {
             this.showAlert('解除封禁失败: ' + error.message, 'danger');
+        }
+    },
+
+    // ==================== 信息库广告管理 ====================
+
+    _knowledgeAdItems: [],
+
+    _createDefaultKnowledgeAdItems() {
+        return Array.from({ length: 4 }, (_, idx) => ({
+            id: `kb_ad_${idx + 1}`,
+            enabled: false,
+            title: '',
+            subtitle: '',
+            avatar: '',
+            background: '',
+            url: '',
+            action: 'link',
+            popup_content: ''
+        }));
+    },
+
+    _normalizeKnowledgeAdItems(items) {
+        const defaults = this._createDefaultKnowledgeAdItems();
+        if (!Array.isArray(items)) return defaults;
+        return defaults.map((baseItem, idx) => {
+            const raw = items[idx];
+            const item = raw && typeof raw === 'object' ? raw : {};
+            return {
+                ...baseItem,
+                ...item,
+                id: String(item.id || baseItem.id),
+                enabled: Boolean(item.enabled),
+                action: item.action === 'popup' ? 'popup' : 'link'
+            };
+        });
+    },
+
+    async loadKnowledgeAds() {
+        try {
+            const resp = await fetch(`${this.config.apiBase}/admin/knowledge-ads`);
+            if (!resp.ok) throw new Error('加载失败');
+            const data = await resp.json();
+            this._knowledgeAdItems = this._normalizeKnowledgeAdItems(data.items);
+        } catch (e) {
+            this._knowledgeAdItems = this._createDefaultKnowledgeAdItems();
+        }
+        this._renderKnowledgeAdSlots();
+        this._renderKnowledgeAdPreview();
+    },
+
+    /**
+     * 渲染 4 个广告位编辑卡片（2×2 紧凑网格）
+     */
+    _renderKnowledgeAdSlots() {
+        const container = document.getElementById('knowledgeAdSlots');
+        if (!container) return;
+        container.innerHTML = '';
+        this._knowledgeAdItems.forEach((item, idx) => {
+            const slotNum = idx + 1;
+            const statusColor = item.enabled ? '#10b981' : '#d1d5db';
+            const card = document.createElement('div');
+            card.className = 'panel';
+            card.style.cssText = 'position:relative;overflow:hidden;';
+            // 顶部启用状态指示条
+            card.innerHTML = `
+                <div style="position:absolute;top:0;left:0;right:0;height:3px;background:${item.enabled ? 'linear-gradient(90deg, #10b981, #34d399)' : 'var(--border)'};transition:background 0.3s;"></div>
+                <div class="panel-header" style="padding-top:6px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <div style="width:32px;height:32px;background:${item.enabled ? 'rgba(16,185,129,0.1)' : 'rgba(37,99,235,0.1)'};border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:${item.enabled ? '#10b981' : 'var(--primary)'};font-size:14px;transition:all 0.3s;">${slotNum}</div>
+                            <div>
+                                <div class="panel-title" style="font-size:14px;">广告位 ${slotNum} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${item.id}</span></div>
+                                <div class="panel-sub" style="display:flex;align-items:center;gap:4px;">
+                                    <span style="width:6px;height:6px;border-radius:50%;background:${statusColor};display:inline-block;"></span>
+                                    ${item.enabled ? '已启用' : '未启用'}
+                                    ${item.title ? ` · ${this.escapeHtmlSafe(item.title).substring(0, 12)}` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;user-select:none;">
+                            <input type="checkbox" ${item.enabled ? 'checked' : ''} onchange="app._toggleKnowledgeAdSlot(${idx}, this.checked)" style="width:15px;height:15px;cursor:pointer;accent-color:#10b981;">
+                        </label>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding:14px 16px;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:11px;margin-bottom:4px;">标题</label>
+                            <input class="input" style="width:100%;font-size:12px;padding:6px 8px;" id="kbAdTitle_${idx}" value="${this.escapeHtmlSafe(item.title)}" placeholder="广告标题" oninput="app._onKbAdFieldChange(${idx})">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:11px;margin-bottom:4px;">副标题</label>
+                            <input class="input" style="width:100%;font-size:12px;padding:6px 8px;" id="kbAdSubtitle_${idx}" value="${this.escapeHtmlSafe(item.subtitle)}" placeholder="简短描述" oninput="app._onKbAdFieldChange(${idx})">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin:8px 0 0;">
+                        <label style="font-size:11px;margin-bottom:4px;">跳转链接</label>
+                        <input class="input" style="width:100%;font-size:12px;padding:6px 8px;" id="kbAdUrl_${idx}" value="${this.escapeHtmlSafe(item.url)}" placeholder="点击后打开的 URL">
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:11px;margin-bottom:4px;">点击行为</label>
+                            <select class="input" style="width:100%;font-size:12px;padding:6px 8px;" id="kbAdAction_${idx}" onchange="app._toggleKbAdPopupContent(${idx})">
+                                <option value="link" ${item.action !== 'popup' ? 'selected' : ''}>打开外部链接</option>
+                                <option value="popup" ${item.action === 'popup' ? 'selected' : ''}>弹窗显示内容</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="kbAdPopupGroup_${idx}" style="margin:0;${item.action === 'popup' ? '' : 'display:none;'}">
+                            <label style="font-size:11px;margin-bottom:4px;">弹窗内容</label>
+                            <textarea class="input" style="width:100%;min-height:40px;resize:vertical;font-size:12px;padding:6px 8px;" id="kbAdPopup_${idx}" placeholder="弹窗文字">${this.escapeHtmlSafe(item.popup_content)}</textarea>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:11px;margin-bottom:4px;display:flex;align-items:center;gap:4px;">头像 <span style="font-weight:400;font-size:9px;color:var(--text-muted);">80×80</span></label>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <div id="kbAdAvatarPreview_${idx}" style="width:36px;height:36px;border-radius:8px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+                                    ${item.avatar ? `<img src="${item.avatar}" style="width:100%;height:100%;object-fit:cover;">` : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" opacity="0.3"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>'}
+                                </div>
+                                <input type="file" id="kbAdAvatarFile_${idx}" accept="image/*" style="display:none;" onchange="app._uploadKnowledgeAdImage(${idx}, 'avatar')">
+                                <button class="btn" style="font-size:10px;padding:3px 8px;height:24px;" onclick="document.getElementById('kbAdAvatarFile_${idx}').click()">上传</button>
+                                ${item.avatar ? `<button class="btn" style="font-size:10px;padding:3px 8px;height:24px;color:var(--danger);" onclick="app._clearKnowledgeAdImage(${idx}, 'avatar')">✕</button>` : ''}
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:11px;margin-bottom:4px;display:flex;align-items:center;gap:4px;">背景 <span style="font-weight:400;font-size:9px;color:var(--text-muted);">800×144</span></label>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <div id="kbAdBgPreview_${idx}" style="width:64px;height:28px;border-radius:5px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+                                    ${item.background ? `<img src="${item.background}" style="width:100%;height:100%;object-fit:cover;">` : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" opacity="0.3"><rect x="3" y="3" width="18" height="18" rx="2"></rect><polyline points="21 15 16 10 5 21"></polyline></svg>'}
+                                </div>
+                                <input type="file" id="kbAdBgFile_${idx}" accept="image/*" style="display:none;" onchange="app._uploadKnowledgeAdImage(${idx}, 'background')">
+                                <button class="btn" style="font-size:10px;padding:3px 8px;height:24px;" onclick="document.getElementById('kbAdBgFile_${idx}').click()">上传</button>
+                                ${item.background ? `<button class="btn" style="font-size:10px;padding:3px 8px;height:24px;color:var(--danger);" onclick="app._clearKnowledgeAdImage(${idx}, 'background')">✕</button>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+        // 同步更新按钮文本
+        this._updateKbAdToggleAllBtn();
+    },
+
+    /**
+     * 渲染信息库广告客户端预览（模拟 4 列卡片）
+     */
+    _renderKnowledgeAdPreview() {
+        const grid = document.getElementById('kbAdPreviewGrid');
+        const empty = document.getElementById('kbAdPreviewEmpty');
+        const countEl = document.getElementById('kbAdPreviewCount');
+        if (!grid) return;
+
+        const enabledItems = this._knowledgeAdItems.filter(i => i.enabled);
+        if (countEl) countEl.textContent = `${enabledItems.length}/4 启用`;
+
+        if (!enabledItems.length) {
+            grid.innerHTML = '';
+            grid.style.display = 'none';
+            if (empty) empty.style.display = '';
+            return;
+        }
+
+        grid.style.display = 'grid';
+        if (empty) empty.style.display = 'none';
+
+        grid.innerHTML = enabledItems.map(item => {
+            const hasBg = !!item.background;
+            const bgHtml = hasBg ? `<div class="kb-p-bg" style="background-image:url('${this.escapeHtmlSafe(item.background)}')"></div>` : '';
+            const iconHtml = item.avatar
+                ? `<img src="${this.escapeHtmlSafe(item.avatar)}" alt="">`
+                : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" opacity="0.4"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
+            return `
+                <div class="kb-preview-card${hasBg ? ' has-bg' : ''}">
+                    ${bgHtml}
+                    <div class="kb-p-content">
+                        <div class="kb-p-icon">${iconHtml}</div>
+                        <div class="kb-p-info">
+                            <div class="kb-p-title">${this.escapeHtmlSafe(item.title || '广告位')}</div>
+                            ${item.subtitle ? `<div class="kb-p-desc">${this.escapeHtmlSafe(item.subtitle)}</div>` : ''}
+                        </div>
+                        <div class="kb-p-arrow">→</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    /** 输入字段变化时同步预览 */
+    _onKbAdFieldChange(idx) {
+        if (!this._knowledgeAdItems[idx]) return;
+        const title = document.getElementById(`kbAdTitle_${idx}`);
+        const subtitle = document.getElementById(`kbAdSubtitle_${idx}`);
+        if (title) this._knowledgeAdItems[idx].title = title.value;
+        if (subtitle) this._knowledgeAdItems[idx].subtitle = subtitle.value;
+        // 节流预览刷新
+        if (this._kbAdPreviewTimer) clearTimeout(this._kbAdPreviewTimer);
+        this._kbAdPreviewTimer = setTimeout(() => this._renderKnowledgeAdPreview(), 200);
+    },
+
+    _toggleKnowledgeAdSlot(idx, enabled) {
+        if (this._knowledgeAdItems[idx]) {
+            this._knowledgeAdItems[idx].enabled = enabled;
+            this._renderKnowledgeAdSlots();
+            this._renderKnowledgeAdPreview();
+        }
+    },
+
+    _toggleKbAdPopupContent(idx) {
+        const sel = document.getElementById(`kbAdAction_${idx}`);
+        const group = document.getElementById(`kbAdPopupGroup_${idx}`);
+        if (sel && group) {
+            group.style.display = sel.value === 'popup' ? '' : 'none';
+        }
+    },
+
+    /** 全部启用/全部禁用切换 */
+    _toggleAllKnowledgeAds() {
+        const allEnabled = this._knowledgeAdItems.every(i => i.enabled);
+        this._knowledgeAdItems.forEach(item => { item.enabled = !allEnabled; });
+        this._renderKnowledgeAdSlots();
+        this._renderKnowledgeAdPreview();
+    },
+
+    _updateKbAdToggleAllBtn() {
+        const btn = document.getElementById('kbAdToggleAllBtn');
+        if (!btn) return;
+        const allEnabled = this._knowledgeAdItems.every(i => i.enabled);
+        btn.innerHTML = allEnabled
+            ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>全部禁用'
+            : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>全部启用';
+    },
+
+    /** 导出广告配置为 JSON 文件 */
+    _exportKnowledgeAdsJson() {
+        // 先从 DOM 收集最新值
+        this._collectKnowledgeAdFormData();
+        const json = JSON.stringify({ items: this._knowledgeAdItems }, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `knowledge_ads_${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        this.showAlert('广告配置已导出', 'success');
+    },
+
+    /** 从 JSON 文件导入广告配置 */
+    _importKnowledgeAdsJson() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,application/json';
+        input.onchange = () => {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!data.items || !Array.isArray(data.items)) throw new Error('格式错误：缺少 items 数组');
+                    this._knowledgeAdItems = this._normalizeKnowledgeAdItems(data.items);
+                    this._renderKnowledgeAdSlots();
+                    this._renderKnowledgeAdPreview();
+                    this.showAlert(`已导入 ${this._knowledgeAdItems.filter(i => i.enabled).length} 个启用的广告配置`, 'success');
+                } catch (err) {
+                    this.showAlert('导入失败: ' + err.message, 'danger');
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    },
+
+    /** 从 DOM 表单收集信息库广告最新数据 */
+    _collectKnowledgeAdFormData() {
+        this._knowledgeAdItems.forEach((item, idx) => {
+            const title = document.getElementById(`kbAdTitle_${idx}`);
+            const subtitle = document.getElementById(`kbAdSubtitle_${idx}`);
+            const url = document.getElementById(`kbAdUrl_${idx}`);
+            const action = document.getElementById(`kbAdAction_${idx}`);
+            const popup = document.getElementById(`kbAdPopup_${idx}`);
+            if (title) item.title = title.value.trim();
+            if (subtitle) item.subtitle = subtitle.value.trim();
+            if (url) item.url = url.value.trim();
+            if (action) item.action = action.value;
+            if (popup) item.popup_content = popup.value.trim();
+        });
+    },
+
+    async _uploadKnowledgeAdImage(idx, type) {
+        const fileInput = document.getElementById(type === 'avatar' ? `kbAdAvatarFile_${idx}` : `kbAdBgFile_${idx}`);
+        if (!fileInput || !fileInput.files[0]) return;
+        const file = fileInput.files[0];
+        if (file.size > 5 * 1024 * 1024) {
+            this.showAlert('图片大小不能超过 5MB', 'warning');
+            return;
+        }
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('slot_id', `kb_ad_${idx + 1}`);
+        formData.append('type', type);
+        try {
+            const resp = await fetch(`${this.config.apiBase}/admin/knowledge-ads/upload`, {
+                method: 'POST',
+                body: formData
+            });
+            if (!resp.ok) throw new Error('上传失败');
+            const data = await resp.json();
+            if (data.url) {
+                this._knowledgeAdItems[idx][type] = data.url;
+                this._renderKnowledgeAdSlots();
+                this._renderKnowledgeAdPreview();
+                this.showAlert('图片上传成功', 'success');
+            }
+        } catch (e) {
+            this.showAlert('图片上传失败: ' + e.message, 'danger');
+        }
+    },
+
+    _clearKnowledgeAdImage(idx, type) {
+        if (this._knowledgeAdItems[idx]) {
+            this._knowledgeAdItems[idx][type] = '';
+            this._renderKnowledgeAdSlots();
+            this._renderKnowledgeAdPreview();
+        }
+    },
+
+    async publishKnowledgeAds() {
+        this._knowledgeAdItems = this._normalizeKnowledgeAdItems(this._knowledgeAdItems);
+        this._collectKnowledgeAdFormData();
+
+        try {
+            const resp = await fetch(`${this.config.apiBase}/admin/knowledge-ads`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: this._knowledgeAdItems })
+            });
+            if (!resp.ok) throw new Error('保存失败');
+            this.showAlert(`信息库广告已保存并发布（${this._knowledgeAdItems.filter(i => i.enabled).length} 个启用）`, 'success');
+        } catch (e) {
+            this.showAlert('保存失败: ' + e.message, 'danger');
         }
     },
 
@@ -7489,6 +7833,7 @@ Object.assign(app, {
      */
     _epGroupDefs: [
         { id: 'free',      name: '免费用户',   icon: '🆓', color: '#6b7280' },
+        { id: 'admin',     name: '管理员',     icon: '🛡️', color: '#2563eb' },
         { id: 'tester',    name: '测试志愿者', icon: '🧪', color: '#64748b' },
         { id: 'friend',    name: '朋友',       icon: '👤', color: '#64748b' },
         { id: 'risk',      name: '风险用户',   icon: '⚠️', color: '#ef4444' },

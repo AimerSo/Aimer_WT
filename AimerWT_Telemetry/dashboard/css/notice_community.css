@@ -21,9 +21,8 @@
     max-width: 400px;
     display: flex;
     flex-direction: column;
-    background: #fafbfc;
+    background: #ffffff;
     overflow: hidden;
-    position: relative;
 }
 
 .nc-panel.nc-offline {
@@ -71,50 +70,46 @@
 
 /* 表情反应头部 */
 .nc-reaction-header {
-    padding: 22px 18px 16px;
+    padding: 14px 18px;
     border-bottom: 1px solid #f1f5f9;
     background: #ffffff;
-    transition: max-height 0.46s cubic-bezier(0.22, 1, 0.36, 1),
-        opacity 0.28s ease,
-        transform 0.38s ease;
     overflow: visible;
     position: relative;
     z-index: 12;
-    min-height: 64px;
 }
 
 .nc-reaction-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: flex-start;
+    column-gap: 8px;
+    overflow: visible;
+    min-width: 0;
+    padding-top: 3px;
+    height: auto;
+}
+
+.nc-reaction-list {
     display: flex;
     align-items: center;
     gap: 5px;
-    flex-wrap: nowrap;
-    overflow: visible;
     min-width: 0;
-    min-height: 30px;
-    padding-top: 6px;
-    opacity: 1;
-    transform: translateY(0);
-    transition: max-height 0.48s cubic-bezier(0.22, 1, 0.36, 1),
-        opacity 0.32s ease,
-        transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: max-height, opacity, transform;
+    flex-wrap: nowrap;
+    overflow: hidden;
 }
 
-.nc-reaction-row.nc-expanded {
+.nc-reaction-list.nc-expanded {
+    align-items: flex-start;
     flex-wrap: wrap;
     row-gap: 8px;
 }
 
-.nc-reaction-header.nc-animating {
-    overflow: hidden;
-}
-
-.nc-reaction-row.nc-animating {
-    overflow: hidden;
-}
-
-.nc-reaction-row.nc-animating > * {
-    animation: nc-reaction-fade-in 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+.nc-reaction-tools {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 .nc-reaction-pill {
@@ -127,26 +122,20 @@
     background: #ffffff;
     font-size: 12px;
     cursor: pointer;
-    transition: background-color 0.22s ease,
-        border-color 0.22s ease,
-        box-shadow 0.22s ease,
-        transform 0.22s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
     user-select: none;
     white-space: nowrap;
     flex-shrink: 0;
-    transform: translateY(0);
-    box-shadow: 0 0 0 rgba(148, 163, 184, 0);
 }
 
 .nc-reaction-pill:hover {
-    background: #f8fafc;
-    border-color: #cbd5e1;
-    box-shadow: 0 12px 18px -12px rgba(148, 163, 184, 0.5);
+    background: #f0f0f0;
+    border-color: #d1d5db;
 }
 
 .nc-reaction-pill.active {
-    border-color: #3b82f6;
-    background: #eff6ff;
+    border-color: #d1d5db;
+    background: #f9fafb;
 }
 
 .nc-reaction-pill .nc-r-emoji {
@@ -172,20 +161,15 @@
     font-weight: 600;
     color: #9ca3af;
     cursor: pointer;
-    transition: background-color 0.22s ease,
-        border-color 0.22s ease,
-        color 0.22s ease,
-        box-shadow 0.22s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     flex-shrink: 0;
     white-space: nowrap;
-    box-shadow: 0 0 0 rgba(148, 163, 184, 0);
 }
 
 .nc-more-btn:hover {
     background: #f3f4f6;
     border-color: #9ca3af;
     color: #6b7280;
-    box-shadow: 0 12px 18px -12px rgba(148, 163, 184, 0.42);
 }
 
 .nc-add-reaction-btn {
@@ -199,26 +183,20 @@
     background: transparent;
     font-size: 13px;
     cursor: pointer;
-    transition: background-color 0.22s ease,
-        border-color 0.22s ease,
-        color 0.22s ease,
-        box-shadow 0.22s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     color: #9ca3af;
     flex-shrink: 0;
-    box-shadow: 0 0 0 rgba(148, 163, 184, 0);
 }
 
 .nc-add-reaction-btn:hover {
     background: #f3f4f6;
     border-color: #9ca3af;
     color: #6b7280;
-    box-shadow: 0 12px 18px -12px rgba(148, 163, 184, 0.42);
 }
 
 .nc-picker-wrap {
     position: relative;
     display: inline-flex;
-    margin-left: auto;
 }
 
 .nc-emoji-picker {
@@ -235,15 +213,15 @@
     grid-template-columns: repeat(7, 1fr);
     gap: 2px;
     opacity: 0;
-    transform: translateY(-6px) scale(0.95);
-    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform: translateY(4px);
+    transition: opacity 0.14s ease, transform 0.14s ease;
     pointer-events: none;
     min-width: 260px;
 }
 
 .nc-emoji-picker.show {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
     pointer-events: auto;
 }
 
@@ -261,7 +239,7 @@
 
 .nc-emoji-picker-item:hover {
     background: #f3f4f6;
-    transform: scale(1.2);
+    transform: scale(1.05);
 }
 
 /* 统计栏 */
@@ -489,6 +467,7 @@
     line-height: 1.6;
     color: #374151;
     word-break: break-word;
+    white-space: pre-wrap;
 }
 
 .nc-comment-actions {
@@ -619,6 +598,7 @@
     line-height: 1.55;
     color: #4b5563;
     word-break: break-word;
+    white-space: pre-wrap;
 }
 
 .nc-reply-actions {
@@ -645,11 +625,6 @@
     gap: 8px;
 }
 
-.nc-input-main {
-    flex: 1;
-    min-width: 0;
-}
-
 .nc-input-avatar {
     width: 28px;
     height: 28px;
@@ -664,18 +639,29 @@
     flex-shrink: 0;
 }
 
+.nc-input-main {
+    flex: 1;
+    min-width: 0;
+}
+
 .nc-input-field {
     width: 100%;
     min-width: 0;
     border: 1px solid #e5e7eb;
-    border-radius: 999px;
+    border-radius: 18px;
     padding: 8px 14px;
     font-size: 13px;
+    line-height: 1.5;
     color: #111827;
     background: #f9fafb;
     outline: none;
     transition: border-color 0.2s ease, background 0.2s ease;
     font-family: inherit;
+    resize: none;
+    overflow-y: hidden;
+    min-height: 38px;
+    max-height: 112px;
+    box-sizing: border-box;
 }
 
 .nc-input-field:focus {
@@ -690,10 +676,10 @@
 .nc-input-meta {
     min-height: 18px;
     margin-top: 5px;
-    padding: 0 12px;
+    padding: 0 4px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 8px;
 }
 
@@ -714,7 +700,10 @@
     color: #d97706;
 }
 
-.nc-input-counter.nc-danger,
+.nc-input-counter.nc-danger {
+    color: #dc2626;
+}
+
 .nc-input-counter.nc-over {
     color: #dc2626;
 }
@@ -890,12 +879,93 @@
     font-size: 13px;
 }
 
-/* 暗色主题 */
+.nc-comment-avatar,
+.nc-reply-avatar,
+.nc-input-avatar,
+.nc-likers-avatar {
+    box-sizing: border-box;
+    overflow: hidden;
+    padding: 0 2px;
+    font-size: var(--nc-uid-font-size);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.nc-comment-avatar,
+.nc-input-avatar {
+    --nc-uid-font-size: 11px;
+    --nc-uid-font-size-4: 9px;
+    --nc-uid-font-size-5: 7px;
+    --nc-uid-font-size-6p: 6px;
+}
+
+.nc-reply-avatar {
+    --nc-uid-font-size: 9px;
+    --nc-uid-font-size-4: 7px;
+    --nc-uid-font-size-5: 6px;
+    --nc-uid-font-size-6p: 5px;
+}
+
+.nc-likers-avatar {
+    --nc-uid-font-size: 12px;
+    --nc-uid-font-size-4: 10px;
+    --nc-uid-font-size-5: 8px;
+    --nc-uid-font-size-6p: 7px;
+}
+
+.nc-comment-avatar.nc-uid-len-4,
+.nc-reply-avatar.nc-uid-len-4,
+.nc-input-avatar.nc-uid-len-4,
+.nc-likers-avatar.nc-uid-len-4 {
+    font-size: var(--nc-uid-font-size-4);
+}
+
+.nc-comment-avatar.nc-uid-len-5,
+.nc-reply-avatar.nc-uid-len-5,
+.nc-input-avatar.nc-uid-len-5,
+.nc-likers-avatar.nc-uid-len-5 {
+    font-size: var(--nc-uid-font-size-5);
+}
+
+.nc-comment-avatar.nc-uid-len-6p,
+.nc-reply-avatar.nc-uid-len-6p,
+.nc-input-avatar.nc-uid-len-6p,
+.nc-likers-avatar.nc-uid-len-6p {
+    font-size: var(--nc-uid-font-size-6p);
+}
+
+.nc-uid-text {
+    display: block;
+    max-width: 100%;
+    white-space: nowrap;
+    line-height: 1;
+    letter-spacing: -0.03em;
+}
+
 
 /* @用户 蓝色高亮 */
 .nc-reply-mention {
     color: #3b82f6;
     font-weight: 600;
+}
+
+.nc-reply-more-btn {
+    margin: 10px 0 4px 28px;
+    border: none;
+    background: rgba(59, 130, 246, 0.08);
+    color: #2563eb;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    font-family: inherit;
+}
+
+.nc-reply-more-btn:hover {
+    background: rgba(59, 130, 246, 0.14);
+    color: #1d4ed8;
 }
 
 /* 三点菜单按钮 */
@@ -932,10 +1002,8 @@
 
 /* 三点弹出小菜单 */
 .nc-more-popup {
-    position: absolute;
-    bottom: calc(100% + 4px);
-    right: -4px;
-    z-index: 200;
+    position: fixed;
+    z-index: 20050;
     background: #ffffff;
     border: 1px solid #e5e7eb;
     border-radius: 10px;
@@ -968,6 +1036,14 @@
     color: #dc2626;
 }
 
+.nc-more-popup-danger {
+    color: #dc2626;
+}
+
+.nc-more-popup-admin {
+    color: #2563eb;
+}
+
 /* 举报弹窗 */
 .nc-report-overlay {
     position: fixed;
@@ -993,7 +1069,7 @@
     background: #ffffff;
     border-radius: 18px;
     box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
-    overflow: hidden;
+    overflow: visible;
     transform: translateY(10px) scale(0.97);
     transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -1035,6 +1111,7 @@
 
 .nc-report-body {
     padding: 20px;
+    overflow: visible;
 }
 
 .nc-report-field {
@@ -1070,6 +1147,7 @@
 
 .nc-report-select-shell {
     position: relative;
+    overflow: visible;
 }
 
 .nc-report-select-native {
@@ -1092,6 +1170,11 @@
 
 .nc-report-dropdown-host:empty {
     display: none;
+}
+
+.nc-report-overlay .app-dropdown-wrapper,
+.nc-report-overlay .app-dropdown-menu {
+    z-index: 10020;
 }
 
 .nc-report-select:focus {
@@ -1164,6 +1247,282 @@
     cursor: not-allowed;
 }
 
+.nc-admin-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.42);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 20000;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.nc-admin-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.nc-admin-dialog {
+    width: min(440px, 92vw);
+    background: #ffffff;
+    border-radius: 18px;
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+    overflow: hidden;
+    transform: translateY(10px) scale(0.97);
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nc-admin-overlay.show .nc-admin-dialog {
+    transform: translateY(0) scale(1);
+}
+
+.nc-admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.nc-admin-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #111827;
+}
+
+.nc-admin-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.15s ease;
+}
+
+.nc-admin-close:hover {
+    background: #f3f4f6;
+    color: #111827;
+}
+
+.nc-admin-body {
+    padding: 20px;
+}
+
+.nc-admin-field {
+    margin-bottom: 16px;
+}
+
+.nc-admin-field:last-child {
+    margin-bottom: 0;
+}
+
+.nc-admin-inline {
+    display: flex;
+    gap: 12px;
+}
+
+.nc-admin-inline-item {
+    flex: 1;
+}
+
+.nc-admin-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 6px;
+}
+
+.nc-admin-input,
+.nc-admin-select,
+.nc-admin-textarea {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #111827;
+    background: #f9fafb;
+    outline: none;
+    font-family: inherit;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease;
+}
+
+.nc-admin-textarea {
+    resize: vertical;
+    min-height: 82px;
+}
+
+.nc-admin-input:focus,
+.nc-admin-select:focus,
+.nc-admin-textarea:focus {
+    border-color: #3b82f6;
+}
+
+.nc-admin-hint {
+    font-size: 12px;
+    line-height: 1.6;
+    color: #6b7280;
+}
+
+.nc-admin-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 20px;
+    border-top: 1px solid #f1f5f9;
+}
+
+.nc-admin-btn-cancel,
+.nc-admin-btn-submit {
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+}
+
+.nc-admin-btn-cancel {
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    color: #6b7280;
+}
+
+.nc-admin-btn-cancel:hover {
+    background: #f3f4f6;
+}
+
+.nc-admin-btn-submit {
+    border: none;
+    background: #111827;
+    color: #ffffff;
+}
+
+.nc-admin-btn-submit:hover {
+    background: #0f172a;
+}
+
+/* 「我」标识 */
+.nc-self-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: #f97316;
+    background: rgba(249, 115, 22, 0.1);
+    border: 1px solid rgba(249, 115, 22, 0.25);
+    border-radius: 4px;
+    padding: 0 4px;
+    height: 16px;
+    line-height: 16px;
+    margin-left: 4px;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+/* 子评论预览区 */
+.nc-preview-replies {
+    margin-top: 6px;
+    padding-left: 36px;
+}
+
+.nc-preview-reply {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 4px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #4b5563;
+}
+
+.nc-preview-reply-name {
+    font-weight: 700;
+    color: #111827;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.nc-preview-reply-content {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.nc-preview-reply-like {
+    flex-shrink: 0;
+    color: #9ca3af;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+}
+
+.nc-reply-total-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #9ca3af;
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 4px 0;
+    margin-top: 2px;
+    font-family: inherit;
+    transition: color 0.15s ease;
+}
+
+.nc-reply-total-link:hover {
+    color: #3b82f6;
+}
+
+/* 表情选择器分组分界线 */
+.nc-emoji-picker-divider {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 4px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #9ca3af;
+    white-space: nowrap;
+}
+
+.nc-emoji-picker-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e5e7eb;
+}
+
+/* UID 显示 */
+.up-uid-display {
+    font-size: 12px;
+    color: #9ca3af;
+    font-weight: 500;
+    flex-shrink: 0;
+    white-space: nowrap;
+    user-select: all;
+}
+
+/* 暗色主题 */
 [data-theme="dark"] .nc-panel {
     background: #0f172a;
 }
@@ -1202,12 +1561,11 @@
 [data-theme="dark"] .nc-reaction-pill:hover {
     background: rgba(255, 255, 255, 0.1);
     border-color: rgba(255, 255, 255, 0.18);
-    box-shadow: 0 12px 18px -12px rgba(15, 23, 42, 0.8);
 }
 
 [data-theme="dark"] .nc-reaction-pill.active {
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="dark"] .nc-reaction-pill .nc-r-count {
@@ -1231,22 +1589,6 @@
 
 [data-theme="dark"] .nc-emoji-picker-item:hover {
     background: rgba(255, 255, 255, 0.08);
-}
-
-[data-theme="dark"] .nc-more-btn:hover,
-[data-theme="dark"] .nc-add-reaction-btn:hover {
-    box-shadow: 0 12px 18px -12px rgba(15, 23, 42, 0.7);
-}
-
-@keyframes nc-reaction-fade-in {
-    from {
-        opacity: 0;
-        transform: translateY(10px) scale(0.96);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
 }
 
 [data-theme="dark"] .nc-stats-bar {
@@ -1306,6 +1648,16 @@
 
 [data-theme="dark"] .nc-reply-body {
     color: #94a3b8;
+}
+
+[data-theme="dark"] .nc-reply-more-btn {
+    background: rgba(59, 130, 246, 0.14);
+    color: #93c5fd;
+}
+
+[data-theme="dark"] .nc-reply-more-btn:hover {
+    background: rgba(59, 130, 246, 0.22);
+    color: #dbeafe;
 }
 
 [data-theme="dark"] .nc-reply-avatar {
@@ -1458,6 +1810,56 @@
     background: #334155;
     border-color: rgba(255, 255, 255, 0.1);
     color: #e5e7eb;
+}
+
+[data-theme="dark"] .nc-admin-dialog {
+    background: #1e293b;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .nc-admin-header,
+[data-theme="dark"] .nc-admin-footer {
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .nc-admin-title,
+[data-theme="dark"] .nc-admin-label {
+    color: #f1f5f9;
+}
+
+[data-theme="dark"] .nc-admin-close {
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .nc-admin-close:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #f8fafc;
+}
+
+[data-theme="dark"] .nc-admin-input,
+[data-theme="dark"] .nc-admin-select,
+[data-theme="dark"] .nc-admin-textarea {
+    background: #0f172a;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #f1f5f9;
+}
+
+[data-theme="dark"] .nc-admin-hint {
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .nc-admin-btn-cancel {
+    background: #334155;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #e5e7eb;
+}
+
+[data-theme="dark"] .nc-admin-btn-submit {
+    background: #2563eb;
+}
+
+[data-theme="dark"] .nc-admin-btn-submit:hover {
+    background: #1d4ed8;
 }
 
 /* 移动端响应式 */

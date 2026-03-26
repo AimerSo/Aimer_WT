@@ -638,7 +638,7 @@
                             </div>
                             <div class="link-card-content">
                                 <div class="link-icon">
-                                    <i class="ri-gamepad-line"></i>
+                                    <img src="assets/WT.webp" alt="WT">
                                 </div>
                                 <div class="link-info">
                                     <div class="link-title">战争雷霆官网</div>
@@ -675,7 +675,7 @@
                                 <i class="ri-bilibili-line"></i>
                             </div>
                             <div class="link-card-content">
-                                <div class="link-icon">
+                                <div class="link-icon bili-tv">
                                     <i class="ri-bilibili-line"></i>
                                 </div>
                                 <div class="link-info">
@@ -708,6 +708,7 @@
                             </div>
                         </a>
                     </div>
+                    <div class="links-grid links-grid-ads" id="knowledge-ads-grid"></div>
                 </div>
 
                 <!-- 鸣谢与关于 -->
@@ -876,6 +877,7 @@
                                 <button class="up-save-btn" id="up-save-btn" onclick="userProfile.saveNickname()">
                                     <i class="ri-check-line"></i>
                                 </button>
+                                <span class="up-uid-display" id="up-uid-display"></span>
                             </div>
                             <div class="up-request-hint" id="up-request-hint" style="display:none;"></div>
 
@@ -892,6 +894,7 @@
                             <div class="up-locked-tip" id="up-locked-tip" style="display:none;">
                                 <i class="ri-lock-2-line"></i>
                                 <span>身份验证后解锁编辑权限</span>
+                                <button class="up-verify-btn" id="up-verify-btn" type="button" onclick="userProfile.showVerifyDialog()">请求认证</button>
                             </div>
                         </div>
                     </div>
@@ -1504,10 +1507,12 @@
             <button class="modal-close-x" onclick="app.closeModal('modal-support-me')">
                 <i class="ri-close-line"></i>
             </button>
-            <h2 style="margin-top: 0;">支持一下我</h2>
-            <p class="subtitle" style="margin-bottom: 8px;">非常感谢给我钱！你的支持是我持续更新的动力，本软件个人开发时长近1000小时啦！</p>
-            <p class="subtitle" style="margin-bottom: 20px; font-size: 13px; color: var(--text-sec);">
+            <h2 style="margin-top: 0; margin-bottom: 4px;">支持一下我</h2>
+            <p class="subtitle" style="margin-bottom: 2px; font-size: 14px;">非常感谢给我钱！你的支持是我持续更新的动力，本软件个人开发时长近1000小时啦！</p>
+            <p class="subtitle" style="margin-bottom: 2px; font-size: 13px; color: var(--text-sec);">
                 还可以帮我减轻服务器和大模型API的成本！</p>
+            <p class="subtitle" style="margin-bottom: 12px; font-size: 12px; color: #f97316; font-weight: 500;">
+                <i class="ri-chat-smile-2-line" style="margin-right: 4px;"></i>如果您通过微信，或在此之前通过微信赞助过我，请带截图私聊我获取礼物！</p>
 
             <div class="support-qr-row">
                 <div class="support-qr-item" onclick="app.openImagePreview('assets/aifadian.png', '爱发电')">
@@ -1780,8 +1785,8 @@
                 <i class="ri-information-line" style="font-size: 48px; color: var(--primary);"></i>
             </div>
             <h2 id="alert-title" style="margin: 0 0 12px 0; color: var(--text-main);">提示</h2>
-            <p id="alert-message"
-                style="margin-bottom: 24px; color: var(--text-sec); font-size: 14px; line-height: 1.6;"></p>
+            <div id="alert-message"
+                style="margin-bottom: 24px; color: var(--text-sec); font-size: 14px; line-height: 1.6;"></div>
 
             <div class="modal-actions" style="justify-content: center; gap: 12px;">
                 <button class="btn secondary" id="alert-link-btn" style="display: none;"
@@ -1825,6 +1830,8 @@
     <script src="ads/utm_helper.js"></script>
     <script src="ads/ad_carousel_config.js"></script>
     <script src="ads/ad_carousel.js"></script>
+    <script src="ads/knowledge_ads/knowledge_ads_config.js"></script>
+    <script src="ads/knowledge_ads/knowledge_ads.js"></script>
 
     <!-- AI助手模块 -->
     <script src="ai/config.js"></script>

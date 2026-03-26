@@ -788,6 +788,55 @@ func initRouter(r *gin.Engine) {
 				c.JSON(200, gin.H{"status": "success", "url": "/uploads/" + filename, "filename": filename})
 			})
 
+			// 信息库广告位管理 API
+			admin.GET("/knowledge-ads", func(c *gin.Context) {
+				raw := LoadKnowledgeAdsConfig()
+				if raw == "" {
+					c.JSON(200, gin.H{"items": []any{}})
+					return
+				}
+				var parsed map[string]any
+				if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+					c.JSON(200, gin.H{"items": []any{}})
+					return
+				}
+				c.JSON(200, parsed)
+			})
+
+			admin.POST("/knowledge-ads", func(c *gin.Context) {
+				var body json.RawMessage
+				if err := c.ShouldBindJSON(&body); err != nil {
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
+					return
+				}
+				SaveKnowledgeAdsConfig(string(body))
+				c.JSON(200, gin.H{"status": "success"})
+			})
+
+			admin.POST("/knowledge-ads/upload", func(c *gin.Context) {
+				c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 5<<20)
+				file, err := c.FormFile("file")
+				if err != nil {
+					c.JSON(400, gin.H{"error": "文件读取失败: " + err.Error()})
+					return
+				}
+				ext := strings.ToLower(filepath.Ext(file.Filename))
+				allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true}
+				if !allowed[ext] {
+					c.JSON(400, gin.H{"error": "不支持的文件类型，仅支持 jpg/png/webp/gif"})
+					return
+				}
+				slotID := c.PostForm("slot_id")
+				imgType := c.PostForm("type")
+				filename := fmt.Sprintf("kb_%s_%s_%d%s", slotID, imgType, time.Now().UnixMilli(), ext)
+				dstPath := filepath.Join("uploads", filename)
+				if err := c.SaveUploadedFile(file, dstPath); err != nil {
+					c.JSON(500, gin.H{"error": "文件保存失败: " + err.Error()})
+					return
+				}
+				c.JSON(200, gin.H{"status": "success", "url": "/uploads/" + filename})
+			})
+
 			// 公告列表 CRUD API
 			admin.GET("/notices", func(c *gin.Context) {
 				var items []NoticeItem
@@ -1629,6 +1678,27 @@ func initRouter(r *gin.Engine) {
 		json.Unmarshal(adJSON, &parsed)
 		response["ad_carousel_items"] = parsed
 		response["ad_carousel_interval_ms"] = LoadAdCarouselInterval()
+
+		// 信息库广告位数据下发
+		kbRaw := LoadKnowledgeAdsConfig()
+		if kbRaw != "" {
+			var kbParsed map[string]interface{}
+			if err := json.Unmarshal([]byte(kbRaw), &kbParsed); err == nil {
+				// 补全图片路径
+				if kbItems, ok := kbParsed["items"].([]interface{}); ok {
+					for _, raw := range kbItems {
+						if m, ok := raw.(map[string]interface{}); ok {
+							for _, field := range []string{"avatar", "background"} {
+								if v, ok := m[field].(string); ok && len(v) > 0 && v[0] == '/' {
+									m[field] = baseURL + v
+								}
+							}
+						}
+					}
+				}
+				response["knowledge_ads_items"] = kbParsed
+			}
+		}
 
 		// 构建公告列表数据供客户端同步
 		var noticeItems []NoticeItem

@@ -429,10 +429,20 @@
     min-width: 260px;
 }
 
+.notice-reaction-picker.show,
+.notice-reaction-picker.closing {
+    pointer-events: auto;
+}
+
 .notice-reaction-picker.show {
     opacity: 1;
     transform: translateY(0) scale(1);
-    pointer-events: auto;
+}
+
+.notice-reaction-picker.closing {
+    opacity: 0;
+    transform: translateY(6px) scale(0.95);
+    pointer-events: none;
 }
 
 .notice-reaction-picker-item {

@@ -745,6 +745,30 @@ class AppApi:
                     self._last_ad_carousel_state = ad_state
                     self._save_server_cache(ad_carousel={"items": ad_items, "interval_ms": ad_interval_ms})
 
+            # 5.5 信息库广告位远程覆盖
+            kb_ads = config.get("knowledge_ads_items")
+            if isinstance(kb_ads, dict) and isinstance(kb_ads.get("items"), list):
+                kb_json = json.dumps(kb_ads, ensure_ascii=False)
+                self._window.evaluate_js(
+                    "(function(){"
+                    f"var cfg={kb_json};"
+                    "function apply(){"
+                    "if(!window.AIMER_KNOWLEDGE_ADS_CONFIG) return false;"
+                    "window.AIMER_KNOWLEDGE_ADS_CONFIG.items = cfg.items || [];"
+                    "if(window.KnowledgeAdsModule && typeof window.KnowledgeAdsModule.refresh === 'function') {"
+                    "window.KnowledgeAdsModule.refresh();"
+                    "}"
+                    "return true;"
+                    "}"
+                    "if(apply()) return;"
+                    "var attempts = 0;"
+                    "var timer = window.setInterval(function(){"
+                    "attempts += 1;"
+                    "if(apply() || attempts >= 20){ window.clearInterval(timer); }"
+                    "}, 300);"
+                    "})();"
+                )
+
             # 6. 公告列表远程覆盖
             notice_items = config.get("notice_items")
             if isinstance(notice_items, list):
