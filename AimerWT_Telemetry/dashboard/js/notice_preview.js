@@ -135,6 +135,7 @@
         var others = items.filter(function(x) { return x.id !== pinned.id; });
         var pm = getMeta(pinned.type);
         var preview = buildPreview(pinned);
+        var decoIcon = pinned.icon_class || pm.icon;
 
         var listHtml = others.map(function(item) {
             var meta = getMeta(item.type);
@@ -151,7 +152,7 @@
 
         container.innerHTML = '<div class="notice-preview-wrap">' +
             '<div class="np-hero">' +
-            '<div class="np-hero-deco">' + pm.icon + '</div>' +
+            '<div class="np-hero-deco">' + (decoIcon.startsWith('ri-') ? '<i class="' + esc(decoIcon) + '"></i>' : decoIcon) + '</div>' +
             '<div class="np-hero-top">' +
             '<span class="np-hero-pin">📌 置顶公告</span>' +
             '<span class="np-hero-date">' + esc(pinned.date || '') + '</span>' +

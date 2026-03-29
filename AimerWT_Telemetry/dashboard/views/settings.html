@@ -94,12 +94,15 @@
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                             在线判定阈值
                         </label>
-                        <select class="input" id="settingOnlineThreshold" style="width: 100%;">
-                            <option value="2">2 分钟（严格）</option>
-                            <option value="5">5 分钟（默认）</option>
-                            <option value="10">10 分钟（宽松）</option>
-                        </select>
-                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">超过此时间未上报的用户被标记为离线</div>
+                        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg); border-radius: 8px; border: 1px solid var(--border);">
+                            <span id="settingOnlineThresholdDisplay" style="font-size: 13px; font-weight: 600; color: var(--text);">--</span>
+                            <span style="font-size: 12px; color: var(--text-muted);">分钟</span>
+                            <a href="javascript:void(0)" onclick="app.switchView('notification', document.querySelector('[data-view=notification]'))" style="margin-left: auto; font-size: 11px; color: var(--primary); text-decoration: none; display: flex; align-items: center; gap: 3px;">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                前往通知页修改
+                            </a>
+                        </div>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">此设置已统一由「通知」页面的在线判定阈值控制面板管理</div>
                     </div>
                 </div>
             </div>

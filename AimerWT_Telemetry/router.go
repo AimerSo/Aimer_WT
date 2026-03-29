@@ -104,6 +104,7 @@ func serializeTelemetryUserBase(record TelemetryRecord) map[string]any {
 		"is_starred":        record.IsStarred,
 		"is_admin":          record.IsAdmin,
 		"tags":              record.Tags,
+		"comment_perms":     record.CommentPerms,
 		"updated_at":        record.LastSeenAt.Format("2006-01-02 15:04:05"),
 		"created_at":        record.CreatedAt.Format("2006-01-02 15:04:05"),
 		"minutes_ago":       int(time.Since(record.LastSeenAt).Minutes()),
@@ -115,6 +116,8 @@ func attachTelemetryUserProfile(row map[string]any, profile UserProfile) {
 		row["level"] = profile.Level
 		row["exp"] = profile.Exp
 		row["nickname"] = profile.Nickname
+		row["bound_qq"] = profile.BoundQQ
+		row["has_bound_qq"] = strings.TrimSpace(profile.BoundQQ) != ""
 		row["badges"] = profile.Badges
 		row["verified"] = profile.Verified
 		return
@@ -122,6 +125,8 @@ func attachTelemetryUserProfile(row map[string]any, profile UserProfile) {
 	row["level"] = 0
 	row["exp"] = 0
 	row["nickname"] = ""
+	row["bound_qq"] = ""
+	row["has_bound_qq"] = false
 	row["badges"] = "[]"
 	row["verified"] = false
 }
@@ -880,7 +885,7 @@ func initRouter(r *gin.Engine) {
 				db.Model(&existing).Updates(map[string]interface{}{
 					"type": updates.Type, "tag": updates.Tag, "title": updates.Title,
 					"summary": updates.Summary, "content": updates.Content, "date": updates.Date,
-					"is_pinned": updates.IsPinned, "sort_order": updates.SortOrder,
+					"is_pinned": updates.IsPinned, "icon_class": updates.IconClass, "sort_order": updates.SortOrder,
 				})
 				db.First(&existing, id)
 				c.JSON(200, gin.H{"status": "success", "item": existing})
@@ -1311,6 +1316,48 @@ func initRouter(r *gin.Engine) {
 			c.JSON(200, gin.H{"status": "success"})
 		})
 
+		// 用户评论区权限管理
+		admin.GET("/user-comment-perms", func(c *gin.Context) {
+			machineID := c.Query("machine_id")
+			if machineID == "" {
+				c.JSON(400, gin.H{"error": "machine_id 为必填"})
+				return
+			}
+			var record TelemetryRecord
+			if err := db.Select("comment_perms").Where("machine_id = ?", machineID).First(&record).Error; err != nil {
+				c.JSON(200, gin.H{"comment_perms": map[string]bool{}})
+				return
+			}
+			var perms map[string]bool
+			if record.CommentPerms == "" || record.CommentPerms == "{}" {
+				perms = map[string]bool{}
+			} else if err := json.Unmarshal([]byte(record.CommentPerms), &perms); err != nil {
+				perms = map[string]bool{}
+			}
+			c.JSON(200, gin.H{"comment_perms": perms})
+		})
+
+		admin.POST("/user-comment-perms", func(c *gin.Context) {
+			var req struct {
+				MachineID    string          `json:"machine_id"`
+				CommentPerms map[string]bool `json:"comment_perms"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(400, gin.H{"error": "请求数据格式错误"})
+				return
+			}
+			data, err := json.Marshal(req.CommentPerms)
+			if err != nil {
+				c.JSON(400, gin.H{"error": "数据无效"})
+				return
+			}
+			if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("comment_perms", string(data)).Error; err != nil {
+				c.JSON(500, gin.H{"error": "更新失败"})
+				return
+			}
+			c.JSON(200, gin.H{"status": "success"})
+		})
+
 		// 用户个人资料管理员路由
 		initUserProfileAdminRoutes(admin)
 	}
@@ -1723,6 +1770,9 @@ func initRouter(r *gin.Engine) {
 
 	// 社区评论客户端路由（公开端点，使用 UA/HMAC 校验）
 	initCommunityClientRoutes(r)
+
+	// 合规审计日志路由（仪表盘内访问，暂不需要认证）
+	initAuditLogRoutes(r)
 
 	// WebSocket 端点（不需要 Basic Auth，使用自定义认证）
 	r.GET("/ws", HandleWebSocket)

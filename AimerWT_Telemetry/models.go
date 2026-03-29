@@ -20,6 +20,7 @@ type TelemetryRecord struct {
 	IsStarred      bool      `json:"is_starred"`
 	IsAdmin        bool      `json:"is_admin"`
 	Tags           string    `gorm:"type:text;default:'[]'" json:"tags"`
+	CommentPerms   string    `gorm:"type:text;default:'{}'" json:"comment_perms"`
 	LastSeenAt     time.Time `gorm:"autoUpdateTime;index" json:"last_seen_at"`
 	CreatedAt      time.Time `gorm:"autoCreateTime;index" json:"created_at"`
 }
@@ -175,6 +176,7 @@ type NoticeItem struct {
 	Content   string    `gorm:"type:text" json:"content"`
 	Date      string    `json:"date"`
 	IsPinned  bool      `json:"is_pinned" gorm:"default:false"`
+	IconClass string    `json:"icon_class" gorm:"type:varchar(64);default:''"`
 	SortOrder int       `json:"sort_order" gorm:"default:0"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
@@ -282,6 +284,7 @@ type UserProfile struct {
 	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	MachineID  string    `gorm:"uniqueIndex;type:varchar(64);not null" json:"machine_id"`
 	Nickname   string    `gorm:"type:varchar(32)" json:"nickname"`
+	BoundQQ    string    `gorm:"type:varchar(16)" json:"bound_qq"`
 	AvatarData string    `gorm:"type:text" json:"avatar_data"` // Base64 encoded image（裁剪至 128×128）
 	Level      int       `gorm:"default:0;not null" json:"level"`
 	Exp        int       `gorm:"default:0;not null" json:"exp"`

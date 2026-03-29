@@ -784,7 +784,8 @@ class AppApi:
                             "date": item.get("date", ""),
                             "summary": item.get("summary", ""),
                             "content": item.get("content", ""),
-                            "isPinned": item.get("is_pinned", False)
+                            "isPinned": item.get("is_pinned", False),
+                            "iconClass": item.get("icon_class", "")
                         })
                     self._window.evaluate_js(self._build_notice_items_apply_js(mapped))
                     self._last_notice_items_state = notice_state

@@ -1491,6 +1491,85 @@ i[class^="ri-"] {
     background: var(--notice-section-line);
 }
 
+/* 全局统一闪烁动画（所有红点频率完全一致） */
+@keyframes notice-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.15; }
+}
+
+/* 未读红点基础样式 */
+.notice-unread-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18);
+    flex-shrink: 0;
+    animation: notice-blink 1.5s ease-in-out infinite;
+    transition: opacity 0.3s ease;
+}
+
+.notice-unread-dot.read {
+    display: none;
+}
+
+/* 置顶公告内红点（位于"置顶公告"标签左侧） */
+.notice-unread-dot-hero {
+    width: 8px;
+    height: 8px;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+/* 往期动态区域 wrap 容器（承载箭头指示器） */
+.notice-history-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 溢出方向箭头指示器 */
+.notice-history-arrow-up,
+.notice-history-arrow-down {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    color: var(--text-sec, #9ca3af);
+    font-size: 16px;
+}
+
+.notice-history-arrow-up {
+    top: 0;
+    background: linear-gradient(to bottom, var(--bg-card, #fff) 30%, transparent);
+}
+
+.notice-history-arrow-down {
+    bottom: 0;
+    background: linear-gradient(to top, var(--bg-card, #fff) 30%, transparent);
+}
+
+.notice-history-arrow-up.visible,
+.notice-history-arrow-down.visible {
+    opacity: 0.45;
+}
+
+[data-theme="dark"] .notice-history-arrow-up {
+    background: linear-gradient(to bottom, var(--bg-card, #1e1e2e) 30%, transparent);
+}
+
+[data-theme="dark"] .notice-history-arrow-down {
+    background: linear-gradient(to top, var(--bg-card, #1e1e2e) 30%, transparent);
+}
+
 .notice-history {
     flex: 1;
     min-height: 0;

@@ -116,7 +116,8 @@
             date: safe.date || '',
             summary: safe.summary || '',
             content: safe.content || '',
-            isPinned: !!safe.isPinned
+            isPinned: !!safe.isPinned,
+            iconClass: safe.iconClass || ''
         };
     }
 

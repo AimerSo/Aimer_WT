@@ -342,6 +342,9 @@ const app = {
             case 'user_weight':
                 this.initUserWeight();
                 break;
+            case 'audit_log':
+                this.initAuditLog();
+                break;
             case 'settings':
                 this.initSettings();
                 break;
@@ -1076,6 +1079,7 @@ const app = {
         const version = user.version || user.app_version || user.client_version || '-';
         const hwid = user.hwid || user.hwid_hash || '-';
         const displayHwid = this.formatHwid(hwid);
+        const boundQQ = String(user.bound_qq || '').trim();
         const pythonVersion = user.python_version || user.python || '-';
         const locale = user.locale || user.region || '-';
         const lastSeen = user.updated_at || user.last_seen || user.last_seen_at || '-';
@@ -1087,6 +1091,7 @@ const app = {
 
         const items = [
             { label: 'HWID', value: displayHwid },
+            { label: '绑定QQ', value: boundQQ || '未绑定' },
             { label: '软件版本', value: version },
             { label: '系统', value: osName },
             { label: '系统版本', value: osVersion },
@@ -2617,6 +2622,7 @@ const app = {
         this.setVal('noticeEditDate', new Date().toLocaleDateString('zh-CN'));
         this.setVal('noticeEditSummary', '');
         this.setVal('noticeEditContent', '');
+        this.setVal('noticeEditIconClass', '');
         const pinnedEl = document.getElementById('noticeEditPinned');
         if (pinnedEl) pinnedEl.checked = false;
         this._switchNoticeTab('edit');
@@ -2639,6 +2645,7 @@ const app = {
         this.setVal('noticeEditDate', item.date || '');
         this.setVal('noticeEditSummary', item.summary || '');
         this.setVal('noticeEditContent', item.content || '');
+        this.setVal('noticeEditIconClass', item.icon_class || '');
         const pinnedEl = document.getElementById('noticeEditPinned');
         if (pinnedEl) pinnedEl.checked = !!item.is_pinned;
         this._switchNoticeTab('edit');
@@ -2664,7 +2671,8 @@ const app = {
             date: (document.getElementById('noticeEditDate')?.value || '').trim(),
             summary: (document.getElementById('noticeEditSummary')?.value || '').trim(),
             content: (document.getElementById('noticeEditContent')?.value || '').trim(),
-            is_pinned: !!document.getElementById('noticeEditPinned')?.checked
+            is_pinned: !!document.getElementById('noticeEditPinned')?.checked,
+            icon_class: (document.getElementById('noticeEditIconClass')?.value || '').trim()
         };
         if (!payload.title) { this.showAlert('\u8bf7\u586b\u5199\u516c\u544a\u6807\u9898', 'warning'); return; }
         if (!payload.tag) {
@@ -3777,7 +3785,7 @@ const app = {
             settingLayout: settings.layout || 'comfortable',
             settingRefreshInterval: String(this.config.updateInterval),
             settingTimeRange: settings.timeRange || '30',
-            settingOnlineThreshold: String(this.state._serverOnlineThresholdMin || settings.onlineThreshold || '5'),
+
             settingExportFormat: settings.exportFormat || 'csv',
             settingDataRetention: settings.dataRetention || '0'
         };
@@ -3793,6 +3801,12 @@ const app = {
             settingAutoScrollUser: settings.autoScrollUser === true,
             settingDebugMode: settings.debugMode === true
         };
+
+        // 设置页在线阈值只读显示（实际修改入口在通知页面）
+        const thresholdDisplay = document.getElementById('settingOnlineThresholdDisplay');
+        if (thresholdDisplay) {
+            thresholdDisplay.textContent = String(this.state._serverOnlineThresholdMin || 5);
+        }
 
         Object.entries(checkboxes).forEach(([id, checked]) => {
             const el = document.getElementById(id);
@@ -4156,7 +4170,7 @@ const app = {
             layout: document.getElementById('settingLayout')?.value || 'comfortable',
             refreshInterval: document.getElementById('settingRefreshInterval')?.value || '60',
             timeRange: document.getElementById('settingTimeRange')?.value || '30',
-            onlineThreshold: document.getElementById('settingOnlineThreshold')?.value || '5',
+
             desktopNotify: document.getElementById('settingDesktopNotify')?.checked ?? true,
             sound: document.getElementById('settingSound')?.checked ?? true,
             autoScrollUser: document.getElementById('settingAutoScrollUser')?.checked ?? false,
@@ -4165,12 +4179,7 @@ const app = {
             debugMode: document.getElementById('settingDebugMode')?.checked ?? false
         };
 
-        // 在线阈值变更时同步推送到服务端
-        const newThreshold = parseInt(settings.onlineThreshold) || 5;
-        const oldThreshold = this.state._serverOnlineThresholdMin || 5;
-        if (newThreshold !== oldThreshold) {
-            this._applyOnlineThreshold(newThreshold);
-        }
+
 
         try {
             localStorage.setItem('dashboard_settings', JSON.stringify(settings));
@@ -4693,6 +4702,12 @@ const app = {
                 ? 'background: linear-gradient(135deg, #60a5fa, #2563eb);'
                 : 'background: linear-gradient(135deg, #4a4a4a, #1a1a1a);';
 
+            // 拥有评论区特殊权限的用户头像加蓝色描边
+            let commentPerms = {};
+            try { commentPerms = typeof user.comment_perms === 'string' ? JSON.parse(user.comment_perms || '{}') : (user.comment_perms || {}); } catch {}
+            const hasCommentSpecialPerms = commentPerms.can_delete_others || commentPerms.can_pin_comment || commentPerms.can_ban_user;
+            const avatarBorderStyle = hasCommentSpecialPerms ? 'box-shadow: 0 0 0 2.5px #3b82f6, 0 2px 6px rgba(0,0,0,0.12);' : '';
+
             const originalName = this.getAutoUserName(user);
             const alias = this.normalizeUserName(user.alias);
             const displayName = this.getDisplayUserName(user);
@@ -4704,7 +4719,7 @@ const app = {
             // 标签 badges
             let tag_badges = '';
             if (isMarked) tag_badges += '<span class="user-tag" title="星标" style="color:#f59e0b;border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.06);">⭐</span>';
-            if (isAdmin) tag_badges += '<span class="user-tag" title="管理员" style="color:#2563eb;border-color:rgba(37,99,235,.3);background:rgba(37,99,235,.06);">🔑</span>';
+            if (isAdmin) tag_badges += '<span class="user-tag" title="管理员" style="color:#2563eb;border-color:rgba(37,99,235,.3);background:rgba(37,99,235,.06);">🔑 管理员</span>';
             let user_tags = [];
             try { user_tags = typeof user.tags === 'string' ? JSON.parse(user.tags || '[]') : (user.tags || []); } catch {}
             const all_tag_defs = this.state.dashboardData?.tag_options || [];
@@ -4729,7 +4744,7 @@ const app = {
             <tr style="cursor:pointer;" onclick="app.openUserDetailByData('${userData}')">
                 <td>
                     <div class="user-cell">
-                        <div class="user-avatar" style="${avatarBgStyle}">#${user.id || '-'}</div>
+                        <div class="user-avatar" style="${avatarBgStyle}${avatarBorderStyle}">#${user.id || '-'}</div>
                         <div class="user-info">
                             <span class="user-name" style="${nameStyle}">${nameHtml}</span>
                             ${tagRow}
@@ -4932,241 +4947,133 @@ const app = {
         const registerTime = this.getUserRegisterTime(user);
         const minutes = user.minutes_ago ?? user.minutes ?? user.last_seen_minutes ?? '-';
         const resolution = user.resolution || user.screen_resolution || user.screenResolution || '-';
+        const boundQQ = String(user.bound_qq || '').trim();
+        const hasBoundQQ = !!boundQQ;
+        const qqDisplay = hasBoundQQ
+            ? `<span style="font-family:monospace;">${this.escapeHtmlSafe(boundQQ)}</span>`
+            : '<span style="color:var(--text-muted);">未绑定</span>';
 
         const originalName = this.getAutoUserName(user);
         const alias = this.normalizeUserName(user.alias);
         let displayName = this.escapeHtmlSafe(this.getDisplayUserName(user));
         if (alias && alias !== originalName) {
-            displayName = `${this.escapeHtmlSafe(alias)} <span style="color: var(--text-muted); font-size: 0.8em; font-weight: normal;">(${this.escapeHtmlSafe(originalName)})</span>`;
+            displayName = `${this.escapeHtmlSafe(alias)} <span style="color: var(--text-muted); font-size: 0.75em; font-weight: normal;">(${this.escapeHtmlSafe(originalName)})</span>`;
         }
 
         const localeMap = {
-            'zh-CN': '中国',
-            'zh-TW': '中国台湾',
-            'zh-HK': '中国香港',
-            'en-US': '美国',
-            'en-GB': '英国',
-            'ja-JP': '日本',
-            'ko-KR': '韩国',
-            'ru-RU': '俄罗斯',
-            'de-DE': '德国',
-            'fr-FR': '法国'
+            'zh-CN': '中国', 'zh-TW': '中国台湾', 'zh-HK': '中国香港',
+            'en-US': '美国', 'en-GB': '英国', 'ja-JP': '日本',
+            'ko-KR': '韩国', 'ru-RU': '俄罗斯', 'de-DE': '德国', 'fr-FR': '法国'
         };
         const localeDisplay = localeMap[localeCode] || localeCode;
 
         const isOnline = this.isUserOnlineByMinutes(minutes);
         const statusClass = isOnline ? 'online' : 'offline';
         const statusText = isOnline ? '在线' : '离线';
-        const statusColor = isOnline ? 'var(--secondary)' : 'var(--danger)';
 
         const isMarked = this.state.markedUsers.has(hwid);
         const starIcon = isMarked
-            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`
-            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`
+            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
         const markText = isMarked ? '取消标记' : '标记用户';
-        const markColor = isMarked ? '#f59e0b' : 'var(--text)';
+        const markColor = isMarked ? '#f59e0b' : 'var(--text-muted)';
 
         const isAdmin = this.state.adminUsers.has(hwid);
-        const adminIcon = isAdmin
-            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`
-            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`;
-        const adminText = isAdmin ? '取消管理员' : '标记为管理员';
-        const adminColor = isAdmin ? 'var(--primary)' : 'var(--text)';
+        const adminText = isAdmin ? '取消管理员' : '设为管理员';
+        const adminColor = isAdmin ? 'var(--primary)' : 'var(--text-muted)';
 
         const avatarBg = isAdmin
             ? 'linear-gradient(135deg, #60a5fa, #2563eb)'
             : 'linear-gradient(135deg, #4a4a4a, #1a1a1a)';
 
-        const sections = [
-            {
-                title: '基础信息',
-                items: [
-                    { label: '用户 ID (数字)', value: `<b style="color: var(--primary);"># ${user.id || '-'}</b>` },
-                    { label: '用户昵称', value: displayName },
-                    { label: '在线状态', value: `<span class="status-dot ${statusClass}"></span>${statusText}` },
-                    { label: '账户状态', value: `<span style="color: var(--secondary);">正常</span>` },
-                    { label: '最近活跃', value: this.formatTimeAgo(minutes) },
-                    { label: '最后更新', value: this.escapeHtmlSafe(lastSeen) },
-                    { label: '注册时间', value: this.escapeHtmlSafe(registerTime) },
-                    { label: '区域', value: this.escapeHtmlSafe(localeDisplay) }
-                ]
-            },
-            {
-                title: '设备信息',
-                items: [
-                    { label: '操作系统', value: this.escapeHtmlSafe(osName) },
-                    { label: '系统版本', value: this.escapeHtmlSafe(osVersion) },
-                    { label: '构建版本', value: this.escapeHtmlSafe(osBuild) },
-                    { label: '系统架构', value: this.escapeHtmlSafe(arch) },
-                    { label: '屏幕分辨率', value: this.escapeHtmlSafe(resolution) },
-                    { label: 'HWID', value: `<span style="font-family: monospace;">${this.escapeHtmlSafe(displayHwid)}</span>` }
-                ]
-            },
-            {
-                title: '应用环境',
-                items: [
-                    { label: '客户端版本', value: this.escapeHtmlSafe(version) },
-                    { label: 'Python环境', value: this.escapeHtmlSafe(pythonVersion) }
-                ]
-            },
-            {
-                title: '服务器AI用量统计',
-                items: [
-                    { label: '使用Tokens', value: `<b style="color: var(--primary);">${(user.ai_tokens || 0).toLocaleString()}</b>` },
-                    { label: '发送信息条数', value: `<b style="color: var(--secondary);">${(user.ai_messages || 0).toLocaleString()}</b>` },
-                    { label: '违规次数', value: `<b style="color: var(--danger);">${(user.ai_violations || 0).toLocaleString()}</b>` },
-                    { label: '每日限额', value: `<span id="userDetailDailyLimit">加载中...</span>` },
-                    { label: '永久额度', value: `<span id="userDetailBonus">加载中...</span>` }
-                ]
-            }
-        ];
+        let commentPerms = {};
+        try { commentPerms = typeof user.comment_perms === 'string' ? JSON.parse(user.comment_perms || '{}') : (user.comment_perms || {}); } catch {}
+        const hasCommentSpecialPerms = commentPerms.can_delete_others || commentPerms.can_pin_comment || commentPerms.can_ban_user;
+        const avatarRing = hasCommentSpecialPerms ? 'box-shadow: 0 0 0 3px #3b82f6;' : '';
+
+        const iconUser = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>';
+        const iconDevice = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>';
+        const iconApp = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>';
+        const iconAI = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line></svg>';
+
+        const _ii = (label, value) => `<div class="ud-info-row"><span class="ud-info-label">${label}</span><span class="ud-info-value">${value}</span></div>`;
+
+        const _sc = (icon, title, items) => `<div class="ud-section-card"><div class="ud-section-header"><span class="ud-section-icon">${icon}</span><span class="ud-section-title">${title}</span></div><div class="ud-section-body">${items}</div></div>`;
+
+        const _ab = (oc, icon, text, st = '') => `<button class="ud-action-btn" onclick="${oc}" style="${st}">${icon}<span>${text}</span></button>`;
+
+        const _db = (oc, icon, text, bg) => `<button class="ud-action-btn ud-action-danger" onclick="${oc}" style="background:${bg};border-color:${bg};color:#fff;">${icon}<span>${text}</span></button>`;
+
+        const _pt = (pk, label, desc, checked) => `<div class="ud-perm-row"><div class="ud-perm-info"><div class="ud-perm-label">${label}</div><div class="ud-perm-desc">${desc}</div></div><label class="switch"><input type="checkbox" ${checked ? 'checked' : ''} onchange="app.toggleCommentPerm('${hwid}','${pk}',this.checked)"><span class="slider"></span></label></div>`;
+
+        const svgEdit = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
+        const svgChat = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
+        const svgBell = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>';
+        const svgUpload = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>';
+        const svgKey = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>';
+        const svgCheck = (filled) => `<svg width="13" height="13" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
+        const svgBan = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>';
+        const svgMic = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line></svg>';
+        const svgTrash = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+        const svgHeart = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>';
+        const svgClock = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+        const svgPlus = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
 
         let html = `
-        <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 30px; border-bottom: 1px solid var(--border); padding-bottom: 20px;">
-            <div style="width: 64px; height: 64px; background: ${avatarBg}; border-radius: 16px; color: #fff; font-size: 24px; font-weight: bold; display: flex; align-items: center; justify-content: center;">
-                ${this.escapeHtmlSafe((alias || originalName).substring(0, 1).toUpperCase())}
+        <div class="ud-header">
+            <div class="ud-avatar-wrap">
+                <div class="ud-avatar" style="background:${avatarBg};${avatarRing}">${this.escapeHtmlSafe((alias || originalName).substring(0, 1).toUpperCase())}</div>
+                <span class="ud-status-indicator ${statusClass}"></span>
             </div>
-            <div>
-                <h2 style="margin-bottom: 4px; font-size: 24px;">${displayName}</h2>
-                <div style="display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--text-muted);">
-                    <div style="display: flex; align-items: center;">
-                        <span class="status-dot ${statusClass}"></span>
-                        <span style="color: ${statusColor}; font-weight: 500;">${statusText}</span>
-                    </div>
-                    <div>Numeric ID: #${user.id || '-'}</div>
-                    <div>HWID: ${this.escapeHtmlSafe(displayHwid)}</div>
+            <div class="ud-header-info">
+                <h2 class="ud-display-name">${displayName}</h2>
+                <div class="ud-meta-row">
+                    <span class="ud-meta-chip"><span class="status-dot ${statusClass}"></span>${statusText}</span>
+                    <span class="ud-meta-chip">ID #${user.id || '-'}</span>
+                    <span class="ud-meta-chip ud-meta-mono">${this.escapeHtmlSafe(displayHwid)}</span>
                 </div>
             </div>
         </div>
 
-        <div style="margin-bottom: 30px; background: #fff; border-radius: 12px; border: 1px solid var(--border); padding: 20px;">
-            <h4 style="margin-bottom: 16px; font-size: 16px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                管理功能
-            </h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">基础操作</div>
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn" onclick="app.updateUserAlias('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                            添加备注
-                        </button>
-                        <button class="btn" onclick="app.sendPopup('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                            发送弹窗
-                        </button>
-                        <button class="btn" onclick="app.sendNotification('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-                            发送提示
-                        </button>
-                        <button class="btn" onclick="app.requestLog('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                            请求日志
-                        </button>
-                    </div>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">用户标记</div>
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn" onclick="app.toggleMarkUser('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: ${markColor}; color: ${markColor}; min-width: 160px; justify-content: center;">
-                            ${starIcon}
-                            ${markText}
-                        </button>
-                        <button class="btn" onclick="app.toggleAdminUser('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: ${adminColor}; color: ${adminColor}; min-width: 160px; justify-content: center;">
-                            ${adminIcon}
-                            ${adminText}
-                        </button>
-                    </div>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">认证与昵称</div>
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn" onclick="app.toggleUserVerified('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: ${user.verified ? 'var(--secondary)' : 'var(--text-muted)'}; color: ${user.verified ? 'var(--secondary)' : 'var(--text-muted)'}; min-width: 160px; justify-content: center;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="${user.verified ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                            ${user.verified ? '取消认证' : '认证用户'}
-                        </button>
-                        <button class="btn" onclick="app.setUserNickname('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: var(--primary); color: var(--primary);">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                            设置昵称
-                        </button>
-                    </div>
-                    </div>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">用户标签</div>
-                    <div id="userTagBadges" style="display: flex; gap: 6px; flex-wrap: wrap;">
-                    </div>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">权限管理</div>
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn" onclick="app.banFeedback('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: var(--warning); border-color: var(--warning); color: white; min-width: 120px; justify-content: center;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
-                            封禁反馈
-                        </button>
-                        <button class="btn" onclick="app.banAI('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: #18181b; border-color: #18181b; color: white; min-width: 120px; justify-content: center;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line></svg>
-                            封禁AI
-                        </button>
-                        <button class="btn" onclick="app.deleteUser('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: var(--danger); border-color: var(--danger); color: white; min-width: 120px; justify-content: center;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                            删除用户
-                        </button>
-                    </div>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">AI 额度管理</div>
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn" onclick="app.setUserDailyLimit('${hwid}', '${alias || originalName}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: var(--primary); color: var(--primary);">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                            提升每日限额
-                        </button>
-                        <button class="btn" onclick="app.addBonusCredits('${hwid}', '${alias || originalName}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: #10b981; color: #10b981;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                            增加永久额度
-                        </button>
-                    </div>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">主题赠送</div>
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn" onclick="app.grantSupporterTheme('${hwid}')" style="display: flex; align-items: center; gap: 6px; font-size: 13px; border-color: #e879f9; color: #e879f9;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                            赠送 Supporter 主题
-                        </button>
-                    </div>
-                </div>
+        <div class="ud-info-grid">
+            ${_sc(iconUser, '基础信息', _ii('用户 ID', `<b style="color:var(--primary);"># ${user.id || '-'}</b>`) + _ii('在线状态', `<span class="status-dot ${statusClass}"></span>${statusText}`) + _ii('绑定 QQ', qqDisplay) + _ii('最近活跃', this.formatTimeAgo(minutes)) + _ii('最后更新', this.escapeHtmlSafe(lastSeen)) + _ii('注册时间', this.escapeHtmlSafe(registerTime)) + _ii('区域', this.escapeHtmlSafe(localeDisplay)))}
+            ${_sc(iconDevice, '设备信息', _ii('操作系统', this.escapeHtmlSafe(osName)) + _ii('系统版本', this.escapeHtmlSafe(osVersion)) + _ii('构建版本', this.escapeHtmlSafe(osBuild)) + _ii('系统架构', this.escapeHtmlSafe(arch)) + _ii('分辨率', this.escapeHtmlSafe(resolution)) + _ii('HWID', `<span style="font-family:monospace;font-size:12px;">${this.escapeHtmlSafe(displayHwid)}</span>`))}
+            ${_sc(iconApp, '应用环境', _ii('客户端版本', this.escapeHtmlSafe(version)) + _ii('Python 环境', this.escapeHtmlSafe(pythonVersion)))}
+            ${_sc(iconAI, 'AI 用量统计', _ii('使用 Tokens', `<b style="color:var(--primary);">${(user.ai_tokens || 0).toLocaleString()}</b>`) + _ii('发送信息', `<b style="color:var(--secondary);">${(user.ai_messages || 0).toLocaleString()}</b>`) + _ii('违规次数', `<b style="color:var(--danger);">${(user.ai_violations || 0).toLocaleString()}</b>`) + _ii('每日限额', '<span id="userDetailDailyLimit">加载中...</span>') + _ii('永久额度', '<span id="userDetailBonus">加载中...</span>'))}
+        </div>
+
+        <div class="ud-manage-panel">
+            <div class="ud-manage-header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                <span>管理功能</span>
+            </div>
+            <div class="ud-manage-body">
+                <div class="ud-manage-group"><div class="ud-manage-group-label">基础操作</div><div class="ud-manage-group-btns">${_ab(`app.updateUserAlias('${hwid}')`, svgEdit, '添加备注')}${_ab(`app.bindUserQQ('${hwid}')`, svgChat, hasBoundQQ ? '修改QQ' : '绑定QQ', `border-color:${hasBoundQQ ? 'var(--secondary)' : 'var(--primary)'};color:${hasBoundQQ ? 'var(--secondary)' : 'var(--primary)'};`)}${_ab(`app.sendPopup('${hwid}')`, svgChat, '发送弹窗')}${_ab(`app.sendNotification('${hwid}')`, svgBell, '发送提示')}${_ab(`app.requestLog('${hwid}')`, svgUpload, '请求日志')}</div></div>
+                <div class="ud-manage-group"><div class="ud-manage-group-label">用户标记</div><div class="ud-manage-group-btns">${_ab(`app.toggleMarkUser('${hwid}')`, starIcon, markText, `border-color:${markColor};color:${markColor};`)}${_ab(`app.toggleAdminUser('${hwid}')`, svgKey, adminText, `border-color:${adminColor};color:${adminColor};`)}</div></div>
+                <div class="ud-manage-group"><div class="ud-manage-group-label">认证与昵称</div><div class="ud-manage-group-btns">${_ab(`app.toggleUserVerified('${hwid}')`, svgCheck(user.verified), user.verified ? '取消认证' : '认证用户', `border-color:${user.verified ? 'var(--secondary)' : 'var(--text-muted)'};color:${user.verified ? 'var(--secondary)' : 'var(--text-muted)'};`)}${_ab(`app.setUserNickname('${hwid}')`, svgEdit, '设置昵称', 'border-color:var(--primary);color:var(--primary);')}</div></div>
+                <div class="ud-manage-group"><div class="ud-manage-group-label">用户标签</div><div id="userTagBadges" class="ud-manage-group-btns" style="gap:6px;"></div></div>
+                <div class="ud-manage-group"><div class="ud-manage-group-label">AI 额度管理</div><div class="ud-manage-group-btns">${_ab(`app.setUserDailyLimit('${hwid}','${alias || originalName}')`, svgClock, '提升每日限额', 'border-color:var(--primary);color:var(--primary);')}${_ab(`app.addBonusCredits('${hwid}','${alias || originalName}')`, svgPlus, '增加永久额度', 'border-color:#10b981;color:#10b981;')}</div></div>
+                <div class="ud-manage-group"><div class="ud-manage-group-label">主题赠送</div><div class="ud-manage-group-btns">${_ab(`app.grantSupporterTheme('${hwid}')`, svgHeart, '赠送 Supporter 主题', 'border-color:#e879f9;color:#e879f9;')}</div></div>
+                <div class="ud-manage-group"><div class="ud-manage-group-label">权限管理</div><div class="ud-manage-group-btns">${_db(`app.banFeedback('${hwid}')`, svgBan, '封禁反馈', 'var(--warning)')}${_db(`app.banAI('${hwid}')`, svgMic, '封禁 AI', '#18181b')}${_db(`app.deleteUser('${hwid}')`, svgTrash, '删除用户', 'var(--danger)')}</div></div>
             </div>
         </div>
-        
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
-    `;
 
-        sections.forEach(section => {
-            html += `
-            <div class="detail-section" style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid var(--border);">
-                <h4 style="margin-bottom: 16px; font-size: 16px; font-weight: 600; color: var(--text);">${section.title}</h4>
-                <div style="display: grid; gap: 12px;">
-        `;
-            section.items.forEach(item => {
-                html += `
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 14px;">
-                    <span style="color: var(--text-muted);">${item.label}</span>
-                    <span style="font-weight: 500; text-align: right;">${item.value}</span>
-                </div>
-            `;
-            });
-            html += `
-                </div>
+        <div class="ud-comment-perms-panel">
+            <div class="ud-manage-header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <span>评论区权限</span>
+                ${hasCommentSpecialPerms ? '<span class="ud-perm-active-badge">已授权</span>' : ''}
             </div>
+            <div class="ud-perm-body">
+                ${_pt('can_delete_others', '删除他人评论', '允许该用户删除评论区中其他用户的评论', !!commentPerms.can_delete_others)}
+                ${_pt('can_pin_comment', '置顶评论', '允许该用户置顶公告评论', !!commentPerms.can_pin_comment)}
+                ${_pt('can_ban_user', '封禁用户评论', '允许该用户封禁其他用户的评论资格', !!commentPerms.can_ban_user)}
+            </div>
+        </div>
         `;
-        });
 
-        html += `</div>`;
         container.innerHTML = html;
 
-        // 异步加载用户 AI 额度信息
         fetch(`${this.config.apiBase}/admin/ai/usage?days=1`).then(r => r.json()).then(data => {
             const ranking = (data.user_ranking || []).find(u => (u.machine_id || '') === hwid);
             const limitEl = document.getElementById('userDetailDailyLimit');
@@ -5190,9 +5097,44 @@ const app = {
             if (bonusEl) bonusEl.textContent = '-';
         });
 
-        // 动态填充标签 badge 选择器
         this._renderUserTagBadges(hwid, user);
     },
+
+    /**
+     * 切换评论区权限开关
+     */
+    async toggleCommentPerm(hwid, permKey, enabled) {
+        const user = this.state.selectedUser;
+        if (!user) return;
+
+        let perms = {};
+        try { perms = typeof user.comment_perms === 'string' ? JSON.parse(user.comment_perms || '{}') : (user.comment_perms || {}); } catch {}
+        perms[permKey] = enabled;
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/user-comment-perms`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine_id: hwid, comment_perms: perms })
+            });
+            if (!res.ok) throw new Error();
+        } catch {
+            this.showAlert('权限更新失败', 'danger');
+            return;
+        }
+
+        user.comment_perms = JSON.stringify(perms);
+        this.showAlert(enabled ? '已授予权限' : '已收回权限', 'success');
+
+        const list_user = this.state.latestUsersData?.find(u => (u.hwid || u.hwid_hash) === hwid);
+        if (list_user) list_user.comment_perms = user.comment_perms;
+        if (this.state.latestUsersData) this.renderUserList(this.state.latestUsersData);
+
+        this.renderUserDetailView(user);
+    },
+
+
+
 
     // 标签内部名 → 中文显示名映射
     _tagDisplayNames: {
@@ -5375,6 +5317,78 @@ const app = {
             } else throw new Error();
         } catch (e) {
             this.showAlert('更新失败', 'danger');
+        }
+    },
+
+    isValidQQ(qq) {
+        return /^[1-9]\d{4,11}$/.test(String(qq || '').trim());
+    },
+
+    bindUserQQ(hwid) {
+        const user = this.getCachedUserByMachineId(hwid);
+        const currentQQ = String(user?.bound_qq || '').trim();
+        const content = `
+            <div class="form-group">
+                <label>个人 QQ</label>
+                <input type="text" class="input" style="width: 100%;" id="bindQQInput" maxlength="12" inputmode="numeric" placeholder="请输入 5-12 位 QQ 号" value="${this.escapeHtmlSafe(currentQQ)}">
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">认证用户前需要先绑定 QQ。留空可清除绑定。</div>
+        `;
+
+        document.getElementById('controlModalTitle').textContent = currentQQ ? '修改绑定 QQ' : '绑定 QQ';
+        document.getElementById('controlModalBody').innerHTML = content;
+        document.getElementById('controlModal').dataset.hwid = hwid;
+
+        const submitBtn = document.getElementById('controlModalSubmit');
+        submitBtn.textContent = currentQQ ? '保存 QQ' : '绑定 QQ';
+        submitBtn.setAttribute('onclick', 'app.submitBindUserQQ()');
+
+        document.getElementById('controlModalMask').classList.add('show');
+        document.getElementById('controlModal').classList.add('show');
+
+        setTimeout(() => document.getElementById('bindQQInput')?.focus(), 100);
+    },
+
+    async submitBindUserQQ() {
+        const hwid = document.getElementById('controlModal').dataset.hwid;
+        const rawQQ = document.getElementById('bindQQInput')?.value || '';
+        const boundQQ = String(rawQQ).trim();
+
+        if (boundQQ && !this.isValidQQ(boundQQ)) {
+            this.showAlert('QQ 号需为 5 到 12 位数字且不能以 0 开头', 'warning');
+            return;
+        }
+
+        this.closeControlModal();
+
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/user-profiles`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    machine_id: hwid,
+                    bound_qq: boundQQ
+                })
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'HTTP ' + res.status);
+            }
+            const updatedUser = await this.refreshUserCache(hwid);
+            this.showAlert(boundQQ ? 'QQ 已绑定' : 'QQ 绑定已清除', 'success');
+            if (this.state.currentView === 'userlist') {
+                if (this.state.userListSort) {
+                    this.applyUserListSort();
+                } else {
+                    this.renderUserList(this.state.latestUsersData || []);
+                    this.filterUserList();
+                }
+            }
+            if (updatedUser && this.state.selectedUser && this.state.selectedUser.hwid === hwid) {
+                this.renderUserDetailView(updatedUser);
+            }
+        } catch (e) {
+            this.showAlert('操作失败: ' + e.message, 'danger');
         }
     },
 
@@ -8458,6 +8472,11 @@ Object.assign(app, {
         const user = this.state.selectedUser;
         const newVal = !(user?.verified);
         const label = newVal ? '认证' : '取消认证';
+        if (newVal && !String(user?.bound_qq || '').trim()) {
+            this.showAlert('认证用户前请先绑定 QQ', 'warning');
+            this.bindUserQQ(hwid);
+            return;
+        }
         if (!confirm(`确认${label}此用户？`)) return;
         try {
             const res = await fetch(`${this.config.apiBase}/admin/user-profiles`, {
@@ -8516,6 +8535,219 @@ Object.assign(app, {
             }
         } catch (e) {
             this.showAlert('操作失败: ' + e.message, 'danger');
+        }
+    },
+
+    // ==================== 审计日志 ====================
+
+    _auditLogState: { currentType: '', page: 1, pageSize: 50, total: 0 },
+
+    async initAuditLog() {
+        this._auditLogState = { currentType: '', page: 1, pageSize: 50, total: 0 };
+        await this.loadAuditLogs();
+        this.loadAuditLogInfo();
+    },
+
+    async loadAuditLogInfo() {
+        try {
+            const resp = await fetch('/dashboard/audit-logs/info');
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const el = document.getElementById('auditLogTotalCount');
+            if (el) el.innerHTML = `📝 总记录：<strong style="color: var(--text);">${data.total_entries || 0}</strong>`;
+        } catch (e) { /* 静默 */ }
+    },
+
+    switchAuditTab(btn) {
+        document.querySelectorAll('.audit-tab').forEach(t => t.classList.remove('active'));
+        btn.classList.add('active');
+        const logType = btn.dataset.logType || '';
+        this._auditLogState.currentType = logType;
+        this._auditLogState.page = 1;
+
+        const table = document.querySelector('#auditLogTable')?.parentElement?.parentElement;
+        const pagination = document.getElementById('auditLogPagination');
+        const placeholder = document.getElementById('auditSensitivePlaceholder');
+
+        if (logType === 'sensitive') {
+            if (table) table.style.display = 'none';
+            if (pagination) pagination.style.display = 'none';
+            if (placeholder) placeholder.style.display = 'block';
+            return;
+        }
+        if (table) table.style.display = '';
+        if (pagination) pagination.style.display = '';
+        if (placeholder) placeholder.style.display = 'none';
+        this.loadAuditLogs();
+    },
+
+    async loadAuditLogs() {
+        const s = this._auditLogState;
+        const params = new URLSearchParams({ page: s.page, page_size: s.pageSize });
+        if (s.currentType) params.set('log_type', s.currentType);
+
+        const startDate = document.getElementById('auditStartDate')?.value;
+        const endDate = document.getElementById('auditEndDate')?.value;
+        const actorFilter = document.getElementById('auditActorFilter')?.value?.trim();
+        const targetFilter = document.getElementById('auditTargetFilter')?.value?.trim();
+        if (startDate) params.set('start_date', startDate);
+        if (endDate) params.set('end_date', endDate);
+        if (actorFilter) params.set('actor_id', actorFilter);
+        if (targetFilter) params.set('target_id', targetFilter);
+
+        try {
+            const resp = await fetch(`/dashboard/audit-logs?${params}`);
+            if (!resp.ok) throw new Error('请求失败');
+            const data = await resp.json();
+            s.total = data.total || 0;
+            this.renderAuditLogTable(data.logs || []);
+            this.renderAuditLogPagination();
+        } catch (e) {
+            const tbody = document.getElementById('auditLogTableBody');
+            if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text-muted);">加载失败: ${e.message}</td></tr>`;
+        }
+    },
+
+    _auditLogTypeLabels: {
+        comment: '💬 评论', moderation: '🛡️ 审核', ban: '🚫 封禁',
+        sensitive: '⚠️ 敏感词', report: '🚩 举报'
+    },
+
+    _auditActionLabels: {
+        create_comment: '发表评论', delete_comment: '删除评论', delete_by_admin: '管理员删除',
+        change_comment_status: '状态变更', ban_comment: '封禁用户', unban_comment: '解禁用户',
+        submit_report: '提交举报', resolve_report: '处理举报', dismiss_report: '驳回举报',
+        trigger_word: '触发敏感词'
+    },
+
+    renderAuditLogTable(logs) {
+        const tbody = document.getElementById('auditLogTableBody');
+        if (!tbody) return;
+        if (!logs.length) {
+            tbody.innerHTML = '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text-muted);">暂无日志记录</td></tr>';
+            return;
+        }
+        tbody.innerHTML = logs.map(log => {
+            const typeLabel = this._auditLogTypeLabels[log.log_type] || log.log_type;
+            const actionLabel = this._auditActionLabels[log.action] || log.action;
+            const actorDisplay = this._formatAuditUser(log.actor_uid, log.actor_alias, log.actor_role);
+            const targetDisplay = this._formatAuditUser(log.target_uid, log.target_alias);
+            const detailSummary = this._formatAuditDetail(log.detail, log.action);
+            const hashShort = (log.hash || '').substring(0, 12) + '...';
+
+            return `<tr>
+                <td style="padding:8px 12px;white-space:nowrap;color:var(--text-muted);">${log.timestamp}</td>
+                <td style="padding:8px 12px;"><span class="audit-log-badge ${log.log_type}">${typeLabel}</span></td>
+                <td style="padding:8px 12px;font-weight:500;">${actionLabel}</td>
+                <td style="padding:8px 12px;">${actorDisplay}</td>
+                <td style="padding:8px 12px;">${targetDisplay}</td>
+                <td style="padding:8px 12px;" class="audit-detail-cell" title="${this._escapeHtml(log.detail || '')}">${detailSummary}</td>
+                <td style="padding:8px 8px;" class="audit-hash-cell" title="${log.hash || ''}">${hashShort}</td>
+            </tr>`;
+        }).join('');
+    },
+
+    _formatAuditUser(uid, alias, role) {
+        if (!uid && !alias) {
+            if (role === 'system') return '<span style="color:var(--text-muted);">系统</span>';
+            if (role === 'admin') return '<span style="color:var(--text-muted);">管理员</span>';
+            return '<span style="color:var(--text-muted);">-</span>';
+        }
+        let display = '';
+        if (uid) display += `<span style="font-weight:600;">#${uid}</span>`;
+        if (alias) display += ` <span style="color:var(--text-muted);font-size:11px;">${this._escapeHtml(alias)}</span>`;
+        if (role === 'admin') display += ' <span style="background:#fee2e2;color:#991b1b;padding:1px 4px;border-radius:3px;font-size:9px;">管理</span>';
+        return display || '-';
+    },
+
+    _formatAuditDetail(detailStr, action) {
+        if (!detailStr) return '<span style="color:var(--text-muted);">-</span>';
+        try {
+            const d = JSON.parse(detailStr);
+            if (d.content) return this._escapeHtml(d.content.length > 60 ? d.content.substring(0, 60) + '...' : d.content);
+            if (d.reason) return '原因: ' + this._escapeHtml(d.reason.length > 40 ? d.reason.substring(0, 40) + '...' : d.reason);
+            if (d.report_type) return '类型: ' + this._escapeHtml(d.report_type);
+            if (d.old_status && d.new_status) return `${d.old_status} → ${d.new_status}`;
+            return this._escapeHtml(detailStr.length > 60 ? detailStr.substring(0, 60) + '...' : detailStr);
+        } catch {
+            return this._escapeHtml(detailStr.length > 60 ? detailStr.substring(0, 60) + '...' : detailStr);
+        }
+    },
+
+    _escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    },
+
+    renderAuditLogPagination() {
+        const s = this._auditLogState;
+        const totalPages = Math.ceil(s.total / s.pageSize) || 1;
+        const info = document.getElementById('auditLogPageInfo');
+        if (info) info.textContent = `共 ${s.total} 条，第 ${s.page} / ${totalPages} 页`;
+        const prevBtn = document.getElementById('auditPrevBtn');
+        const nextBtn = document.getElementById('auditNextBtn');
+        if (prevBtn) prevBtn.disabled = s.page <= 1;
+        if (nextBtn) nextBtn.disabled = s.page >= totalPages;
+    },
+
+    auditLogPagePrev() {
+        if (this._auditLogState.page > 1) {
+            this._auditLogState.page--;
+            this.loadAuditLogs();
+        }
+    },
+
+    auditLogPageNext() {
+        const totalPages = Math.ceil(this._auditLogState.total / this._auditLogState.pageSize) || 1;
+        if (this._auditLogState.page < totalPages) {
+            this._auditLogState.page++;
+            this.loadAuditLogs();
+        }
+    },
+
+    resetAuditFilters() {
+        const ids = ['auditStartDate', 'auditEndDate', 'auditActorFilter', 'auditTargetFilter'];
+        ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        this._auditLogState.page = 1;
+        this.loadAuditLogs();
+    },
+
+    async verifyAuditChain() {
+        const statusEl = document.getElementById('auditLogChainStatus');
+        if (statusEl) statusEl.innerHTML = '⏳ 校验中...';
+        try {
+            const resp = await fetch('/dashboard/audit-logs/verify');
+            if (!resp.ok) throw new Error('请求失败');
+            const data = await resp.json();
+            if (data.integrity) {
+                if (statusEl) statusEl.innerHTML = `<span style="color:#16a34a;">✅ 哈希链完整（已校验 ${data.total_checked} 条）</span>`;
+                this.showAlert(`哈希链校验通过，共 ${data.total_checked} 条日志全部完整`, 'success');
+            } else {
+                if (statusEl) statusEl.innerHTML = `<span style="color:#dc2626;">❌ 发现 ${data.broken_count} 处异常（首个异常 ID: ${data.first_broken_id}）</span>`;
+                this.showAlert(`哈希链异常！发现 ${data.broken_count} 处篡改痕迹`, 'danger');
+            }
+        } catch (e) {
+            if (statusEl) statusEl.innerHTML = '❌ 校验失败';
+            this.showAlert('哈希链校验请求失败: ' + e.message, 'danger');
+        }
+    },
+
+    async exportAuditLogs() {
+        try {
+            const logType = this._auditLogState.currentType;
+            const params = logType ? `?log_type=${logType}` : '';
+            const resp = await fetch(`/dashboard/audit-logs/export${params}`);
+            if (!resp.ok) throw new Error('导出请求失败');
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `audit_logs_${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            this.showAlert('日志导出成功', 'success');
+        } catch (e) {
+            this.showAlert('导出失败: ' + e.message, 'danger');
         }
     }
 });

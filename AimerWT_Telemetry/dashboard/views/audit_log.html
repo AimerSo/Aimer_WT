@@ -1,0 +1,166 @@
+<div class="audit-log-container" style="max-width: 1200px; margin: 0 auto;">
+    <!-- 页面头部 -->
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="12" y1="18" x2="12" y2="12"></line>
+                <line x1="9" y1="15" x2="15" y2="15"></line>
+            </svg>
+            <h2 style="margin: 0; font-size: 18px; font-weight: 700;">合规审计日志</h2>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm" onclick="app.verifyAuditChain()" style="display: flex; align-items: center; gap: 4px; padding: 6px 12px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--card-bg); cursor: pointer; color: var(--text);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                验证哈希链
+            </button>
+            <button class="btn btn-sm" onclick="app.exportAuditLogs()" style="display: flex; align-items: center; gap: 4px; padding: 6px 12px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--card-bg); cursor: pointer; color: var(--text);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                导出 JSON
+            </button>
+        </div>
+    </div>
+
+    <!-- 存储信息卡片 -->
+    <div id="auditLogInfoCard" style="padding: 12px 16px; background: var(--card-bg); border-radius: 10px; border: 1px solid var(--border); margin-bottom: 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted);">
+        <span>📦 存储：<strong style="color: var(--text);">telemetry.db → audit_logs</strong></span>
+        <span>🔗 算法：<strong style="color: var(--text);">SHA-256 线性哈希链</strong></span>
+        <span id="auditLogTotalCount">📝 总记录：<strong style="color: var(--text);">--</strong></span>
+        <span id="auditLogChainStatus" style="margin-left: auto;">⏳ 链状态未检测</span>
+    </div>
+
+    <!-- Tab 切换 -->
+    <div style="display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--border); padding-bottom: 0;">
+        <button class="audit-tab active" data-log-type="" onclick="app.switchAuditTab(this)" style="padding: 8px 16px; font-size: 13px; font-weight: 600; border: none; background: transparent; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s;">
+            全部
+        </button>
+        <button class="audit-tab" data-log-type="comment" onclick="app.switchAuditTab(this)" style="padding: 8px 16px; font-size: 13px; font-weight: 600; border: none; background: transparent; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s;">
+            💬 评论
+        </button>
+        <button class="audit-tab" data-log-type="moderation" onclick="app.switchAuditTab(this)" style="padding: 8px 16px; font-size: 13px; font-weight: 600; border: none; background: transparent; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s;">
+            🛡️ 审核
+        </button>
+        <button class="audit-tab" data-log-type="ban" onclick="app.switchAuditTab(this)" style="padding: 8px 16px; font-size: 13px; font-weight: 600; border: none; background: transparent; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s;">
+            🚫 封禁
+        </button>
+        <button class="audit-tab" data-log-type="sensitive" onclick="app.switchAuditTab(this)" style="padding: 8px 16px; font-size: 13px; font-weight: 600; border: none; background: transparent; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s;">
+            ⚠️ 敏感词
+        </button>
+        <button class="audit-tab" data-log-type="report" onclick="app.switchAuditTab(this)" style="padding: 8px 16px; font-size: 13px; font-weight: 600; border: none; background: transparent; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s;">
+            🚩 举报
+        </button>
+    </div>
+
+    <!-- 筛选条件 -->
+    <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
+        <input type="date" id="auditStartDate" style="padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text);" />
+        <span style="font-size: 12px; color: var(--text-muted);">至</span>
+        <input type="date" id="auditEndDate" style="padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text);" />
+        <input type="text" id="auditActorFilter" placeholder="操作人 UID / ID" style="padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text); width: 120px;" />
+        <input type="text" id="auditTargetFilter" placeholder="被操作人 UID / ID" style="padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text); width: 120px;" />
+        <button onclick="app.loadAuditLogs()" style="padding: 6px 14px; font-size: 12px; border-radius: 6px; border: 1px solid var(--primary); background: var(--primary); color: white; cursor: pointer; font-weight: 600;">筛选</button>
+        <button onclick="app.resetAuditFilters()" style="padding: 6px 14px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text-muted); cursor: pointer;">重置</button>
+    </div>
+
+    <!-- 日志表格 -->
+    <div style="background: var(--card-bg); border-radius: 10px; border: 1px solid var(--border); overflow: hidden;">
+        <div style="overflow-x: auto;">
+            <table id="auditLogTable" style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <thead>
+                    <tr style="background: rgba(0,0,0,0.03); border-bottom: 1px solid var(--border);">
+                        <th style="padding: 10px 12px; text-align: left; font-weight: 600; color: var(--text-muted); white-space: nowrap;">时间</th>
+                        <th style="padding: 10px 12px; text-align: left; font-weight: 600; color: var(--text-muted); white-space: nowrap;">类型</th>
+                        <th style="padding: 10px 12px; text-align: left; font-weight: 600; color: var(--text-muted); white-space: nowrap;">操作</th>
+                        <th style="padding: 10px 12px; text-align: left; font-weight: 600; color: var(--text-muted); white-space: nowrap;">操作人</th>
+                        <th style="padding: 10px 12px; text-align: left; font-weight: 600; color: var(--text-muted); white-space: nowrap;">被操作人</th>
+                        <th style="padding: 10px 12px; text-align: left; font-weight: 600; color: var(--text-muted); white-space: nowrap;">详情</th>
+                        <th style="padding: 10px 8px; text-align: left; font-weight: 600; color: var(--text-muted); white-space: nowrap; font-size: 10px;">哈希</th>
+                    </tr>
+                </thead>
+                <tbody id="auditLogTableBody">
+                    <tr><td colspan="7" style="padding: 40px; text-align: center; color: var(--text-muted);">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 分页 -->
+    <div id="auditLogPagination" style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px; font-size: 12px; color: var(--text-muted);">
+        <span id="auditLogPageInfo">--</span>
+        <div style="display: flex; gap: 6px;">
+            <button id="auditPrevBtn" onclick="app.auditLogPagePrev()" disabled style="padding: 4px 12px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text-muted); cursor: pointer;">上一页</button>
+            <button id="auditNextBtn" onclick="app.auditLogPageNext()" disabled style="padding: 4px 12px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text-muted); cursor: pointer;">下一页</button>
+        </div>
+    </div>
+
+    <!-- 敏感词 Tab 占位提示 -->
+    <div id="auditSensitivePlaceholder" style="display: none; padding: 60px 20px; text-align: center; background: var(--card-bg); border-radius: 10px; border: 1px solid var(--border);">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.4; margin-bottom: 16px;">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        <p style="font-size: 14px; font-weight: 600; margin: 0 0 6px;">敏感词过滤系统尚未接入</p>
+        <p style="font-size: 12px; color: var(--text-muted); margin: 0;">该功能模块已预留，将在敏感词过滤引擎开发完成后自动启用</p>
+    </div>
+</div>
+
+<style>
+    .audit-tab.active {
+        color: var(--primary) !important;
+        border-bottom-color: var(--primary) !important;
+    }
+    .audit-tab:hover {
+        color: var(--text) !important;
+        background: rgba(0,0,0,0.03);
+    }
+    .audit-log-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .audit-log-badge.comment { background: #dbeafe; color: #1e40af; }
+    .audit-log-badge.moderation { background: #fef3c7; color: #92400e; }
+    .audit-log-badge.ban { background: #fee2e2; color: #991b1b; }
+    .audit-log-badge.sensitive { background: #fce7f3; color: #9d174d; }
+    .audit-log-badge.report { background: #e0e7ff; color: #3730a3; }
+    .audit-detail-cell {
+        max-width: 280px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+    .audit-detail-cell:hover {
+        white-space: normal;
+        word-break: break-all;
+    }
+    .audit-hash-cell {
+        font-family: 'Courier New', monospace;
+        font-size: 10px;
+        color: var(--text-muted);
+        max-width: 80px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: pointer;
+    }
+    .audit-hash-cell:hover {
+        max-width: none;
+        white-space: normal;
+        word-break: break-all;
+    }
+    #auditLogTable tbody tr {
+        border-bottom: 1px solid var(--border);
+        transition: background 0.15s;
+    }
+    #auditLogTable tbody tr:hover {
+        background: rgba(0,0,0,0.02);
+    }
+    #auditLogTable tbody tr:last-child {
+        border-bottom: none;
+    }
+</style>

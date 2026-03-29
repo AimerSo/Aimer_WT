@@ -48,11 +48,53 @@
     function openNoticeDetail(item, app) {
         if (window.NoticeModalModule && typeof window.NoticeModalModule.openNoticeDetail === 'function') {
             window.NoticeModalModule.openNoticeDetail(item);
+            markNoticeRead(item.id);
+            updateUnreadDots();
             return;
         }
         if (app && typeof app.showAlert === 'function') {
             app.showAlert(item && item.title ? item.title : '公告详情', item && item.content ? escapeHtml(item.content) : '', 'info');
+            markNoticeRead(item.id);
+            updateUnreadDots();
         }
+    }
+
+    /* 已读状态管理（localStorage） */
+    var STORAGE_KEY = 'aimer_notice_read_ids';
+
+    function getReadIds() {
+        try {
+            var raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return [];
+            var parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) { return []; }
+    }
+
+    function markNoticeRead(id) {
+        if (!id) return;
+        var ids = getReadIds();
+        var sid = String(id);
+        if (ids.indexOf(sid) === -1) {
+            ids.push(sid);
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ids)); } catch (e) {}
+        }
+    }
+
+    function isNoticeRead(id) {
+        if (!id) return true;
+        return getReadIds().indexOf(String(id)) >= 0;
+    }
+
+    function updateUnreadDots() {
+        var dots = document.querySelectorAll('.notice-unread-dot');
+        var readIds = getReadIds();
+        dots.forEach(function(dot) {
+            var nid = dot.getAttribute('data-unread-nid');
+            if (nid && readIds.indexOf(nid) >= 0) {
+                dot.classList.add('read');
+            }
+        });
     }
 
     function bindEvents(app) {
@@ -126,6 +168,28 @@
         return parts ? (parts.month + '.' + parts.day) : '';
     }
 
+    /* 绑定往期动态区域滚动指示器 */
+    function bindHistoryScrollIndicators(container) {
+        var history = container.querySelector('.notice-history');
+        if (!history) return;
+        var arrowUp = container.querySelector('.notice-history-arrow-up');
+        var arrowDown = container.querySelector('.notice-history-arrow-down');
+        if (!arrowUp || !arrowDown) return;
+
+        function updateArrows() {
+            var st = history.scrollTop;
+            var sh = history.scrollHeight;
+            var ch = history.clientHeight;
+            var hasOverflow = sh > ch + 2;
+            arrowUp.classList.toggle('visible', hasOverflow && st > 4);
+            arrowDown.classList.toggle('visible', hasOverflow && st + ch < sh - 4);
+        }
+
+        history.addEventListener('scroll', updateArrows, { passive: true });
+        requestAnimationFrame(updateArrows);
+        setTimeout(updateArrows, 200);
+    }
+
     function renderNoticeBoard(app) {
         const container = document.getElementById('notice-board') || document.querySelector('.notice-content');
         if (!container) return;
@@ -154,8 +218,10 @@
                     <span class="notice-section-text">往期动态</span>
                     <span class="notice-section-line"></span>
                 </div>
-                <div class="notice-history custom-scrollbar">
-                    <div style="padding: 18px 6px; color: var(--text-muted); font-size: 13px;">暂无公告</div>
+                <div class="notice-history-wrap">
+                    <div class="notice-history custom-scrollbar">
+                        <div style="padding: 18px 6px; color: var(--text-muted); font-size: 13px;">暂无公告</div>
+                    </div>
                 </div>
                 <div class="notice-footer" id="notice-server-status" data-connected="${connected ? '1' : '0'}">
                     <span class="notice-footer-dot ${dotClass}" aria-hidden="true"></span>
@@ -177,9 +243,14 @@
         const listHtml = others.map((item) => {
             const meta = getTypeMeta(item.type);
             const shortDate = formatShortDate(item.date);
+            var unread = !isNoticeRead(item.id);
+            var unreadDot = unread
+                ? `<span class="notice-unread-dot" data-unread-nid="${escapeHtml(item.id)}"></span>`
+                : '';
             return `
                 <div class="notice-item" data-type="${escapeHtml(item.type)}" data-notice-id="${escapeHtml(item.id)}">
                     <div class="notice-item-main">
+                        ${unreadDot}
                         <span class="notice-tag ${escapeHtml(meta.tagClass)}">${escapeHtml(item.tag)}</span>
                         <span class="notice-item-title">${escapeHtml(item.title)}</span>
                     </div>
@@ -192,11 +263,17 @@
         let pinnedHtml = '';
         if (pinned) {
             const pinnedMeta = getTypeMeta(pinned.type);
+            var decoIcon = pinned.iconClass || pinnedMeta.iconClass;
             const pinnedPreview = buildPinnedPreview(pinned);
+            var pinnedUnread = !isNoticeRead(pinned.id);
+            var pinnedUnreadDot = pinnedUnread
+                ? `<span class="notice-unread-dot notice-unread-dot-hero" data-unread-nid="${escapeHtml(pinned.id)}"></span>`
+                : '';
             pinnedHtml = `
             <div class="notice-hero" data-type="${escapeHtml(pinned.type)}" data-notice-id="${escapeHtml(pinned.id)}">
-                <div class="notice-hero-deco"><i class="${escapeHtml(pinnedMeta.iconClass)}"></i></div>
+                <div class="notice-hero-deco"><i class="${escapeHtml(decoIcon)}"></i></div>
                 <div class="notice-hero-top">
+                    ${pinnedUnreadDot}
                     <span class="notice-hero-pin"><i class="ri-pushpin-2-fill"></i> 置顶公告</span>
                     <span class="notice-hero-date">${escapeHtml(pinned.date)}</span>
                 </div>
@@ -211,8 +288,12 @@
                 <span class="notice-section-text">往期动态</span>
                 <span class="notice-section-line"></span>
             </div>
-            <div class="notice-history custom-scrollbar">
-                ${listHtml}
+            <div class="notice-history-wrap">
+                <div class="notice-history-arrow-up"><i class="ri-arrow-up-s-line"></i></div>
+                <div class="notice-history custom-scrollbar">
+                    ${listHtml}
+                </div>
+                <div class="notice-history-arrow-down"><i class="ri-arrow-down-s-line"></i></div>
             </div>
             <div class="notice-footer" id="notice-server-status" data-connected="${connected ? '1' : '0'}">
                 <span class="notice-footer-dot ${dotClass}" aria-hidden="true"></span>
@@ -221,6 +302,7 @@
         `;
 
         bindEvents(app);
+        bindHistoryScrollIndicators(container);
     }
 
     function updateNoticeBar(contentHtml) {
@@ -253,6 +335,8 @@
         renderNoticeBoard: renderNoticeBoard,
         updateNoticeBar: updateNoticeBar,
         bindEvents: bindEvents,
-        updateServerStatusFooter: updateServerStatusFooter
+        updateServerStatusFooter: updateServerStatusFooter,
+        markNoticeRead: markNoticeRead,
+        updateUnreadDots: updateUnreadDots
     };
 })();

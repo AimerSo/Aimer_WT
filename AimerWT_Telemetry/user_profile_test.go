@@ -291,6 +291,7 @@ func TestUserProfileAdminVerifyPromotesLevelAndDirectNicknameRejectsPending(t *t
 		"machine_id": "user-a",
 		"verified":   true,
 		"nickname":   "DirectNick",
+		"bound_qq":   "12345678",
 	}, nil)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected admin PUT success, got %d body=%s", resp.Code, resp.Body.String())
@@ -309,6 +310,9 @@ func TestUserProfileAdminVerifyPromotesLevelAndDirectNicknameRejectsPending(t *t
 	if profile.Nickname != "DirectNick" {
 		t.Fatalf("expected nickname DirectNick, got %q", profile.Nickname)
 	}
+	if profile.BoundQQ != "12345678" {
+		t.Fatalf("expected bound qq 12345678, got %q", profile.BoundQQ)
+	}
 
 	var pendingCount int64
 	if err := db.Model(&NicknameRequest{}).Where("machine_id = ? AND status = 'pending'", "user-a").Count(&pendingCount).Error; err != nil {
@@ -324,6 +328,41 @@ func TestUserProfileAdminVerifyPromotesLevelAndDirectNicknameRejectsPending(t *t
 	}
 	if rejected.Status != "rejected" {
 		t.Fatalf("expected original request rejected, got %q", rejected.Status)
+	}
+}
+
+func TestUserProfileAdminVerifyRequiresBoundQQ(t *testing.T) {
+	setupUserProfileTestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	if err := db.Create(&UserProfile{
+		MachineID: "user-no-qq",
+		Level:     0,
+		Exp:       0,
+		Badges:    "[]",
+		Verified:  false,
+	}).Error; err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+
+	router := gin.New()
+	admin := router.Group("/admin")
+	initUserProfileAdminRoutes(admin)
+
+	resp := performProfileRequest(router, http.MethodPut, "/admin/user-profiles", map[string]any{
+		"machine_id": "user-no-qq",
+		"verified":   true,
+	}, nil)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected admin PUT bad request, got %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var profile UserProfile
+	if err := db.Where("machine_id = ?", "user-no-qq").First(&profile).Error; err != nil {
+		t.Fatalf("reload profile: %v", err)
+	}
+	if profile.Verified {
+		t.Fatalf("expected verified false when qq is missing")
 	}
 }
 

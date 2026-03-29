@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -16,6 +17,11 @@ import (
 
 // nicknamePattern 昵称合法字符：中文、英文字母、数字、横杠、下划线
 var nicknamePattern = regexp.MustCompile(`^[\p{Han}a-zA-Z0-9_-]+$`)
+var qqPattern = regexp.MustCompile(`^[1-9]\d{4,11}$`)
+
+var (
+	errVerifiedUserRequiresBound = errors.New("verified_user_requires_bound_qq")
+)
 
 var allowedNicknameRequestStatuses = map[string]struct{}{
 	"":         {},
@@ -33,6 +39,14 @@ func isValidNickname(nick string) bool {
 		return false
 	}
 	return nicknamePattern.MatchString(nick)
+}
+
+func isValidQQ(qq string) bool {
+	qq = strings.TrimSpace(qq)
+	if qq == "" {
+		return false
+	}
+	return qqPattern.MatchString(qq)
 }
 
 func parsePositiveUintParam(raw string) (uint, error) {
@@ -213,6 +227,8 @@ func serializeProfile(p UserProfile) map[string]interface{} {
 		"id":                      p.ID,
 		"seq_id":                  seqID,
 		"nickname":                p.Nickname,
+		"bound_qq":                p.BoundQQ,
+		"has_bound_qq":            strings.TrimSpace(p.BoundQQ) != "",
 		"avatar_data":             p.AvatarData,
 		"level":                   p.Level,
 		"exp":                     p.Exp,
@@ -388,6 +404,7 @@ func initUserProfileAdminRoutes(admin *gin.RouterGroup) {
 			Badges    string  `json:"badges"`
 			Verified  *bool   `json:"verified"`
 			Nickname  *string `json:"nickname"`
+			BoundQQ   *string `json:"bound_qq"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": "请求数据格式错误"})
@@ -413,6 +430,13 @@ func initUserProfileAdminRoutes(admin *gin.RouterGroup) {
 				return
 			}
 		}
+		if req.BoundQQ != nil {
+			qq := strings.TrimSpace(*req.BoundQQ)
+			if qq != "" && !isValidQQ(qq) {
+				c.JSON(400, gin.H{"error": "QQ 号格式无效，需为 5 到 12 位数字且不能以 0 开头"})
+				return
+			}
+		}
 
 		if err := db.Transaction(func(tx *gorm.DB) error {
 			profile, err := getOrCreateProfileTx(tx, req.MachineID)
@@ -423,6 +447,8 @@ func initUserProfileAdminRoutes(admin *gin.RouterGroup) {
 			updates := map[string]interface{}{}
 			effectiveLevel := profile.Level
 			effectiveExp := profile.Exp
+			effectiveVerified := profile.Verified
+			effectiveBoundQQ := strings.TrimSpace(profile.BoundQQ)
 			if req.Level != nil {
 				lv := *req.Level
 				if lv < 0 {
@@ -453,6 +479,7 @@ func initUserProfileAdminRoutes(admin *gin.RouterGroup) {
 				updates["badges"] = req.Badges
 			}
 			if req.Verified != nil {
+				effectiveVerified = *req.Verified
 				updates["verified"] = *req.Verified
 				if *req.Verified {
 					if effectiveLevel < 1 {
@@ -468,6 +495,14 @@ func initUserProfileAdminRoutes(admin *gin.RouterGroup) {
 				nick := strings.TrimSpace(*req.Nickname)
 				updates["nickname"] = nick
 			}
+			if req.BoundQQ != nil {
+				qq := strings.TrimSpace(*req.BoundQQ)
+				effectiveBoundQQ = qq
+				updates["bound_qq"] = qq
+			}
+			if effectiveVerified && effectiveBoundQQ == "" {
+				return errVerifiedUserRequiresBound
+			}
 
 			if len(updates) == 0 {
 				return nil
@@ -482,7 +517,12 @@ func initUserProfileAdminRoutes(admin *gin.RouterGroup) {
 			}
 			return nil
 		}); err != nil {
-			c.JSON(500, gin.H{"error": "保存资料失败"})
+			switch {
+			case errors.Is(err, errVerifiedUserRequiresBound):
+				c.JSON(400, gin.H{"error": "认证用户前请先绑定 QQ"})
+			default:
+				c.JSON(500, gin.H{"error": "保存资料失败"})
+			}
 			return
 		}
 

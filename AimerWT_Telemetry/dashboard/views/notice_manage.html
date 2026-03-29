@@ -152,6 +152,14 @@
                             </label>
                             <span style="font-size: 10px; color: var(--text-muted);">同一时间仅允许一条置顶</span>
                         </div>
+                        <div class="form-group" style="margin: 0 0 14px;">
+                            <label style="font-size: 11px; margin-bottom: 4px;">置顶装饰图标（仅置顶公告生效）</label>
+                            <input class="input" style="width: 100%;" id="noticeEditIconClass"
+                                placeholder="留空自动选择，如 ri-flashlight-line / ri-sparkling-2-line">
+                            <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">
+                                使用 <a href="https://remixicon.com/" target="_blank" rel="noopener" style="color:var(--primary);">Remix Icon</a> 类名，显示在置顶卡片右上角
+                            </div>
+                        </div>
                         <div style="display: flex; gap: 8px;">
                             <button class="btn primary" style="flex: 1; justify-content: center;"
                                 onclick="app.saveNoticeItem()">保存公告</button>

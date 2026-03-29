@@ -83,7 +83,7 @@ func initDB() {
 		&ClientDeviceToken{}, &AIUsageRecord{}, &AIUserBan{}, &AIUserLimit{}, &UserTag{}, &AdClickEvent{},
 		&RedeemCode{}, &RedeemRecord{}, &NoticeReaction{},
 		&NoticeComment{}, &NoticeCommentLike{}, &NoticeCommentBan{}, &CommentReport{},
-		&UserProfile{}, &NicknameRequest{}); err != nil {
+		&UserProfile{}, &NicknameRequest{}, &AuditLog{}); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 }

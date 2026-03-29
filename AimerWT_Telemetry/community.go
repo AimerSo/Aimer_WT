@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -159,12 +160,24 @@ func loadCommentUserRecord(machineID string) *TelemetryRecord {
 	}
 
 	var record TelemetryRecord
-	if err := db.Select("machine_id, is_starred, is_admin, tags").
+	if err := db.Select("machine_id, is_starred, is_admin, tags, comment_perms").
 		Where("machine_id = ?", machineID).
 		First(&record).Error; err != nil {
 		return nil
 	}
 	return &record
+}
+
+// hasCommentPerm 检查用户是否拥有指定的评论区权限
+func hasCommentPerm(record *TelemetryRecord, perm string) bool {
+	if record == nil || record.CommentPerms == "" || record.CommentPerms == "{}" {
+		return false
+	}
+	var perms map[string]bool
+	if err := json.Unmarshal([]byte(record.CommentPerms), &perms); err != nil {
+		return false
+	}
+	return perms[perm]
 }
 
 func buildLikedCommentSet(machineID string, commentIDs []uint) map[uint]struct{} {
@@ -256,8 +269,8 @@ func resolveReplyTargetCommentID(comment NoticeComment, seqMap map[string]uint, 
 	return 0
 }
 
-func attachCommentMeta(item map[string]interface{}, comment NoticeComment, viewerMachineID string, viewerIsAdmin bool, seqMap map[string]uint, aliasMap map[string]string, commentMap map[uint]NoticeComment) {
-	item["can_delete"] = viewerIsAdmin || (viewerMachineID != "" && comment.MachineID == viewerMachineID)
+func attachCommentMeta(item map[string]interface{}, comment NoticeComment, viewerMachineID string, viewerIsAdmin bool, viewerCanDeleteOthers bool, seqMap map[string]uint, aliasMap map[string]string, commentMap map[uint]NoticeComment) {
+	item["can_delete"] = viewerIsAdmin || viewerCanDeleteOthers || (viewerMachineID != "" && comment.MachineID == viewerMachineID)
 	item["can_manage"] = viewerIsAdmin
 
 	replyTargetID := resolveReplyTargetCommentID(comment, seqMap, aliasMap, commentMap)
@@ -489,6 +502,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		machineID := c.Query("machine_id")
 		viewerRecord := loadCommentUserRecord(machineID)
 		viewerIsAdmin := viewerRecord != nil && viewerRecord.IsAdmin
+		viewerCanDeleteOthers := hasCommentPerm(viewerRecord, "can_delete_others")
 		weightCfg := LoadCommentWeightConfig()
 		offset := parseCommentPageOffset(c.DefaultQuery("offset", "0"))
 		limit := parseCommentPageLimit(c.DefaultQuery("limit", "12"))
@@ -545,7 +559,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			} else {
 				item["top_replies"] = []map[string]interface{}{}
 			}
-			attachCommentMeta(item, ranked.Comment, machineID, viewerIsAdmin, seqMap, nil, nil)
+			attachCommentMeta(item, ranked.Comment, machineID, viewerIsAdmin, viewerCanDeleteOthers, seqMap, nil, nil)
 			result = append(result, item)
 		}
 
@@ -655,7 +669,8 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			item["reply_count"] = 0
 			item["author_weight"] = authorWeight
 			item["weight_score"] = computeCommentWeight(reply.LikeCount, 0, authorWeight, reply.WeightAdjustment)
-			attachCommentMeta(item, reply, machineID, viewerIsAdmin, seqMap, aliasMap, commentMap)
+			viewerCanDeleteOthers := hasCommentPerm(viewerRecord, "can_delete_others")
+			attachCommentMeta(item, reply, machineID, viewerIsAdmin, viewerCanDeleteOthers, seqMap, aliasMap, commentMap)
 			result = append(result, item)
 		}
 
@@ -812,7 +827,14 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		commentResp["reply_count"] = 0
 		commentResp["author_weight"] = authorWeight
 		commentResp["weight_score"] = computeCommentWeight(comment.LikeCount, 0, authorWeight, comment.WeightAdjustment)
-		attachCommentMeta(commentResp, comment, req.MachineID, commenterRecord != nil && commenterRecord.IsAdmin, seqMap, aliasMap, commentMap)
+		attachCommentMeta(commentResp, comment, req.MachineID, commenterRecord != nil && commenterRecord.IsAdmin, hasCommentPerm(commenterRecord, "can_delete_others"), seqMap, aliasMap, commentMap)
+
+		// 审计日志：评论创建
+		var userVersion string
+		db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Select("version").Scan(&userVersion)
+		WriteAuditLogAsync("comment", req.MachineID, "user", "", comment.ID, "create_comment",
+			auditDetail(map[string]interface{}{"notice_id": req.NoticeID, "parent_id": req.ParentID, "content": content}),
+			userVersion, c.ClientIP())
 
 		c.JSON(200, gin.H{
 			"status":  "success",
@@ -957,6 +979,12 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			c.JSON(500, gin.H{"error": "保存失败"})
 			return
 		}
+
+		// 审计日志：举报提交
+		WriteAuditLogAsync("report", req.MachineID, "user", comment.MachineID, report.ID, "submit_report",
+			auditDetail(map[string]interface{}{"comment_id": req.CommentID, "report_type": req.ReportType, "reason": reason, "comment_content": comment.Content}),
+			"", c.ClientIP())
+
 		c.JSON(200, gin.H{"status": "success"})
 	})
 
@@ -981,7 +1009,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			c.JSON(404, gin.H{"error": "评论不存在"})
 			return
 		}
-		if !(actor != nil && actor.IsAdmin) && comment.MachineID != machineID {
+		if !(actor != nil && actor.IsAdmin) && !hasCommentPerm(actor, "can_delete_others") && comment.MachineID != machineID {
 			c.JSON(403, gin.H{"error": "您没有权限删除该评论"})
 			return
 		}
@@ -989,6 +1017,16 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			c.JSON(500, gin.H{"error": "删除失败"})
 			return
 		}
+
+		// 审计日志：评论删除（客户端触发）
+		actorRole := "user"
+		if actor != nil && actor.IsAdmin {
+			actorRole = "admin"
+		}
+		WriteAuditLogAsync("moderation", machineID, actorRole, comment.MachineID, comment.ID, "delete_comment",
+			auditDetail(map[string]interface{}{"notice_id": comment.NoticeID, "content": comment.Content, "trigger": "client"}),
+			"", c.ClientIP())
+
 		c.JSON(200, gin.H{"status": "success"})
 	})
 
@@ -1139,6 +1177,11 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			return
 		}
 
+		// 审计日志：通过评论封禁用户
+		WriteAuditLogAsync("ban", req.MachineID, "admin", comment.MachineID, comment.ID, "ban_comment",
+			auditDetail(map[string]interface{}{"reason": reason, "expires_at": expiresAt.Format("2006-01-02 15:04:05"), "comment_content": comment.Content}),
+			"", c.ClientIP())
+
 		c.JSON(200, gin.H{
 			"status":     "success",
 			"machine_id": comment.MachineID,
@@ -1258,6 +1301,11 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 				return
 			}
 
+			// 审计日志：管理端删除评论
+			WriteAuditLogAsync("moderation", "", "admin", comment.MachineID, comment.ID, "delete_by_admin",
+				auditDetail(map[string]interface{}{"notice_id": comment.NoticeID, "content": comment.Content}),
+				"", c.ClientIP())
+
 			c.JSON(200, gin.H{"status": "success"})
 		})
 
@@ -1282,7 +1330,14 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 				c.JSON(404, gin.H{"error": "评论不存在"})
 				return
 			}
+			oldStatus := comment.Status
 			db.Model(&comment).Update("status", req.Status)
+
+			// 审计日志：评论状态变更
+			WriteAuditLogAsync("moderation", "", "admin", comment.MachineID, comment.ID, "change_comment_status",
+				auditDetail(map[string]interface{}{"old_status": oldStatus, "new_status": req.Status, "content": comment.Content}),
+				"", c.ClientIP())
+
 			c.JSON(200, gin.H{"status": "success"})
 		})
 
@@ -1364,15 +1419,32 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 				c.JSON(500, gin.H{"error": "保存失败"})
 				return
 			}
+
+			// 审计日志：管理端手动封禁
+			WriteAuditLogAsync("ban", "", "admin", req.MachineID, ban.ID, "ban_comment",
+				auditDetail(map[string]interface{}{"reason": req.Reason}),
+				"", c.ClientIP())
+
 			c.JSON(200, gin.H{"status": "success", "ban": ban})
 		})
 
 		community.DELETE("/comment-bans/:id", func(c *gin.Context) {
 			id := c.Param("id")
-			if err := db.Delete(&NoticeCommentBan{}, id).Error; err != nil {
+			var ban NoticeCommentBan
+			if err := db.First(&ban, id).Error; err != nil {
+				c.JSON(404, gin.H{"error": "封禁记录不存在"})
+				return
+			}
+			if err := db.Delete(&ban).Error; err != nil {
 				c.JSON(500, gin.H{"error": "删除失败"})
 				return
 			}
+
+			// 审计日志：解封
+			WriteAuditLogAsync("ban", "", "admin", ban.MachineID, ban.ID, "unban_comment",
+				auditDetail(map[string]interface{}{"original_reason": ban.Reason}),
+				"", c.ClientIP())
+
 			c.JSON(200, gin.H{"status": "success"})
 		})
 
@@ -1503,7 +1575,18 @@ func initCommunityAdminRoutes(admin *gin.RouterGroup) {
 				c.JSON(404, gin.H{"error": "举报记录不存在"})
 				return
 			}
+			oldStatus := report.Status
 			db.Model(&report).Update("status", req.Status)
+
+			// 审计日志：举报状态变更
+			action := "resolve_report"
+			if req.Status == "dismissed" {
+				action = "dismiss_report"
+			}
+			WriteAuditLogAsync("report", "", "admin", report.ReporterMachineID, report.ID, action,
+				auditDetail(map[string]interface{}{"comment_id": report.CommentID, "old_status": oldStatus, "new_status": req.Status, "report_type": report.ReportType}),
+				"", c.ClientIP())
+
 			c.JSON(200, gin.H{"status": "success"})
 		})
 	}

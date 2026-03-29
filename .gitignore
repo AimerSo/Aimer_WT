@@ -93,9 +93,14 @@ AimerWT_Telemetry/*.exe
 AimerWT_Telemetry/*.exe~
 AimerWT_Telemetry/AimerWT_Telemetry_linux
 AimerWT_Telemetry/AimerWT_Telemetry
+AimerWT_Telemetry/telemetry_deploy
+AimerWT_Telemetry/telemetry
 
 # 遥测控制面板（本地开发工具，不上传）
 遥测控制/
+
+# 服务器部署面板（本地运维工具，不上传）
+服务器面板/
 
 # AI 生成的变更说明文档（不上传）
 two_phase_changelog.md
