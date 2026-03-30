@@ -108,6 +108,10 @@ type SystemConfig struct {
 	NoticeReactionEnabled bool `json:"notice_reaction_enabled"`
 	RedeemCodeEnabled     bool `json:"redeem_code_enabled"`
 	FeedbackEnabled       bool `json:"feedback_enabled"`
+
+	// 头像上传分组权限（按标签控制哪些用户组可上传头像）
+	AvatarUploadAllowAll  bool   `json:"avatar_upload_allow_all"`
+	AvatarUploadAllowedTags string `json:"avatar_upload_allowed_tags"`
 }
 
 // ContentConfig KV 配置持久化表，用于服务重启后恢复运行时状态
@@ -281,27 +285,43 @@ type NoticeReaction struct {
 // Badges：JSON 数组，如 [{"id":"supporter","name":"支持者","icon":"🏅","color":"#f59e0b"}]
 // Verified：管理员认证，认证后才可提交昵称/头像变更请求
 type UserProfile struct {
-	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	MachineID  string    `gorm:"uniqueIndex;type:varchar(64);not null" json:"machine_id"`
-	Nickname   string    `gorm:"type:varchar(32)" json:"nickname"`
-	BoundQQ    string    `gorm:"type:varchar(16)" json:"bound_qq"`
-	AvatarData string    `gorm:"type:text" json:"avatar_data"` // Base64 encoded image（裁剪至 128×128）
-	Level      int       `gorm:"default:0;not null" json:"level"`
-	Exp        int       `gorm:"default:0;not null" json:"exp"`
-	Badges     string    `gorm:"type:text;default:'[]'" json:"badges"` // JSON 数组
-	Verified   bool      `gorm:"default:false;not null" json:"verified"`
-	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	ID                   uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID            string     `gorm:"uniqueIndex;type:varchar(64);not null" json:"machine_id"`
+	Nickname             string     `gorm:"type:varchar(32)" json:"nickname"`
+	BoundQQ              string     `gorm:"type:varchar(16)" json:"bound_qq"`
+	AvatarData           string     `gorm:"type:text" json:"avatar_data"` // Base64 encoded webp image（裁剪至 128×128）
+	Level                int        `gorm:"default:0;not null" json:"level"`
+	Exp                  int        `gorm:"default:0;not null" json:"exp"`
+	Badges               string     `gorm:"type:text;default:'[]'" json:"badges"` // JSON 数组
+	Verified             bool       `gorm:"default:false;not null" json:"verified"`
+	LastNicknameChangeAt *time.Time `json:"last_nickname_change_at"`
+	LastAvatarChangeAt   *time.Time `json:"last_avatar_change_at"`
+	CreatedAt            time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt            time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // NicknameRequest 昵称变更请求（用户提交 → 管理员审批）
 type NicknameRequest struct {
-	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	MachineID string    `gorm:"index:idx_nickname_requests_machine_status_created,priority:1;type:varchar(64);not null" json:"machine_id"`
-	Nickname  string    `gorm:"type:varchar(64);not null" json:"nickname"`
-	Status    string    `gorm:"type:varchar(16);default:'pending';index;index:idx_nickname_requests_machine_status_created,priority:2" json:"status"` // pending / approved / rejected
-	CreatedAt time.Time `gorm:"autoCreateTime;index;index:idx_nickname_requests_machine_status_created,priority:3" json:"created_at"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	ID            uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID     string     `gorm:"index:idx_nickname_requests_machine_status_created,priority:1;type:varchar(64);not null" json:"machine_id"`
+	Nickname      string     `gorm:"type:varchar(64);not null" json:"nickname"`
+	Status        string     `gorm:"type:varchar(16);default:'pending';index;index:idx_nickname_requests_machine_status_created,priority:2" json:"status"` // pending / approved / rejected
+	RejectReason  string     `gorm:"type:text" json:"reject_reason"`
+	CooldownUntil *time.Time `json:"cooldown_until"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime;index;index:idx_nickname_requests_machine_status_created,priority:3" json:"created_at"`
+	UpdatedAt     time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+// AvatarRequest 头像变更请求（用户提交 → 管理员审批）
+type AvatarRequest struct {
+	ID            uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	MachineID     string     `gorm:"index:idx_avatar_requests_machine_status,priority:1;type:varchar(64);not null" json:"machine_id"`
+	AvatarData    string     `gorm:"type:text;not null" json:"avatar_data"` // Base64 encoded webp image
+	Status        string     `gorm:"type:varchar(16);default:'pending';index;index:idx_avatar_requests_machine_status,priority:2" json:"status"`
+	RejectReason  string     `gorm:"type:text" json:"reject_reason"`
+	CooldownUntil *time.Time `json:"cooldown_until"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime;index" json:"created_at"`
+	UpdatedAt     time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // LevelExpThresholds 各等级所需的最低经验值（0~9，0级和1级无需经验值）

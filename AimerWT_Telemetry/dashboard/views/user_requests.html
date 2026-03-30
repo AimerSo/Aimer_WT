@@ -11,10 +11,15 @@
                 </div>
                 <div>
                     <div style="font-weight:700;font-size:16px;color:var(--text);">用户请求</div>
-                    <div style="font-size:12px;color:var(--text-muted);">管理用户提交的昵称变更审批请求。</div>
+                    <div style="font-size:12px;color:var(--text-muted);">管理用户提交的昵称与头像变更审批请求。</div>
                 </div>
             </div>
             <div class="top-actions" style="margin-left:auto;display:flex;gap:8px;">
+                <select class="select" id="userReqTypeFilter" onchange="app.initUserRequests()" style="font-size:13px;">
+                    <option value="all">全部类型</option>
+                    <option value="nickname">昵称请求</option>
+                    <option value="avatar">头像请求</option>
+                </select>
                 <select class="select" id="nickReqStatusFilter" onchange="app.initUserRequests()" style="font-size:13px;">
                     <option value="">全部状态</option>
                     <option value="pending" selected>待审批</option>
@@ -31,8 +36,8 @@
                     <thead>
                         <tr>
                             <th>用户</th>
-                            <th>当前昵称</th>
-                            <th>请求昵称</th>
+                            <th>类型</th>
+                            <th>请求内容</th>
                             <th>状态</th>
                             <th>提交时间</th>
                             <th>操作</th>
@@ -44,6 +49,32 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 拒绝原因弹窗 -->
+    <div id="rejectReasonModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:9999;display:none;align-items:center;justify-content:center;">
+        <div style="background:var(--card-bg);border-radius:16px;padding:28px;width:420px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <div style="font-weight:700;font-size:16px;color:var(--text);margin-bottom:16px;">拒绝请求</div>
+            <div style="margin-bottom:12px;">
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">拒绝原因（可选）</label>
+                <textarea id="rejectReasonText" class="input" rows="3" placeholder="请输入拒绝原因，将反馈给用户..." style="width:100%;resize:vertical;"></textarea>
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">冷却期</label>
+                <select id="rejectCooldownHours" class="select" style="width:100%;">
+                    <option value="0">无冷却期</option>
+                    <option value="24">24 小时</option>
+                    <option value="72">3 天</option>
+                    <option value="168">7 天</option>
+                    <option value="720">30 天</option>
+                    <option value="2160">90 天</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button class="btn" onclick="app.closeRejectModal()" style="color:var(--text-muted);">取消</button>
+                <button class="btn" onclick="app.confirmReject()" style="color:#fff;background:var(--danger);border-color:var(--danger);">确认拒绝</button>
             </div>
         </div>
     </div>

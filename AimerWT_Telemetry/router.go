@@ -151,6 +151,27 @@ func serializeTelemetryUsers(records []TelemetryRecord) []map[string]any {
 	return result
 }
 
+func updateTelemetryUserFields(machineID string, updates map[string]any) (TelemetryRecord, error) {
+	machineID = strings.TrimSpace(machineID)
+	if machineID == "" {
+		return TelemetryRecord{}, gorm.ErrRecordNotFound
+	}
+
+	tx := db.Model(&TelemetryRecord{}).Where("machine_id = ?", machineID).Updates(updates)
+	if tx.Error != nil {
+		return TelemetryRecord{}, tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return TelemetryRecord{}, gorm.ErrRecordNotFound
+	}
+
+	var updated TelemetryRecord
+	if err := db.Where("machine_id = ?", machineID).First(&updated).Error; err != nil {
+		return TelemetryRecord{}, err
+	}
+	return updated, nil
+}
+
 func initRouter(r *gin.Engine) {
 	// CORS 中间件：允许 pywebview 前端跨域访问 AI 端点
 	r.Use(func(c *gin.Context) {
@@ -236,10 +257,17 @@ func initRouter(r *gin.Engine) {
 	authorized := r.Group("/", authMiddleware)
 	{
 		authorized.GET("/dashboard", func(c *gin.Context) {
+			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+			c.Header("Pragma", "no-cache")
 			c.Data(http.StatusOK, "text/html; charset=utf-8", dashboardHTML)
 		})
 
 		admin := authorized.Group("/admin")
+		admin.Use(func(c *gin.Context) {
+			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+			c.Header("Pragma", "no-cache")
+			c.Next()
+		})
 		{
 			admin.GET("/control", func(c *gin.Context) {
 				c.JSON(200, gin.H{"status": "success", "config": sysConfig})
@@ -635,6 +663,14 @@ func initRouter(r *gin.Engine) {
 					if val, ok := req["feedback_enabled"].(bool); ok {
 						sysConfig.FeedbackEnabled = val
 					}
+					if val, ok := req["avatar_upload_allow_all"].(bool); ok {
+						sysConfig.AvatarUploadAllowAll = val
+					}
+					if val, ok := req["avatar_upload_allowed_tags"]; ok {
+						if tagsJSON, err := json.Marshal(val); err == nil {
+							sysConfig.AvatarUploadAllowedTags = string(tagsJSON)
+						}
+					}
 
 				case "latest_version":
 					if val, ok := req["version"].(string); ok {
@@ -699,11 +735,18 @@ func initRouter(r *gin.Engine) {
 					return
 				}
 
-				if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("alias", req.Alias).Error; err != nil {
+				updatedUser, err := updateTelemetryUserFields(req.MachineID, map[string]any{
+					"alias": req.Alias,
+				})
+				if err != nil {
+					if err == gorm.ErrRecordNotFound {
+						c.JSON(404, gin.H{"error": "用户不存在"})
+						return
+					}
 					c.JSON(500, gin.H{"error": "更新失败"})
 					return
 				}
-				c.JSON(200, gin.H{"status": "success"})
+				c.JSON(200, gin.H{"status": "success", "user": serializeTelemetryUser(updatedUser)})
 			})
 
 			admin.POST("/user-command", func(c *gin.Context) {
@@ -738,6 +781,30 @@ func initRouter(r *gin.Engine) {
 					return
 				}
 				c.JSON(200, gin.H{"status": "success"})
+			})
+
+			// 批量删除用户（传入 machine_id 数组）
+			admin.POST("/delete-users", func(c *gin.Context) {
+				var req struct {
+					MachineIDs []string `json:"machine_ids"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(400, gin.H{"error": "请求数据格式错误"})
+					return
+				}
+				if len(req.MachineIDs) == 0 {
+					c.JSON(400, gin.H{"error": "machine_ids 不能为空"})
+					return
+				}
+				if len(req.MachineIDs) > 100 {
+					c.JSON(400, gin.H{"error": "一次最多删除 100 个用户"})
+					return
+				}
+				if err := db.Delete(&TelemetryRecord{}, "machine_id IN ?", req.MachineIDs).Error; err != nil {
+					c.JSON(500, gin.H{"error": "批量删除失败"})
+					return
+				}
+				c.JSON(200, gin.H{"status": "success", "deleted": len(req.MachineIDs)})
 			})
 
 			// 广告轮播管理 API
@@ -1276,12 +1343,24 @@ func initRouter(r *gin.Engine) {
 				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
+			req.MachineID = strings.TrimSpace(req.MachineID)
+			if req.MachineID == "" {
+				c.JSON(400, gin.H{"error": "machine_id 为必填"})
+				return
+			}
 			tagsJson, _ := json.Marshal(req.Tags)
-			if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("tags", string(tagsJson)).Error; err != nil {
+			updatedUser, err := updateTelemetryUserFields(req.MachineID, map[string]any{
+				"tags": string(tagsJson),
+			})
+			if err != nil {
+				if err == gorm.ErrRecordNotFound {
+					c.JSON(404, gin.H{"error": "用户不存在"})
+					return
+				}
 				c.JSON(500, gin.H{"error": "更新失败"})
 				return
 			}
-			c.JSON(200, gin.H{"status": "success"})
+			c.JSON(200, gin.H{"status": "success", "user": serializeTelemetryUser(updatedUser)})
 		})
 
 		admin.POST("/user-star", func(c *gin.Context) {
@@ -1293,11 +1372,23 @@ func initRouter(r *gin.Engine) {
 				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
-			if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("is_starred", req.IsStarred).Error; err != nil {
+			req.MachineID = strings.TrimSpace(req.MachineID)
+			if req.MachineID == "" {
+				c.JSON(400, gin.H{"error": "machine_id 为必填"})
+				return
+			}
+			updatedUser, err := updateTelemetryUserFields(req.MachineID, map[string]any{
+				"is_starred": req.IsStarred,
+			})
+			if err != nil {
+				if err == gorm.ErrRecordNotFound {
+					c.JSON(404, gin.H{"error": "用户不存在"})
+					return
+				}
 				c.JSON(500, gin.H{"error": "更新失败"})
 				return
 			}
-			c.JSON(200, gin.H{"status": "success"})
+			c.JSON(200, gin.H{"status": "success", "user": serializeTelemetryUser(updatedUser)})
 		})
 
 		admin.POST("/user-admin", func(c *gin.Context) {
@@ -1309,11 +1400,23 @@ func initRouter(r *gin.Engine) {
 				c.JSON(400, gin.H{"error": "请求数据格式错误"})
 				return
 			}
-			if err := db.Model(&TelemetryRecord{}).Where("machine_id = ?", req.MachineID).Update("is_admin", req.IsAdmin).Error; err != nil {
+			req.MachineID = strings.TrimSpace(req.MachineID)
+			if req.MachineID == "" {
+				c.JSON(400, gin.H{"error": "machine_id 为必填"})
+				return
+			}
+			updatedUser, err := updateTelemetryUserFields(req.MachineID, map[string]any{
+				"is_admin": req.IsAdmin,
+			})
+			if err != nil {
+				if err == gorm.ErrRecordNotFound {
+					c.JSON(404, gin.H{"error": "用户不存在"})
+					return
+				}
 				c.JSON(500, gin.H{"error": "更新失败"})
 				return
 			}
-			c.JSON(200, gin.H{"status": "success"})
+			c.JSON(200, gin.H{"status": "success", "user": serializeTelemetryUser(updatedUser)})
 		})
 
 		// 用户评论区权限管理

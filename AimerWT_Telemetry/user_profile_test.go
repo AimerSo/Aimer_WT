@@ -45,7 +45,7 @@ func setupUserProfileTestDB(t *testing.T) {
 		t.Fatalf("set busy_timeout: %v", err)
 	}
 
-	if err := db.AutoMigrate(&ContentConfig{}, &TelemetryRecord{}, &ClientDeviceToken{}, &UserProfile{}, &NicknameRequest{}); err != nil {
+	if err := db.AutoMigrate(&ContentConfig{}, &TelemetryRecord{}, &ClientDeviceToken{}, &UserProfile{}, &NicknameRequest{}, &AvatarRequest{}); err != nil {
 		t.Fatalf("migrate test db: %v", err)
 	}
 }

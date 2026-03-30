@@ -1,10 +1,13 @@
 <div class="view-container active">
     <div class="app">
-        <!-- 单行紧凑工具栏：标题 + 计数 | 搜索 | 筛选 | 刷新 -->
+        <!-- 单行紧凑工具栏：标题 + 计数 | 搜索 | 筛选 | 批量操作 | 刷新 -->
         <div class="userlist-toolbar">
             <div class="userlist-toolbar-left">
                 <h2 class="userlist-title">用户列表</h2>
                 <span id="userListCount" class="userlist-count-badge"></span>
+                <button class="btn" id="bulkDeleteBtn" onclick="app.bulkDeleteUsers()" style="display:none;color:#fff;background:var(--danger);border-color:var(--danger);font-size:11px;padding:4px 10px;margin-left:8px;">
+                    <i class="ri-delete-bin-line" style="margin-right:3px;"></i>批量删除 (<span id="bulkSelectedCount">0</span>)
+                </button>
             </div>
             <div class="userlist-toolbar-right">
                 <div class="userlist-search-wrap">
@@ -34,6 +37,9 @@
                 <table class="data-table data-table-compact" id="userListTable">
                     <thead>
                         <tr>
+                            <th style="width:36px;padding:0 8px;">
+                                <input type="checkbox" id="userListSelectAll" onchange="app.toggleSelectAllUsers(this.checked)" style="cursor:pointer;">
+                            </th>
                             <th class="sortable" data-sort="id" onclick="app.sortUserList('id')">
                                 <span>用户</span>
                                 <span class="sort-icon"></span>
@@ -64,12 +70,21 @@
                     </thead>
                     <tbody id="fullUserListBody">
                         <tr>
-                            <td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                            <td colspan="9" style="text-align: center; padding: 40px; color: var(--text-muted);">
                                 加载中...
                             </td>
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- 分页控件 -->
+        <div id="userListPagination" style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;font-size:12px;color:var(--text-muted);">
+            <div id="userListPageInfo">第 1 页，共 1 页</div>
+            <div style="display:flex;gap:6px;">
+                <button class="btn" id="userListPrevPage" onclick="app.userListGoPage(-1)" style="padding:4px 10px;font-size:11px;" disabled>上一页</button>
+                <button class="btn" id="userListNextPage" onclick="app.userListGoPage(1)" style="padding:4px 10px;font-size:11px;" disabled>下一页</button>
             </div>
         </div>
     </div>

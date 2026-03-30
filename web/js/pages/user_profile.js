@@ -12,6 +12,9 @@
     var _machineID = '';
     var _serviceBaseURL = '';
     var _profile = null;
+    var _loadInFlight = false;
+    var _loadRetryTimer = 0;
+    var _loadFailureCount = 0;
     var _featureConfig = {
         badge_system_enabled: true,
         nickname_change_enabled: true,
@@ -281,26 +284,61 @@
         }
     }
 
+    function clearLoadRetry() {
+        if (_loadRetryTimer) {
+            window.clearTimeout(_loadRetryTimer);
+            _loadRetryTimer = 0;
+        }
+    }
+
+    function scheduleLoadRetry(delayMs) {
+        clearLoadRetry();
+        _loadRetryTimer = window.setTimeout(function () {
+            _loadRetryTimer = 0;
+            loadProfile();
+        }, Math.max(1500, parseInt(delayMs, 10) || 3000));
+    }
+
     async function loadProfile() {
+        if (_loadInFlight) return;
         var mid = getMachineID();
         var endpoint = buildProfileEndpoint();
         if (!mid || !endpoint) {
             setOfflineTipVisible(true);
+            scheduleLoadRetry(3000);
             return;
         }
 
+        _loadInFlight = true;
+        clearLoadRetry();
         try {
             var headers = await buildTelemetryHeaders('/user-profile', 'GET', mid, false);
             var response = await fetch(endpoint + '?machine_id=' + encodeURIComponent(mid), {
                 method: 'GET',
                 headers: headers
             });
-            if (!response.ok) return;
+            if (!response.ok) {
+                setOfflineTipVisible(true);
+                _loadFailureCount += 1;
+                scheduleLoadRetry(_loadFailureCount >= 3 ? 6000 : 2500);
+                return;
+            }
             var data = await response.json();
-            setOfflineTipVisible(false);
-            if (data && data.profile) renderProfile(data.profile);
+            if (data && data.profile) {
+                _loadFailureCount = 0;
+                setOfflineTipVisible(false);
+                renderProfile(data.profile);
+                return;
+            }
+            setOfflineTipVisible(true);
+            _loadFailureCount += 1;
+            scheduleLoadRetry(_loadFailureCount >= 3 ? 6000 : 2500);
         } catch (e) {
             setOfflineTipVisible(true);
+            _loadFailureCount += 1;
+            scheduleLoadRetry(_loadFailureCount >= 3 ? 6000 : 2500);
+        } finally {
+            _loadInFlight = false;
         }
     }
 

@@ -20,6 +20,28 @@
             </div>
         </div>
 
+        <div style="margin-bottom: 20px; padding: 16px 20px; background: var(--card); border-radius: 14px; border: 1px solid var(--border); box-shadow: var(--shadow);">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <div style="width: 32px; height: 32px; background: rgba(16, 185, 129, 0.08); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                </div>
+                <div style="min-width: 0; flex: 1;">
+                    <div style="font-size: 13px; font-weight: 600; color: var(--text);">当前顶部 Banner 运行状态</div>
+                    <div style="font-size: 11px; color: var(--text-muted);" id="announcementNoticeRuntimeMeta">加载中...</div>
+                </div>
+                <span style="font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(148, 163, 184, 0.12); color: var(--text-muted);" id="announcementNoticeRuntimeBadge">未知</span>
+                <button class="btn" style="padding: 4px 10px; font-size: 11px;" onclick="app.switchView('banner', document.querySelector('[data-view=&quot;banner&quot;]'))">前往 Banner</button>
+            </div>
+            <div style="margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: rgba(16, 185, 129, 0.04); border: 1px solid rgba(16, 185, 129, 0.08);">
+                <div style="font-size: 13px; color: var(--text);" id="announcementNoticeRuntimeText">当前没有正在推送的运行时 Banner。</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;" id="announcementNoticeRuntimeScope">运行时 Banner 由 Banner 页面管理，不属于公告列表数据表。</div>
+            </div>
+        </div>
+
         <!-- 推送通道操作区 - 两列布局 -->
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 20px;">
 
@@ -39,7 +61,7 @@
                             <div class="panel-sub">推送模态弹窗 + Header Banner</div>
                         </div>
                     </div>
-                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotAlert"></span>
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;"></span>
                 </div>
                 <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
                     <div class="form-group" style="margin: 0;">
@@ -83,7 +105,7 @@
                             <div class="panel-sub">推送版本更新提示至 Header Banner</div>
                         </div>
                     </div>
-                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotUpdate"></span>
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0;"></span>
                 </div>
                 <!-- 当前推送状态预览 -->
                 <div id="updatePushPreview" style="display: none; padding: 12px 20px; background: rgba(16, 185, 129, 0.04); border-bottom: 1px solid var(--border);">
@@ -133,6 +155,12 @@
                     <span style="font-size: 13px; font-weight: 600; color: var(--text);">通道状态</span>
                 </div>
                 <div id="announcementChannelStatus" style="display: flex; align-items: center; gap: 24px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotNotice"></span>
+                        <span style="font-size: 12px; color: var(--text-muted);">顶部 Banner</span>
+                        <span style="font-size: 11px; padding: 1px 8px; border-radius: 4px; background: rgba(148, 163, 184, 0.12); color: var(--text-muted);" id="channelBadgeNotice">未知</span>
+                    </div>
+                    <div style="width: 1px; height: 16px; background: var(--border);"></div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0;" id="channelDotAlert"></span>
                         <span style="font-size: 12px; color: var(--text-muted);">紧急通知弹窗</span>

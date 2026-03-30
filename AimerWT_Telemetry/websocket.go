@@ -161,6 +161,18 @@ func (h *WebSocketHub) BroadcastToAll(message []byte) {
 	}
 }
 
+// SendToMachine 向指定 MachineID 的客户端推送消息
+func (h *WebSocketHub) SendToMachine(machineID string, message []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for client := range h.clients {
+		if client.IsAuthenticated && client.MachineID == machineID {
+			client.send(message)
+		}
+	}
+}
+
 // BroadcastToVersion 按版本广播
 func (h *WebSocketHub) BroadcastToVersion(version string, message []byte) {
 	h.mu.RLock()

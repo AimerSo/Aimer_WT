@@ -130,6 +130,30 @@
                 </div>
             </div>
 
+            <!-- 头像上传权限控制 -->
+            <div class="panel" id="avatarPermPanel">
+                <div class="panel-header" style="padding:14px 16px;">
+                    <div>
+                        <div class="panel-title">头像上传权限</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">控制哪些用户组可以提交头像变更请求。管理员和星标用户默认拥有权限。</div>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+                    <div style="display:flex;justify-content:space-between;gap:14px;padding:16px;border:1px solid var(--border);border-radius:14px;background:linear-gradient(180deg, rgba(16,185,129,0.05), rgba(16,185,129,0.01));">
+                        <div>
+                            <div style="font-size:13px;font-weight:700;color:var(--text);">允许全部用户上传</div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">开启后所有用户均可提交头像变更请求，无需按标签控制。</div>
+                        </div>
+                        <label class="switch" style="flex-shrink:0;">
+                            <input type="checkbox" id="avatarUploadAllowAll" onchange="app.toggleAvatarAllowAll()">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div id="avatarTagPermsContainer" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:10px;">
+                        <div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">加载中...</div>
+                    </div>
+                </div>
+            </div>
             <div style="display:flex;flex-direction:column;gap:20px;">
                 <div class="panel">
                     <div class="panel-body" style="padding:18px;display:flex;flex-direction:column;gap:16px;">

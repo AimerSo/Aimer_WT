@@ -70,7 +70,7 @@ type commentReplyCountRow struct {
 }
 
 // 序列化评论为前端友好的格式，关联 UID 序号和标签
-func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint]struct{}, tagsMap map[string]string) map[string]interface{} {
+func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint]struct{}, tagsMap map[string]string, nicknameMap map[string]string) map[string]interface{} {
 	uid := "?"
 	if seqID, ok := seqMap[c.MachineID]; ok {
 		uid = fmt.Sprintf("%d", seqID)
@@ -82,12 +82,18 @@ func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint
 		tags = t
 	}
 
+	nickname := ""
+	if n, ok := nicknameMap[c.MachineID]; ok {
+		nickname = n
+	}
+
 	return map[string]interface{}{
 		"id":                c.ID,
 		"notice_id":         c.NoticeID,
 		"parent_id":         c.ParentID,
 		"reply_to_id":       c.ReplyToID,
 		"uid":               uid,
+		"nickname":          nickname,
 		"content":           c.Content,
 		"like_count":        c.LikeCount,
 		"liked":             liked,
@@ -149,6 +155,24 @@ func buildAliasMap(machineIDs []string) map[string]string {
 	result := make(map[string]string, len(rows))
 	for _, row := range rows {
 		result[row.MachineID] = row.Alias
+	}
+	return result
+}
+
+// buildNicknameMap 批量查询 MachineID → Nickname 映射（来自 UserProfile 表）
+func buildNicknameMap(machineIDs []string) map[string]string {
+	if len(machineIDs) == 0 {
+		return map[string]string{}
+	}
+	type nickRow struct {
+		MachineID string
+		Nickname  string
+	}
+	var rows []nickRow
+	db.Model(&UserProfile{}).Where("machine_id IN ? AND nickname != ''", machineIDs).Select("machine_id, nickname").Scan(&rows)
+	result := make(map[string]string, len(rows))
+	for _, row := range rows {
+		result[row.MachineID] = row.Nickname
 	}
 	return result
 }
@@ -384,6 +408,7 @@ func buildTopRepliesMap(noticeID uint, parentIDs []uint, viewerMachineID string,
 	authorWeightMap := buildCommentAuthorWeightMap(idList, weightCfg)
 	likedSet := buildLikedCommentSet(viewerMachineID, replyIDs)
 	tagsMap := buildTagsMap(idList)
+	nicknameMap := buildNicknameMap(idList)
 
 	// 按 parent_id 分组并排序取 top 2
 	grouped := map[uint][]rankedNoticeComment{}
@@ -410,7 +435,7 @@ func buildTopRepliesMap(noticeID uint, parentIDs []uint, viewerMachineID string,
 		}
 		previews := make([]map[string]interface{}, 0, topN)
 		for _, ranked := range items[:topN] {
-			item := serializeComment(ranked.Comment, seqMap, likedSet, tagsMap)
+			item := serializeComment(ranked.Comment, seqMap, likedSet, tagsMap, nicknameMap)
 			// 附加 alias 用于前端显示用户名
 			if alias, ok := aliasMap[ranked.Comment.MachineID]; ok && strings.TrimSpace(alias) != "" {
 				item["alias"] = alias
@@ -536,6 +561,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		seqMap := buildSeqMap(idList)
 		likedSet := buildLikedCommentSet(machineID, pageCommentIDs)
 		tagsMap := buildTagsMap(idList)
+		nicknameMap := buildNicknameMap(idList)
 
 		result := make([]map[string]interface{}, 0, len(pageItems))
 		// 收集所有主评论 ID 用于批量查询子评论预览
@@ -549,7 +575,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		topRepliesMap := buildTopRepliesMap(noticeID, allParentIDs, machineID, weightCfg)
 
 		for _, ranked := range pageItems {
-			item := serializeComment(ranked.Comment, seqMap, likedSet, tagsMap)
+			item := serializeComment(ranked.Comment, seqMap, likedSet, tagsMap, nicknameMap)
 			item["replies"] = []map[string]interface{}{}
 			item["reply_count"] = ranked.ReplyCount
 			item["author_weight"] = ranked.AuthorWeight
@@ -661,11 +687,12 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		authorWeightMap := buildCommentAuthorWeightMap(idList, weightCfg)
 		tagsMap := buildTagsMap(idList)
 		aliasMap := buildAliasMap(idList)
+		nicknameMap := buildNicknameMap(idList)
 
 		result := make([]map[string]interface{}, 0, len(replies))
 		for _, reply := range replies {
 			authorWeight := authorWeightMap[reply.MachineID]
-			item := serializeComment(reply, seqMap, likedSet, tagsMap)
+			item := serializeComment(reply, seqMap, likedSet, tagsMap, nicknameMap)
 			item["reply_count"] = 0
 			item["author_weight"] = authorWeight
 			item["weight_score"] = computeCommentWeight(reply.LikeCount, 0, authorWeight, reply.WeightAdjustment)
@@ -823,7 +850,8 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		authorWeight := buildCommentAuthorWeightMap([]string{req.MachineID}, weightCfg)[req.MachineID]
 		tagsMap := buildTagsMap([]string{req.MachineID})
 		aliasMap := buildAliasMap(machineIDs)
-		commentResp := serializeComment(comment, seqMap, nil, tagsMap)
+		nicknameMap := buildNicknameMap([]string{req.MachineID})
+		commentResp := serializeComment(comment, seqMap, nil, tagsMap, nicknameMap)
 		commentResp["reply_count"] = 0
 		commentResp["author_weight"] = authorWeight
 		commentResp["weight_score"] = computeCommentWeight(comment.LikeCount, 0, authorWeight, comment.WeightAdjustment)

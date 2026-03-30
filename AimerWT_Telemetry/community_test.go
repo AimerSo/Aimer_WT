@@ -34,6 +34,7 @@ func setupCommunityTestDB(t *testing.T) {
 		&NoticeCommentLike{},
 		&NoticeCommentBan{},
 		&CommentReport{},
+		&UserProfile{},
 	); err != nil {
 		t.Fatalf("migrate test db: %v", err)
 	}

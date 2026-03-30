@@ -33,7 +33,8 @@ const app = {
         usagePageSize: 10,
         userWeightConfig: null,
         userWeightTags: [],
-        userWeightFormula: null
+        userWeightFormula: null,
+        runtimeNoticeConfig: null
     },
 
     // 颜色配置
@@ -478,6 +479,65 @@ const app = {
         return typeof minutes === 'number' && minutes <= this.getOnlineThresholdMinutes();
     },
 
+    hasActiveStatsFilters() {
+        return ['filterOS', 'filterArch', 'filterVersion', 'filterLocale']
+            .some((id) => !!document.getElementById(id)?.value);
+    },
+
+    _buildStatOptionsFromUsers(users, field) {
+        const counter = new Map();
+        (users || []).forEach((user) => {
+            const raw = user?.[field];
+            const name = raw === undefined || raw === null || raw === '' ? '(空)' : String(raw);
+            counter.set(name, (counter.get(name) || 0) + 1);
+        });
+        return Array.from(counter.entries())
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value);
+    },
+
+    async buildDashboardFallbackData() {
+        const [usersRes, tagsRes] = await Promise.all([
+            fetch(`${this.config.apiBase}/admin/users?offset=0&limit=50`),
+            fetch(`${this.config.apiBase}/admin/tags`).catch(() => null)
+        ]);
+        if (!usersRes.ok) return null;
+
+        const usersPayload = await usersRes.json();
+        const users = Array.isArray(usersPayload.users) ? usersPayload.users : [];
+        let tagOptions = [];
+        try {
+            if (tagsRes && tagsRes.ok) {
+                const tagPayload = await tagsRes.json();
+                tagOptions = Array.isArray(tagPayload.tags) ? tagPayload.tags : [];
+            }
+        } catch {}
+
+        const todayPrefix = this.formatDate(new Date());
+        const getMinutes = (user) => user?.minutes_ago ?? user?.minutes ?? user?.last_seen_minutes ?? Infinity;
+        const createdToday = (user) => String(user?.created_at || '').startsWith(todayPrefix);
+
+        return {
+            total_users: Number(usersPayload.total || users.length || 0),
+            online_users: users.filter((user) => this.isUserOnlineByMinutes(getMinutes(user))).length,
+            today_new: users.filter((user) => createdToday(user)).length,
+            dau: users.filter((user) => Number(getMinutes(user)) <= 24 * 60).length,
+            os_stats: this._buildStatOptionsFromUsers(users, 'os'),
+            arch_stats: this._buildStatOptionsFromUsers(users, 'arch'),
+            version_stats: this._buildStatOptionsFromUsers(users, 'version'),
+            locale_stats: this._buildStatOptionsFromUsers(users, 'locale'),
+            screen_stats: this._buildStatOptionsFromUsers(users, 'screen_resolution'),
+            growth_data: [],
+            recent_users: users,
+            os_options: this._buildStatOptionsFromUsers(users, 'os'),
+            arch_options: this._buildStatOptionsFromUsers(users, 'arch'),
+            version_options: this._buildStatOptionsFromUsers(users, 'version'),
+            locale_options: this._buildStatOptionsFromUsers(users, 'locale'),
+            tag_options: tagOptions,
+            _fallback: true
+        };
+    },
+
     /**
      * 获取数据
      */
@@ -488,7 +548,21 @@ const app = {
         try {
             const response = await fetch(`${this.config.apiBase}/admin/stats?${params}`);
             if (!response.ok) throw new Error('Failed to fetch');
-            this.state.dashboardData = await response.json();
+            let payload = await response.json();
+            const payloadTotalUsers = Number(payload?.total_users || 0);
+            const payloadRecentUsers = Array.isArray(payload?.recent_users) ? payload.recent_users.length : 0;
+            const statsNeedFallback = !this.hasActiveStatsFilters() && (
+                payloadTotalUsers === 0 ||
+                payloadRecentUsers > payloadTotalUsers
+            );
+            if (statsNeedFallback) {
+                const fallback = await this.buildDashboardFallbackData();
+                if (fallback && Number(fallback.total_users || 0) > 0) {
+                    payload = fallback;
+                    this.showAlert('统计接口未返回有效结果，已自动使用用户列表回填主页数据', 'warning');
+                }
+            }
+            this.state.dashboardData = payload;
             this.updateDashboard(this.state.dashboardData);
             if (this.state.currentView === 'userdetail' && this.state.selectedUser) {
                 const selectedId = this.state.selectedUser.hwid || this.state.selectedUser.hwid_hash || this.state.selectedUser.machine_id || '';
@@ -499,6 +573,15 @@ const app = {
             }
         } catch (error) {
             console.warn('API fetch failed');
+            try {
+                const fallback = await this.buildDashboardFallbackData();
+                if (fallback) {
+                    this.state.dashboardData = fallback;
+                    this.updateDashboard(fallback);
+                    this.showAlert('统计接口加载失败，已自动切换到基础数据视图', 'warning');
+                    return;
+                }
+            } catch {}
             this.loadEmptyState();
         } finally {
             this.setRefreshing(false);
@@ -1816,7 +1899,7 @@ const app = {
             if (!res.ok) return;
             const data = await res.json();
             const cfg = data.config || {};
-            const active = !!cfg.notice_active;
+            const active = !!cfg.notice_active || (!!cfg.update_active && !!cfg.update_content);
             const dot = document.getElementById('bannerStatusDot');
             const badge = document.getElementById('bannerStatusBadge');
             if (dot) dot.style.background = active ? 'var(--secondary)' : 'var(--muted)';
@@ -1839,8 +1922,22 @@ const app = {
                     action_content: cfg.notice_action_content || ''
                 }];
             }
+            if (!this._bannerItems.length && cfg.update_active && cfg.update_content) {
+                this._bannerItems = [{
+                    type: 'update',
+                    text: cfg.update_content,
+                    icon: 'ri-download-2-line',
+                    color: '',
+                    icon_color: '',
+                    action_type: cfg.update_url ? 'url' : 'none',
+                    action_url: cfg.update_url || '',
+                    action_title: '',
+                    action_content: ''
+                }];
+            }
             this.renderBannerList();
-            this.cancelBannerEdit();
+            if (this._bannerItems.length) this.editBannerItem(0);
+            else this.cancelBannerEdit();
         } catch {
             this._bannerItems = [];
             this.renderBannerList();
@@ -1965,6 +2062,11 @@ const app = {
         this._bannerItems.splice(index, 1);
         this.renderBannerList();
         this.cancelBannerEdit();
+        if (this._bannerItems.length) {
+            this.submitBanner();
+        } else {
+            this.clearBanner();
+        }
     },
 
     moveBannerItem(index, dir) {
@@ -1972,6 +2074,7 @@ const app = {
         if (t < 0 || t >= this._bannerItems.length) return;
         [this._bannerItems[index], this._bannerItems[t]] = [this._bannerItems[t], this._bannerItems[index]];
         this.renderBannerList();
+        this.submitBanner();
     },
 
     async submitBanner() {
@@ -2279,6 +2382,58 @@ const app = {
         setTimeout(() => this.closeIconPicker(), 200);
     },
 
+    _applyRuntimeNoticeConfig(cfg) {
+        const bannerItems = Array.isArray(cfg?.banner_items)
+            ? cfg.banner_items.filter((item) => item && String(item.text || '').trim())
+            : [];
+        const fallbackText = String(cfg?.notice_content || '').trim();
+        const active = !!cfg?.notice_active && (bannerItems.length > 0 || fallbackText);
+        const runtime = {
+            active,
+            count: bannerItems.length || (fallbackText ? 1 : 0),
+            scope: String(cfg?.notice_scope || 'all'),
+            primaryText: String((bannerItems[0] && bannerItems[0].text) || fallbackText || '').trim(),
+            source: bannerItems.length > 0 ? 'banner' : (fallbackText ? 'legacy_notice' : 'none')
+        };
+
+        this.state.runtimeNoticeConfig = runtime;
+
+        const bindings = [
+            ['announcementNoticeRuntimeBadge', 'announcementNoticeRuntimeMeta', 'announcementNoticeRuntimeText', 'announcementNoticeRuntimeScope'],
+            ['noticeRuntimeBadge', 'noticeRuntimeMeta', 'noticeRuntimeText', 'noticeRuntimeScope']
+        ];
+
+        bindings.forEach(([badgeId, metaId, textId, scopeId]) => {
+            const badgeEl = document.getElementById(badgeId);
+            const metaEl = document.getElementById(metaId);
+            const textEl = document.getElementById(textId);
+            const scopeEl = document.getElementById(scopeId);
+
+            if (badgeEl) {
+                badgeEl.textContent = active
+                    ? (runtime.source === 'banner' ? `Banner ${runtime.count} 条` : '单条公告')
+                    : '未推送';
+                badgeEl.style.background = active ? 'rgba(16, 185, 129, 0.12)' : 'rgba(148, 163, 184, 0.15)';
+                badgeEl.style.color = active ? 'var(--secondary)' : 'var(--text-muted)';
+            }
+            if (metaEl) {
+                metaEl.textContent = active
+                    ? (runtime.source === 'banner'
+                        ? `当前顶部信息带正在轮播 ${runtime.count} 条内容`
+                        : '当前顶部信息带正在显示单条公告')
+                    : '当前没有正在推送的 Header Banner 内容';
+            }
+            if (textEl) {
+                textEl.textContent = active
+                    ? (runtime.primaryText || '当前内容为空')
+                    : '这部分属于运行时 Header Banner，不在公告列表数据里。';
+            }
+            if (scopeEl) {
+                scopeEl.textContent = active ? `推送范围：${runtime.scope}` : '如需修改当前顶部信息带，请前往 Banner 页面。';
+            }
+        });
+    },
+
     /**
      * 加载各推送通道当前状态并更新通道状态面板
      */
@@ -2303,9 +2458,18 @@ const app = {
             if (res.ok) {
                 const data = await res.json();
                 const cfg = data.config || {};
+                const noticeActive = !!cfg.notice_active && (
+                    (Array.isArray(cfg.banner_items) && cfg.banner_items.some((item) => String(item?.text || '').trim())) ||
+                    String(cfg.notice_content || '').trim()
+                );
+                setChannel('Notice', noticeActive);
                 setChannel('Alert', !!cfg.alert_active);
                 setChannel('Update', !!cfg.update_active);
+                this._applyRuntimeNoticeConfig(cfg);
                 this.setVal('announcementAlertStatus', cfg.alert_active ? 'on' : 'off');
+                this.setVal('announcementAlertTitle', cfg.alert_title || '');
+                this.setVal('announcementAlertContent', cfg.alert_content || '');
+                this.setVal('announcementAlertScope', cfg.alert_scope || 'all');
 
                 // 更新推送状态预览
                 const preview = document.getElementById('updatePushPreview');
@@ -2321,13 +2485,18 @@ const app = {
                 // 回填表单内容
                 this.setVal('announcementUpdateContent', cfg.update_content || '');
                 this.setVal('announcementUpdateUrl', cfg.update_url || '');
+                this.setVal('announcementUpdateScope', cfg.update_scope || 'all');
             } else {
+                setChannel('Notice', false);
                 setChannel('Alert', false);
                 setChannel('Update', false);
+                this._applyRuntimeNoticeConfig(null);
             }
         } catch {
+            setChannel('Notice', false);
             setChannel('Alert', false);
             setChannel('Update', false);
+            this._applyRuntimeNoticeConfig(null);
         }
     },
 
@@ -2505,14 +2674,25 @@ const app = {
 
     async loadNoticeList() {
         try {
-            const res = await fetch(`${this.config.apiBase}/admin/notices`);
+            const [res, controlRes] = await Promise.all([
+                fetch(`${this.config.apiBase}/admin/notices`),
+                fetch(`${this.config.apiBase}/admin/control`).catch(() => null)
+            ]);
+            if (controlRes && controlRes.ok) {
+                const controlData = await controlRes.json();
+                this._applyRuntimeNoticeConfig(controlData.config || {});
+            } else {
+                this._applyRuntimeNoticeConfig(null);
+            }
             if (!res.ok) throw new Error('load failed');
             const data = await res.json();
             this._noticeItems = data.items || [];
             this.renderNoticeList();
-            this.cancelNoticeEdit();
+            if (this._noticeItems.length) this.editNoticeItem(this._noticeItems[0].id);
+            else this.cancelNoticeEdit();
         } catch {
             this._noticeItems = [];
+            this._applyRuntimeNoticeConfig(null);
             this.renderNoticeList();
         }
     },
@@ -2524,7 +2704,15 @@ const app = {
         if (countEl) countEl.textContent = this._noticeItems.length;
 
         if (!this._noticeItems.length) {
-            container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;"><p>\u6682\u65e0\u516c\u544a\u6570\u636e</p><p style="font-size:12px;">\u70b9\u51fb\u201c\u65b0\u5efa\u516c\u544a\u201d\u5f00\u59cb\u6dfb\u52a0</p></div>';
+            const runtime = this.state.runtimeNoticeConfig;
+            const runtimeHint = runtime && runtime.active
+                ? `<div style="margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.12); text-align: left; font-size: 12px; color: var(--text-muted); line-height: 1.7;">
+                    <div style="font-weight: 600; color: var(--text); margin-bottom: 4px;">当前顶部信息带并不是空的</div>
+                    <div>运行时 Header Banner 正在推送 ${runtime.count} 条内容，当前显示为：${this.escapeHtmlSafe(runtime.primaryText || '（空）')}。</div>
+                    <div>这部分属于 Banner 运行时配置，不会出现在公告列表里。</div>
+                </div>`
+                : '';
+            container.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:40px;"><p>\u6682\u65e0\u516c\u544a\u6570\u636e</p><p style="font-size:12px;">\u70b9\u51fb\u201c\u65b0\u5efa\u516c\u544a\u201d\u5f00\u59cb\u6dfb\u52a0</p>${runtimeHint}</div>`;
             this._refreshNoticePreview();
             return;
         }
@@ -4123,6 +4311,7 @@ const app = {
             if (!res.ok) throw new Error('服务器返回 ' + res.status);
             const data = await res.json();
             this.applyFeatureSettingsForm(data.config || {});
+            this.applyAvatarPermSettings(data.config || {});
         } catch (error) {
             this.applyFeatureSettingsForm(this.getDefaultUserFeatureSettings());
             this.showAlert('加载功能设置失败: ' + error.message, 'danger');
@@ -4131,6 +4320,9 @@ const app = {
 
     async saveFeatureSettings(overrides = null) {
         const settings = overrides ? this.normalizeUserFeatureSettings(overrides) : this.collectUserFeatureSettings();
+        // 收集头像分组权限
+        settings.avatar_upload_allow_all = document.getElementById('avatarUploadAllowAll')?.checked ?? false;
+        settings.avatar_upload_allowed_tags = this.collectAllowedAvatarTags();
         try {
             const res = await fetch(`${this.config.apiBase}/admin/control`, {
                 method: 'POST',
@@ -4147,6 +4339,66 @@ const app = {
 
     async resetFeatureSettings() {
         await this.saveFeatureSettings(this.getDefaultUserFeatureSettings());
+    },
+
+    // 头像上传权限 UI 逻辑
+    applyAvatarPermSettings(cfg) {
+        const allowAll = !!cfg.avatar_upload_allow_all;
+        const el = document.getElementById('avatarUploadAllowAll');
+        if (el) el.checked = allowAll;
+
+        let allowedTags = [];
+        try {
+            const raw = cfg.avatar_upload_allowed_tags;
+            if (typeof raw === 'string') allowedTags = JSON.parse(raw || '[]');
+            else if (Array.isArray(raw)) allowedTags = raw;
+        } catch {}
+
+        this._renderAvatarTagPerms(allowedTags, allowAll);
+    },
+
+    _renderAvatarTagPerms(allowedTags, allowAll) {
+        const container = document.getElementById('avatarTagPermsContainer');
+        if (!container) return;
+        const tagDefs = this.state.dashboardData?.tag_options || [];
+        if (!tagDefs.length) {
+            container.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">暂无标签数据</div>';
+            return;
+        }
+
+        container.innerHTML = tagDefs.map(t => {
+            const checked = allowedTags.includes(t.name);
+            const iconCls = t.icon || 'ri-price-tag-3-line';
+            const label = t.display_name || t.name;
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid var(--border);border-radius:10px;opacity:${allowAll ? '0.5' : '1'};pointer-events:${allowAll ? 'none' : 'auto'};">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <i class="${this.escapeHtmlSafe(iconCls)}" style="font-size:14px;color:var(--text-muted);"></i>
+                    <span style="font-size:12px;font-weight:600;color:var(--text);">${this.escapeHtmlSafe(label)}</span>
+                </div>
+                <label class="switch" style="flex-shrink:0;transform:scale(0.85);">
+                    <input type="checkbox" class="avatar-tag-perm-cb" data-tag="${this.escapeHtmlSafe(t.name)}" ${checked ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+            </div>`;
+        }).join('');
+    },
+
+    toggleAvatarAllowAll() {
+        const allowAll = document.getElementById('avatarUploadAllowAll')?.checked ?? false;
+        const container = document.getElementById('avatarTagPermsContainer');
+        if (!container) return;
+        container.querySelectorAll('div[style]').forEach(div => {
+            div.style.opacity = allowAll ? '0.5' : '1';
+            div.style.pointerEvents = allowAll ? 'none' : 'auto';
+        });
+    },
+
+    collectAllowedAvatarTags() {
+        const tags = [];
+        document.querySelectorAll('.avatar-tag-perm-cb:checked').forEach(cb => {
+            tags.push(cb.dataset.tag);
+        });
+        return tags;
     },
 
     /**
@@ -4633,6 +4885,8 @@ const app = {
 
         const fullList = users && users.length ? [...users] : [];
         this.state._renderedUserList = fullList;
+        this.state._userListPage = 1;
+        this.state._userListSelectedHwids = new Set();
         this._populateTagFilter();
         this._renderUserRows(fullList);
     },
@@ -4676,8 +4930,31 @@ const app = {
                 : `${list.length} / ${totalCount} 人`;
         }
 
-        if (!list.length) {
-            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:48px;color:var(--text-muted);">
+        // 分页逻辑（15 条/页）
+        const pageSize = 15;
+        const currentPage = this.state._userListPage || 1;
+        const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+        const clampedPage = Math.min(currentPage, totalPages);
+        this.state._userListPage = clampedPage;
+        this.state._userListFilteredList = list; // 保存当前筛选列表供翻页用
+        const pageStart = (clampedPage - 1) * pageSize;
+        const pageList = list.slice(pageStart, pageStart + pageSize);
+
+        // 更新分页控件
+        const pageInfoEl = document.getElementById('userListPageInfo');
+        if (pageInfoEl) pageInfoEl.textContent = `第 ${clampedPage} / ${totalPages} 页，共 ${list.length} 人`;
+        const prevBtn = document.getElementById('userListPrevPage');
+        const nextBtn = document.getElementById('userListNextPage');
+        if (prevBtn) prevBtn.disabled = clampedPage <= 1;
+        if (nextBtn) nextBtn.disabled = clampedPage >= totalPages;
+
+        // 重置全选状态
+        const selectAllEl = document.getElementById('userListSelectAll');
+        if (selectAllEl) selectAllEl.checked = false;
+        this._updateBulkDeleteBtn();
+
+        if (!pageList.length) {
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:48px;color:var(--text-muted);">
                 <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     <span>无匹配用户</span>
@@ -4686,7 +4963,7 @@ const app = {
             return;
         }
 
-        tbody.innerHTML = list.map(user => {
+        tbody.innerHTML = pageList.map(user => {
             const hwid = user.hwid || user.hwid_hash || '-';
             const minutes = user.minutes_ago ?? user.minutes ?? user.last_seen_minutes ?? '-';
             const isOnline = this.isUserOnlineByMinutes(minutes);
@@ -4741,8 +5018,11 @@ const app = {
             const safeLocaleDisplay = this.escapeHtmlSafe(localeDisplay);
 
             return `
-            <tr style="cursor:pointer;" onclick="app.openUserDetailByData('${userData}')">
-                <td>
+            <tr style="cursor:pointer;">
+                <td style="width:36px;padding:0 8px;" onclick="event.stopPropagation()">
+                    <input type="checkbox" class="user-row-checkbox" data-hwid="${hwid}" onchange="app.onUserCheckboxChange()" ${this.state._userListSelectedHwids?.has(hwid) ? 'checked' : ''} style="cursor:pointer;">
+                </td>
+                <td onclick="app.openUserDetailByData('${userData}')">
                     <div class="user-cell">
                         <div class="user-avatar" style="${avatarBgStyle}${avatarBorderStyle}">#${user.id || '-'}</div>
                         <div class="user-info">
@@ -4762,7 +5042,7 @@ const app = {
                 <td>${safeVersion}</td>
                 <td>${safeOS}</td>
                 <td>${safeLocaleDisplay}</td>
-                <td style="color:var(--text-muted);font-size:12px;">${this.formatTimeAgo(minutes)}</td>
+                <td onclick="app.openUserDetailByData('${userData}')" style="color:var(--text-muted);font-size:12px;">${this.formatTimeAgo(minutes)}</td>
             </tr>
         `}).join('');
     },
@@ -4818,7 +5098,71 @@ const app = {
             });
         }
 
+        this.state._userListPage = 1;
         this._renderUserRows(list);
+    },
+
+    /**
+     * 翻页控制（delta: -1上一页 / +1下一页）
+     */
+    userListGoPage(delta) {
+        const page = (this.state._userListPage || 1) + delta;
+        if (page < 1) return;
+        this.state._userListPage = page;
+        const list = this.state._userListFilteredList || this.state._renderedUserList || [];
+        this._renderUserRows(list);
+    },
+
+    /**
+     * 全选/取消全选当前页用户
+     */
+    toggleSelectAllUsers(checked) {
+        document.querySelectorAll('.user-row-checkbox').forEach(cb => {
+            cb.checked = checked;
+            const hwid = cb.dataset.hwid;
+            if (checked) {
+                this.state._userListSelectedHwids.add(hwid);
+            } else {
+                this.state._userListSelectedHwids.delete(hwid);
+            }
+        });
+        this._updateBulkDeleteBtn();
+    },
+
+    onUserCheckboxChange() {
+        this.state._userListSelectedHwids = new Set();
+        document.querySelectorAll('.user-row-checkbox:checked').forEach(cb => {
+            this.state._userListSelectedHwids.add(cb.dataset.hwid);
+        });
+        this._updateBulkDeleteBtn();
+    },
+
+    _updateBulkDeleteBtn() {
+        const count = this.state._userListSelectedHwids?.size || 0;
+        const btn = document.getElementById('bulkDeleteBtn');
+        if (btn) btn.style.display = count > 0 ? 'inline-flex' : 'none';
+        const countEl = document.getElementById('bulkSelectedCount');
+        if (countEl) countEl.textContent = count;
+    },
+
+    async bulkDeleteUsers() {
+        const ids = [...(this.state._userListSelectedHwids || [])];
+        if (!ids.length) return;
+        if (!confirm(`确定要删除选中的 ${ids.length} 个用户吗？此操作不可恢复。`)) return;
+        try {
+            const res = await fetch(`${this.config.apiBase}/admin/delete-users`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine_ids: ids })
+            });
+            if (!res.ok) throw new Error();
+            this.state._userListSelectedHwids = new Set();
+            this.showAlert(`已删除 ${ids.length} 个用户`, 'success');
+            this.fetchData();
+            this.switchView('userlist');
+        } catch (e) {
+            this.showAlert('批量删除失败', 'danger');
+        }
     },
 
     /**
@@ -4882,10 +5226,13 @@ const app = {
 
         this._replaceUserInPool(this.state.latestUsersData, updatedUser);
         this._replaceUserInPool(this.state.recentUsersData, updatedUser);
+        this._replaceUserInPool(this.state.userListData, updatedUser);
+        this._replaceUserInPool(this.state._renderedUserList, updatedUser);
+        this._replaceUserInPool(this.state._userListFilteredList, updatedUser);
         if (Array.isArray(this.state.dashboardData?.recent_users)) {
             this._replaceUserInPool(this.state.dashboardData.recent_users, updatedUser);
         }
-        this._rebuildUserRoleSets([this.state.latestUsersData, this.state.recentUsersData]);
+        this._rebuildUserRoleSets([this.state.latestUsersData, this.state.recentUsersData, this.state.userListData]);
 
         const selectedId = this.state.selectedUser?.hwid || this.state.selectedUser?.hwid_hash || this.state.selectedUser?.machine_id || '';
         const updatedId = updatedUser.hwid || updatedUser.hwid_hash || updatedUser.machine_id || '';
@@ -5125,9 +5472,7 @@ const app = {
 
         user.comment_perms = JSON.stringify(perms);
         this.showAlert(enabled ? '已授予权限' : '已收回权限', 'success');
-
-        const list_user = this.state.latestUsersData?.find(u => (u.hwid || u.hwid_hash) === hwid);
-        if (list_user) list_user.comment_perms = user.comment_perms;
+        this._syncUserCaches({ ...user, comment_perms: user.comment_perms });
         if (this.state.latestUsersData) this.renderUserList(this.state.latestUsersData);
 
         this.renderUserDetailView(user);
@@ -5230,25 +5575,30 @@ const app = {
             current_tags.push(tag_name);
         }
 
+        let updatedUser = null;
         try {
             const res = await fetch(`${this.config.apiBase}/admin/user-tags`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ machine_id: hwid, tags: current_tags })
             });
-            if (!res.ok) throw new Error();
-        } catch {
-            this.showAlert('标签更新失败', 'danger');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || '标签更新失败');
+            updatedUser = data.user || null;
+        } catch (error) {
+            this.showAlert(error.message || '标签更新失败', 'danger');
             return;
         }
 
-        user.tags = JSON.stringify(current_tags);
-        this.showAlert(idx >= 0 ? '已移除标签' : '已添加标签', 'success');
-        this._renderUserTagBadges(hwid, user);
+        updatedUser = updatedUser || await this.refreshUserCache(hwid);
+        if (!updatedUser) {
+            this.showAlert('标签已提交，但刷新用户状态失败', 'danger');
+            return;
+        }
 
-        // 同步到列表数据
-        const list_user = this.state.latestUsersData?.find(u => (u.hwid || u.hwid_hash) === hwid);
-        if (list_user) list_user.tags = user.tags;
+        this.showAlert(idx >= 0 ? '已移除标签' : '已添加标签', 'success');
+        this._syncUserCaches(updatedUser);
+        this._renderUserTagBadges(hwid, updatedUser);
         if (this.state.latestUsersData) this.renderUserList(this.state.latestUsersData);
     },
 
@@ -5644,30 +5994,29 @@ const app = {
     async toggleMarkUser(hwid) {
         const was_starred = this.state.markedUsers.has(hwid);
         const new_starred = !was_starred;
+        let updatedUser = null;
         try {
             const res = await fetch(`${this.config.apiBase}/admin/user-star`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ machine_id: hwid, is_starred: new_starred })
             });
-            if (!res.ok) throw new Error();
-        } catch {
-            this.showAlert('操作失败', 'danger');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || '操作失败');
+            updatedUser = data.user || null;
+        } catch (error) {
+            this.showAlert(error.message || '操作失败', 'danger');
             return;
         }
 
-        if (new_starred) {
-            this.state.markedUsers.add(hwid);
-            this.showAlert('已标记用户', 'warning');
-        } else {
-            this.state.markedUsers.delete(hwid);
-            this.showAlert('已取消标记', 'success');
+        updatedUser = updatedUser || await this.refreshUserCache(hwid);
+        if (!updatedUser) {
+            this.showAlert('操作已提交，但刷新用户状态失败', 'danger');
+            return;
         }
 
-        // 同步本地用户数据
-        const user_data = this.state.latestUsersData?.find(u => (u.hwid || u.hwid_hash) === hwid);
-        if (user_data) user_data.is_starred = new_starred;
-        if (this.state.selectedUser) this.state.selectedUser.is_starred = new_starred;
+        this._syncUserCaches(updatedUser);
+        this.showAlert(updatedUser.is_starred ? '已标记用户' : '已取消标记', updatedUser.is_starred ? 'warning' : 'success');
 
         if (this.state.selectedUser && this.state.selectedUser.hwid === hwid) {
             this.renderUserDetailView(this.state.selectedUser);
@@ -5683,29 +6032,29 @@ const app = {
     async toggleAdminUser(hwid) {
         const was_admin = this.state.adminUsers.has(hwid);
         const new_admin = !was_admin;
+        let updatedUser = null;
         try {
             const res = await fetch(`${this.config.apiBase}/admin/user-admin`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ machine_id: hwid, is_admin: new_admin })
             });
-            if (!res.ok) throw new Error();
-        } catch {
-            this.showAlert('操作失败', 'danger');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || '操作失败');
+            updatedUser = data.user || null;
+        } catch (error) {
+            this.showAlert(error.message || '操作失败', 'danger');
             return;
         }
 
-        if (new_admin) {
-            this.state.adminUsers.add(hwid);
-            this.showAlert('已标记为管理员', 'success');
-        } else {
-            this.state.adminUsers.delete(hwid);
-            this.showAlert('已取消管理员', 'success');
+        updatedUser = updatedUser || await this.refreshUserCache(hwid);
+        if (!updatedUser) {
+            this.showAlert('操作已提交，但刷新用户状态失败', 'danger');
+            return;
         }
 
-        const user_data = this.state.latestUsersData?.find(u => (u.hwid || u.hwid_hash) === hwid);
-        if (user_data) user_data.is_admin = new_admin;
-        if (this.state.selectedUser) this.state.selectedUser.is_admin = new_admin;
+        this._syncUserCaches(updatedUser);
+        this.showAlert(updatedUser.is_admin ? '已标记为管理员' : '已取消管理员', 'success');
 
         if (this.state.selectedUser && this.state.selectedUser.hwid === hwid) {
             this.renderUserDetailView(this.state.selectedUser);
@@ -8379,36 +8728,96 @@ Object.assign(app, {
 
     // ============ 用户请求管理 ============
 
+    _pendingRejectInfo: null, // { type: 'nickname'|'avatar', id: number }
+
     async initUserRequests() {
         const tbody = document.getElementById('nickReqBody');
         if (!tbody) return;
         const status = document.getElementById('nickReqStatusFilter')?.value || '';
-        try {
-            const url = status
-                ? `${this.config.apiBase}/admin/nickname-requests?status=${status}`
-                : `${this.config.apiBase}/admin/nickname-requests`;
-            const res = await fetch(url);
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
-            const requests = data.requests || [];
+        const typeFilter = document.getElementById('userReqTypeFilter')?.value || 'all';
 
-            if (requests.length === 0) {
+        let allRequests = [];
+        try {
+            // 加载昵称请求
+            if (typeFilter === 'all' || typeFilter === 'nickname') {
+                const url = status
+                    ? `${this.config.apiBase}/admin/nickname-requests?status=${status}`
+                    : `${this.config.apiBase}/admin/nickname-requests`;
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    (data.requests || []).forEach(r => {
+                        r._type = 'nickname';
+                        r._sort_time = r.created_at;
+                        allRequests.push(r);
+                    });
+                }
+            }
+            // 加载头像请求
+            if (typeFilter === 'all' || typeFilter === 'avatar') {
+                const url = status
+                    ? `${this.config.apiBase}/admin/avatar-requests?status=${status}`
+                    : `${this.config.apiBase}/admin/avatar-requests`;
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    (data.requests || []).forEach(r => {
+                        r._type = 'avatar';
+                        r._sort_time = r.created_at;
+                        allRequests.push(r);
+                    });
+                }
+            }
+
+            // 按时间倒序排列
+            allRequests.sort((a, b) => (b._sort_time || '').localeCompare(a._sort_time || ''));
+
+            if (allRequests.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">暂无请求</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = requests.map(r => {
+            tbody.innerHTML = allRequests.map(r => {
                 const userDisplay = this.escapeHtmlSafe(r.alias || `UID #${r.uid}`);
                 const statusMap = {
                     'pending': '<span style="color: var(--warning); font-weight: 500;">待审批</span>',
                     'approved': '<span style="color: var(--secondary);">已批准</span>',
                     'rejected': '<span style="color: var(--danger);">已拒绝</span>'
                 };
-                const statusHtml = statusMap[r.status] || r.status;
+                let statusHtml = statusMap[r.status] || r.status;
+                if (r.status === 'rejected' && r.reject_reason) {
+                    statusHtml += `<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">原因：${this.escapeHtmlSafe(r.reject_reason)}</div>`;
+                }
+                if (r.cooldown_until) {
+                    statusHtml += `<div style="font-size:10px;color:var(--text-muted);">冷却至：${this.escapeHtmlSafe(r.cooldown_until)}</div>`;
+                }
+
+                const isNickname = r._type === 'nickname';
+                const typeLabel = isNickname
+                    ? '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.1);color:rgb(99,102,241);font-size:10px;font-weight:600;"><i class="ri-user-line"></i>昵称</span>'
+                    : '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:rgba(234,88,12,0.1);color:rgb(234,88,12);font-size:10px;font-weight:600;"><i class="ri-image-line"></i>头像</span>';
+
+                let contentHtml;
+                if (isNickname) {
+                    contentHtml = `<div style="font-size:12px;">
+                        <div style="color:var(--text-muted);font-size:11px;">当前：${this.escapeHtmlSafe(r.current_nickname || '-')}</div>
+                        <div style="font-weight:600;color:var(--primary);margin-top:2px;">→ ${this.escapeHtmlSafe(r.requested_nickname || '')}</div>
+                    </div>`;
+                } else {
+                    const currentAvatar = r.current_avatar ? `<img src="${r.current_avatar}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--border);">` : '<div style="width:36px;height:36px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);">无</div>';
+                    const newAvatar = r.avatar_data ? `<img src="${r.avatar_data}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--primary);">` : '';
+                    contentHtml = `<div style="display:flex;align-items:center;gap:8px;">
+                        ${currentAvatar}
+                        <span style="color:var(--text-muted);font-size:14px;">→</span>
+                        ${newAvatar}
+                    </div>`;
+                }
+
+                const approveEndpoint = isNickname ? 'nickname-requests' : 'avatar-requests';
                 const actions = r.status === 'pending'
                     ? `<div style="display:flex;gap:4px;">
-                        <button class="btn" onclick="app.approveNicknameRequest(${r.id})" style="font-size:11px;padding:2px 8px;color:var(--secondary);border-color:var(--secondary);">批准</button>
-                        <button class="btn" onclick="app.rejectNicknameRequest(${r.id})" style="font-size:11px;padding:2px 8px;color:var(--danger);border-color:var(--danger);">拒绝</button>
+                        <button class="btn" onclick="app.approveRequest('${approveEndpoint}', ${r.id})" style="font-size:11px;padding:2px 8px;color:var(--secondary);border-color:var(--secondary);">批准</button>
+                        <button class="btn" onclick="app.openRejectModal('${r._type}', ${r.id})" style="font-size:11px;padding:2px 8px;color:var(--danger);border-color:var(--danger);">拒绝</button>
                        </div>`
                     : '<span style="color:var(--text-muted);font-size:12px;">-</span>';
 
@@ -8419,8 +8828,8 @@ Object.assign(app, {
                             <span style="font-weight:500;">${userDisplay}</span>
                         </div>
                     </td>
-                    <td style="color:var(--text-muted);">${this.escapeHtmlSafe(r.current_nickname || '-')}</td>
-                    <td style="font-weight:600;color:var(--primary);">${this.escapeHtmlSafe(r.requested_nickname || '')}</td>
+                    <td>${typeLabel}</td>
+                    <td>${contentHtml}</td>
                     <td>${statusHtml}</td>
                     <td style="font-size:12px;color:var(--text-muted);">${this.escapeHtmlSafe(r.created_at || '')}</td>
                     <td>${actions}</td>
@@ -8431,10 +8840,10 @@ Object.assign(app, {
         }
     },
 
-    async approveNicknameRequest(id) {
-        if (!confirm('确认批准此昵称请求？')) return;
+    async approveRequest(endpoint, id) {
+        if (!confirm('确认批准此请求？')) return;
         try {
-            const res = await fetch(`${this.config.apiBase}/admin/nickname-requests/${id}/approve`, { method: 'POST' });
+            const res = await fetch(`${this.config.apiBase}/admin/${endpoint}/${id}/approve`, { method: 'POST' });
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
                 throw new Error(data.error || 'HTTP ' + res.status);
@@ -8446,26 +8855,62 @@ Object.assign(app, {
                     this.renderUserDetailView(updatedUser);
                 }
             }
-            this.showAlert('昵称已批准并生效', 'success');
+            this.showAlert('请求已批准并生效', 'success');
             this.initUserRequests();
         } catch (e) {
             this.showAlert('操作失败: ' + e.message, 'danger');
         }
     },
 
-    async rejectNicknameRequest(id) {
-        if (!confirm('确认拒绝此昵称请求？')) return;
+    // 旧的兼容函数（保留避免其他地方引用报错）
+    async approveNicknameRequest(id) {
+        return this.approveRequest('nickname-requests', id);
+    },
+
+    openRejectModal(type, id) {
+        this._pendingRejectInfo = { type, id };
+        const modal = document.getElementById('rejectReasonModal');
+        if (modal) modal.style.display = 'flex';
+        const textarea = document.getElementById('rejectReasonText');
+        if (textarea) textarea.value = '';
+        const select = document.getElementById('rejectCooldownHours');
+        if (select) select.value = '0';
+    },
+
+    closeRejectModal() {
+        this._pendingRejectInfo = null;
+        const modal = document.getElementById('rejectReasonModal');
+        if (modal) modal.style.display = 'none';
+    },
+
+    async confirmReject() {
+        const info = this._pendingRejectInfo;
+        if (!info) return;
+        const reason = (document.getElementById('rejectReasonText')?.value || '').trim();
+        const cooldownHours = parseInt(document.getElementById('rejectCooldownHours')?.value || '0', 10);
+        const endpoint = info.type === 'nickname' ? 'nickname-requests' : 'avatar-requests';
+
         try {
-            const res = await fetch(`${this.config.apiBase}/admin/nickname-requests/${id}/reject`, { method: 'POST' });
+            const res = await fetch(`${this.config.apiBase}/admin/${endpoint}/${info.id}/reject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason, cooldown_hours: cooldownHours })
+            });
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
                 throw new Error(data.error || 'HTTP ' + res.status);
             }
-            this.showAlert('昵称请求已拒绝', 'success');
+            this.showAlert('请求已拒绝', 'success');
+            this.closeRejectModal();
             this.initUserRequests();
         } catch (e) {
             this.showAlert('操作失败: ' + e.message, 'danger');
         }
+    },
+
+    // 旧的兼容函数
+    async rejectNicknameRequest(id) {
+        this.openRejectModal('nickname', id);
     },
 
     async toggleUserVerified(hwid) {

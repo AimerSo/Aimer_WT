@@ -477,7 +477,7 @@
         var pills = visibleReactions.map(function (r) {
             var userDetails = Array.isArray(r.user_details) ? r.user_details : [];
             var tooltipParts = userDetails.slice(0, 5).map(function (u) {
-                return (u.alias && u.alias.trim()) ? u.alias.trim() : ('UID' + u.uid);
+                return (u.nickname && u.nickname.trim()) ? u.nickname.trim() : (u.alias && u.alias.trim()) ? u.alias.trim() : ('UID' + u.uid);
             });
             if (userDetails.length > 5) tooltipParts.push('...');
             var titleText = tooltipParts.length ? tooltipParts.join(', ') : '';
@@ -849,7 +849,7 @@
                     repliesHtml += '<div class="nc-preview-replies">';
                     repliesHtml += topReplies.slice(0, 2).map(function (r) {
                         var rUid = r.uid || '?';
-                        var rName = (r.alias && r.alias.trim()) ? escapeHtml(r.alias.trim()) : ('用户#' + escapeHtml(rUid));
+                        var rName = (r.nickname && r.nickname.trim()) ? escapeHtml(r.nickname.trim()) : (r.alias && r.alias.trim()) ? escapeHtml(r.alias.trim()) : ('用户#' + escapeHtml(rUid));
                         var rContent = escapeHtml(String(r.content || '').replace(/^\s*回复\s*@[^:：]+[:：]\s*/, ''));
                         var likeHtml = r.like_count ? '<span class="nc-preview-reply-like"><i class="ri-heart-line"></i> ' + r.like_count + '</span>' : '';
                         return '<div class="nc-preview-reply">' +
@@ -888,8 +888,8 @@
 
         return '<div class="nc-comment-item" data-comment-id="' + c.id + '">' +
             '<div class="nc-comment-head">' +
-            '  ' + renderUidAvatar('nc-comment-avatar', uid, '用户#' + uid) +
-            '  <span class="nc-comment-uid">用户#' + escapeHtml(uid) + '</span>' +
+            '  ' + renderUidAvatar('nc-comment-avatar', uid, (c.nickname || '') || '用户#' + uid) +
+            '  <span class="nc-comment-uid">' + escapeHtml((c.nickname && c.nickname.trim()) || '用户#' + uid) + '</span>' +
             selfBadge +
             _renderTagBadges(c.tags) +
             (state.showWeightScore ? ('  <span class="nc-comment-score">权重 ' + escapeHtml(formatWeight(c.weight_score || 0)) + '</span>') : '') +
@@ -912,8 +912,8 @@
         var selfBadge = (String(_getUserSeqId()) === String(uid) && uid !== '?') ? '<span class="nc-self-badge">我</span>' : '';
         return '<div class="nc-reply-item" data-comment-id="' + r.id + '">' +
             '<div class="nc-reply-head">' +
-            '  ' + renderUidAvatar('nc-reply-avatar', uid, '用户#' + uid) +
-            '  <span class="nc-reply-uid">用户#' + escapeHtml(uid) + '</span>' +
+            '  ' + renderUidAvatar('nc-reply-avatar', uid, (r.nickname || '') || '用户#' + uid) +
+            '  <span class="nc-reply-uid">' + escapeHtml((r.nickname && r.nickname.trim()) || '用户#' + uid) + '</span>' +
             selfBadge +
             _renderTagBadges(r.tags) +
             (state.showWeightScore ? ('  <span class="nc-comment-score nc-reply-score">权重 ' + escapeHtml(formatWeight(r.weight_score || 0)) + '</span>') : '') +
