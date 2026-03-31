@@ -2,9 +2,12 @@
 (function () {
     function renderUpdateTemplate(item, helpers) {
         const data = helpers.parseMarkdown(item.content || '');
-        const title = data.title || item.title || '更新日志';
+        const title = item.title || data.title || '';
         const version = data.version || 'Latest';
         const intro = item.summary || 'V3 版本聚焦于交互优化、稳定性提升与功能扩展，带来更顺滑的使用体验与更完整的内容管理能力。';
+        const titleHtml = title
+            ? ('      <h2 class="notice-react-title">' + helpers.escapeHtml(title) + '</h2>')
+            : '';
 
         const sections = (data.sections || []).map((section) => {
             const colorClass = section.color === 'blue'
@@ -40,7 +43,7 @@
             '  <div class="nc-left-col">' +
             '  <div class="notice-react-header">' +
             '    <div>' +
-            '      <h2 class="notice-react-title">' + helpers.escapeHtml(title) + '</h2>' +
+            titleHtml +
             '      <div class="notice-react-subline">' +
             '        <span class="notice-react-pulse"></span>' +
             '        <span>更新时间: 2026年2月28日 ' + helpers.escapeHtml(version) + '</span>' +

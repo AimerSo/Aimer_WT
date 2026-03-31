@@ -213,10 +213,10 @@
         // 构造辅助函数对象（与主软件 notice_modal.js 一致）
         var helpers = {
             escapeHtml: MR.escapeHtml || esc,
-            parseMarkdown: MR.parseChangelog || function(md) { return { title: '更新日志', version: 'Latest', sections: [] }; },
+            parseMarkdown: MR.parseChangelog || function(md) { return { title: '', version: 'Latest', sections: [] }; },
             parseLogTextHtml: MR.parseLogTextHtml || function(t) { return esc(t); },
             renderMarkdownSafe: MR.render || function(t) { return t; },
-            parseArticleMarkdown: MR.parseArticleMarkdown || function(md, ft) { return { title: ft || '公告详情', date: '', content: [{ type: 'paragraph', text: md }] }; },
+            parseArticleMarkdown: MR.parseArticleMarkdown || function(md, ft) { return { title: ft || '', date: '', content: [{ type: 'paragraph', text: md }] }; },
             renderInlineBasic: MR.renderInline || function(t) { return esc(t); },
             buildReactionBarHtml: function() { return _buildReactionBarHtml(); }
         };

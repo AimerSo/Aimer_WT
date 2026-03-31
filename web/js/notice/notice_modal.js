@@ -54,10 +54,100 @@
         }).join('');
     }
 
+    function hydrateClientContext(forceReady) {
+        const needsBaseUrl = !window._telemetryBaseUrl;
+        const needsHwid = !window._telemetryHWID;
+        const needsSeqId = !window._userSeqId;
+        if (!forceReady && !needsBaseUrl && !needsHwid && !needsSeqId) {
+            return Promise.resolve();
+        }
+        if (!(window.pywebview && window.pywebview.api)) {
+            return Promise.resolve();
+        }
+        const loader = forceReady && typeof window.pywebview.api.ensure_telemetry_ready === 'function'
+            ? () => window.pywebview.api.ensure_telemetry_ready(2500)
+            : (typeof window.pywebview.api.init_app_state === 'function'
+                ? () => window.pywebview.api.init_app_state()
+                : null);
+        if (!loader) {
+            return Promise.resolve();
+        }
+        return loader().then((state) => {
+            if (!state || typeof state !== 'object') return;
+            if (state.telemetry_base_url) window._telemetryBaseUrl = state.telemetry_base_url;
+            if (state.hwid) window._telemetryHWID = state.hwid;
+            if (state.user_seq_id) window._userSeqId = state.user_seq_id;
+        }).catch(() => null);
+    }
+
+    function buildTelemetryHeaders(path, method, machineID, includeJsonContentType) {
+        const headers = { 'X-AimerWT-Client': '1' };
+        if (includeJsonContentType) headers['Content-Type'] = 'application/json';
+
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.get_telemetry_auth_headers) {
+            return window.pywebview.api.get_telemetry_auth_headers(path, method, machineID || '')
+                .then((authHeaders) => {
+                    if (authHeaders && typeof authHeaders === 'object') {
+                        Object.assign(headers, authHeaders);
+                    }
+                    return headers;
+                })
+                .catch(() => headers);
+        }
+        return Promise.resolve(headers);
+    }
+
+    function parseJsonResponse(response, fallbackMessage) {
+        if (window.NoticeClientHelper && typeof window.NoticeClientHelper.parseJsonResponse === 'function') {
+            return window.NoticeClientHelper.parseJsonResponse(response, fallbackMessage);
+        }
+        if (!response) {
+            return Promise.reject(new Error(fallbackMessage || '请求失败'));
+        }
+        return response.json().catch(() => ({})).then((data) => {
+            if (response.ok) return data;
+            const error = new Error((data && data.error) || fallbackMessage || ('请求失败（' + response.status + '）'));
+            error.status = response.status;
+            error.payload = data;
+            throw error;
+        });
+    }
+
+    function shouldRetryWithTelemetry(error) {
+        if (window.NoticeClientHelper && typeof window.NoticeClientHelper.shouldRetryWithTelemetry === 'function') {
+            return window.NoticeClientHelper.shouldRetryWithTelemetry(error);
+        }
+        const status = Number(error && error.status || 0);
+        const message = String(error && error.message || '');
+        if (status !== 403) return false;
+        return /设备令牌|访问被拒绝|设备绑定/.test(message);
+    }
+
+    function requestJsonWithTelemetryRetry(requestFactory, fallbackMessage) {
+        return Promise.resolve().then(() => requestFactory()).then((response) => {
+            return parseJsonResponse(response, fallbackMessage);
+        }).catch((error) => {
+            if (!shouldRetryWithTelemetry(error)) {
+                if (window.NoticeClientHelper && typeof window.NoticeClientHelper.decorateError === 'function') {
+                    throw window.NoticeClientHelper.decorateError(error, fallbackMessage);
+                }
+                throw error;
+            }
+            return hydrateClientContext(true).then(() => requestFactory()).then((response) => {
+                return parseJsonResponse(response, fallbackMessage);
+            }).catch((retryError) => {
+                if (window.NoticeClientHelper && typeof window.NoticeClientHelper.decorateError === 'function') {
+                    throw window.NoticeClientHelper.decorateError(retryError, fallbackMessage);
+                }
+                throw retryError;
+            });
+        });
+    }
+
     function parseMarkdown(md) {
         if (window.MarkdownRenderer) return window.MarkdownRenderer.parseChangelog(md);
         const lines = String(md || '').split('\n');
-        const data = { title: '更新日志', version: 'Latest', sections: [] };
+        const data = { title: '', version: 'Latest', sections: [] };
         let currentSection = null;
 
         lines.forEach((line) => {
@@ -89,7 +179,7 @@
         if (window.MarkdownRenderer) return window.MarkdownRenderer.parseArticleMarkdown(md, fallbackTitle);
         const blocks = String(md || '').split(/\n{2,}/);
         const data = {
-            title: fallbackTitle || '日常公告',
+            title: fallbackTitle || '',
             date: new Date().toLocaleDateString(),
             content: []
         };
@@ -245,7 +335,7 @@
         overlay.id = MODAL_ID;
         overlay.className = 'modal-overlay notice-detail-overlay';
         overlay.innerHTML = '<div id="notice-detail-shell" class="notice-detail-shell"></div>';
-        document.body.appendChild(overlay);
+        (document.getElementById('app-root') || document.body).appendChild(overlay);
 
         overlay.addEventListener('click', (e) => {
             const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
@@ -292,34 +382,59 @@
     }
 
     /* 异步加载并渲染反应栏内容 */
-    function _loadAndRenderReactions(noticeId) {
-        var baseUrl = (window._telemetryBaseUrl || '').replace(/\/+$/, '');
-        var hwid = window._telemetryHWID || '';
-        if (!baseUrl || !noticeId) {
-            // 无遥测连接时使用摘要数据做静态展示
-            _renderReactionsFromSummary(noticeId);
-            return;
-        }
-        var url = baseUrl + '/notice-reactions/' + noticeId;
-        if (hwid) url += '?machine_id=' + encodeURIComponent(hwid);
+    var _reactionPendingMap = {};
 
-        fetch(url).then(function(res) { return res.json(); }).then(function(data) {
-            var reactions = data.reactions || [];
+    function _loadAndRenderReactions(noticeId, options) {
+        options = options || {};
+        hydrateClientContext(true).then(function () {
+            var baseUrl = (window._telemetryBaseUrl || '').replace(/\/+$/, '');
+            var hwid = window._telemetryHWID || '';
+            if (!baseUrl || !noticeId) {
+                _renderReactionsFromSummary(noticeId);
+                return null;
+            }
+            var routePath = '/notice-reactions/' + noticeId;
+            var url = baseUrl + routePath;
+            if (hwid) url += '?machine_id=' + encodeURIComponent(hwid);
+
+            return requestJsonWithTelemetryRetry(function () {
+                return buildTelemetryHeaders(routePath, 'GET', hwid, false).then(function (headers) {
+                    return fetch(url, { method: 'GET', headers: headers });
+                });
+            }, '加载互动数据失败');
+        }).then(function (data) {
+            if (!data) return;
+            var reactions = Array.isArray(data && data.reactions) ? data.reactions : [];
+            if (window.NoticeClientHelper && typeof window.NoticeClientHelper.cacheReactions === 'function') {
+                reactions = window.NoticeClientHelper.cacheReactions(noticeId, reactions);
+            }
             _renderReactionPills(noticeId, reactions);
         }).catch(function() {
-            _renderReactionsFromSummary(noticeId);
+            if (options.keepCurrentOnFailure && window.NoticeClientHelper && typeof window.NoticeClientHelper.getCachedReactions === 'function') {
+                var cached = window.NoticeClientHelper.getCachedReactions(noticeId);
+                if (cached) {
+                    _renderReactionPills(noticeId, cached);
+                    return;
+                }
+            }
+            _renderReactionPills(noticeId, []);
         });
     }
 
     /* 从全局摘要数据渲染（无详细用户列表） */
     function _renderReactionsFromSummary(noticeId) {
-        var rawData = window._noticeReactionsData;
-        if (!Array.isArray(rawData)) { _renderReactionPills(noticeId, []); return; }
-        var reactions = [];
-        rawData.forEach(function(r) {
-            if (String(r.notice_id) !== String(noticeId)) return;
-            reactions.push({ emoji: r.emoji, count: r.count || 0, users: [], reacted: false });
-        });
+        var reactions = window.NoticeClientHelper && typeof window.NoticeClientHelper.getSummaryReactions === 'function'
+            ? window.NoticeClientHelper.getSummaryReactions(noticeId)
+            : [];
+        if ((!reactions || !reactions.length) && Array.isArray(window._noticeReactionsData)) {
+            window._noticeReactionsData.forEach(function(r) {
+                if (String(r.notice_id) !== String(noticeId)) return;
+                reactions.push({ emoji: r.emoji, count: r.count || 0, users: [], reacted: false });
+            });
+        }
+        if (window.NoticeClientHelper && typeof window.NoticeClientHelper.cacheReactions === 'function') {
+            reactions = window.NoticeClientHelper.cacheReactions(noticeId, reactions);
+        }
         _renderReactionPills(noticeId, reactions);
     }
 
@@ -410,17 +525,50 @@
 
     /* 提交/取消反应 */
     function _submitReaction(noticeId, emoji) {
-        var baseUrl = (window._telemetryBaseUrl || '').replace(/\/+$/, '');
-        var hwid = window._telemetryHWID || '';
-        if (!baseUrl || !hwid) return;
+        if (_reactionPendingMap[noticeId]) return;
+        hydrateClientContext(true).then(function () {
+            var baseUrl = (window._telemetryBaseUrl || '').replace(/\/+$/, '');
+            var hwid = window._telemetryHWID || '';
+            if (!baseUrl || !hwid) return null;
 
-        fetch(baseUrl + '/notice-reaction', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ notice_id: Number(noticeId), machine_id: hwid, emoji: emoji })
+            var previousReactions = [];
+            if (window.NoticeClientHelper) {
+                previousReactions =
+                    window.NoticeClientHelper.getCachedReactions(noticeId) ||
+                    window.NoticeClientHelper.getSummaryReactions(noticeId) ||
+                    [];
+            }
+            var optimisticReactions = window.NoticeClientHelper && typeof window.NoticeClientHelper.buildOptimisticReactions === 'function'
+                ? window.NoticeClientHelper.buildOptimisticReactions(previousReactions, emoji)
+                : previousReactions;
+
+            _renderReactionPills(noticeId, optimisticReactions);
+            _reactionPendingMap[noticeId] = {
+                previous: previousReactions
+            };
+
+            return requestJsonWithTelemetryRetry(function () {
+                return buildTelemetryHeaders('/notice-reaction', 'POST', hwid, true).then(function (headers) {
+                    return fetch(baseUrl + '/notice-reaction', {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify({ notice_id: Number(noticeId), machine_id: hwid, emoji: emoji })
+                    });
+                });
+            }, '提交表情互动失败');
         }).then(function() {
-            _loadAndRenderReactions(noticeId);
-        }).catch(function() {});
+            _loadAndRenderReactions(noticeId, { keepCurrentOnFailure: true });
+        }).catch(function(err) {
+            var pending = _reactionPendingMap[noticeId];
+            if (pending) {
+                _renderReactionPills(noticeId, pending.previous || []);
+            }
+            if (window.app && typeof window.app.showToast === 'function') {
+                window.app.showToast((err && err.message) || '提交表情互动失败', 'error');
+            }
+        }).finally(function () {
+            delete _reactionPendingMap[noticeId];
+        });
     }
 
     function isUpdateType(item) {
@@ -476,8 +624,11 @@
         shell.innerHTML = renderByTemplate(safeItem, helpers);
         bindCloseButtons(overlay);
 
-        // 弹窗渲染完成后，异步加载反应详情
-        if (safeItem.id) {
+        // 弹窗渲染完成后，如果评论面板已启用，反应系统由评论面板统一管理
+        var commentPanelActive = helpers.isFeatureEnabled('notice_comment_enabled') &&
+            window.NoticeCommentPanel && typeof window.NoticeCommentPanel.renderPanel === 'function' &&
+            !!shell.querySelector('.nc-panel[data-nc-notice-id]');
+        if (safeItem.id && !commentPanelActive) {
             _loadAndRenderReactions(safeItem.id);
         }
 

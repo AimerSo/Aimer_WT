@@ -45,7 +45,7 @@
         }) : [];
 
         if (!items.length) {
-            host.textContent = "暂无可用广告";
+            host.textContent = "";
             return;
         }
 

@@ -16,8 +16,12 @@
     }
 
     function renderGeneralTemplate(item, helpers) {
-        const data = helpers.parseArticleMarkdown(item.content || '', item.title || '公告详情');
+        const data = helpers.parseArticleMarkdown(item.content || '', item.title || '');
+        const title = item.title || data.title || '';
         const blocksHtml = (data.content || []).map((block) => renderArticleBlock(block, helpers)).join('');
+        const titleHtml = title
+            ? ('        <h3 class="notice-article-title">' + helpers.escapeHtml(title) + '</h3>')
+            : '';
         return '' +
             '<div class="modal-content notice-detail-modal notice-article-modal nc-split-layout">' +
             '  <div class="nc-left-col">' +
@@ -25,7 +29,7 @@
             '    <div class="notice-article-head-left">' +
             '      <div class="notice-article-bell"><i class="ri-notification-3-line"></i></div>' +
             '      <div>' +
-            '        <h3 class="notice-article-title">' + helpers.escapeHtml(data.title || '公告详情') + '</h3>' +
+            titleHtml +
             '        <div class="notice-article-date">Release Date: ' + helpers.escapeHtml(item.date || data.date || '') + '</div>' +
             '      </div>' +
             '    </div>' +

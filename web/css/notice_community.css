@@ -774,7 +774,7 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
-    z-index: 10000;
+    z-index: 12100;
 }
 
 .nc-likers-overlay.show {
@@ -1003,7 +1003,7 @@
 /* 三点弹出小菜单 */
 .nc-more-popup {
     position: fixed;
-    z-index: 20050;
+    z-index: 12250;
     background: #ffffff;
     border: 1px solid #e5e7eb;
     border-radius: 10px;
@@ -1053,7 +1053,7 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
-    z-index: 10000;
+    z-index: 12200;
     opacity: 0;
     transition: opacity 0.2s ease;
     pointer-events: none;
@@ -1174,7 +1174,7 @@
 
 .nc-report-overlay .app-dropdown-wrapper,
 .nc-report-overlay .app-dropdown-menu {
-    z-index: 10020;
+    z-index: 12220;
 }
 
 .nc-report-select:focus {
@@ -1255,7 +1255,7 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
-    z-index: 20000;
+    z-index: 12300;
     opacity: 0;
     transition: opacity 0.2s ease;
     pointer-events: none;
@@ -1488,6 +1488,55 @@
 
 .nc-preview-reply-like.nc-liked:hover {
     color: #dc2626;
+}
+
+.nc-preview-reply-more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-left: 2px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nc-preview-reply-more:hover {
+    background: rgba(148, 163, 184, 0.12);
+    color: #4b5563;
+}
+
+.nc-comment-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 20px 14px;
+    color: #6b7280;
+    font-size: 12px;
+    text-align: center;
+}
+
+.nc-comment-retry-btn {
+    padding: 4px 10px;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.08);
+    color: #2563eb;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.nc-comment-retry-btn:hover {
+    background: rgba(59, 130, 246, 0.14);
+    border-color: rgba(59, 130, 246, 0.28);
 }
 
 .nc-reply-total-link {

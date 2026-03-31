@@ -45,12 +45,14 @@ from services.tray_manager import tray_manager
 from services.autostart_manager import autostart_manager
 from services.telemetry_manager import (
     build_client_auth_headers,
+    get_client_device_token,
     get_hwid,
     get_telemetry_connection_status,
     get_telemetry_manager,
     get_user_seq_id,
     init_telemetry,
     resolve_related_endpoint,
+    resolve_client_auth_secret,
     resolve_service_base_url,
     submit_feedback,
 )
@@ -1127,6 +1129,49 @@ class AppApi:
             "tray_mode": self._cfg_mgr.get_tray_mode(),
             "close_confirm": self._cfg_mgr.get_close_confirm()
         }
+
+    def ensure_telemetry_ready(self, timeout_ms=2500):
+        """
+        尝试主动完成一次遥测握手，确保前端后续访问受保护的公告评论/互动接口时，
+        已经具备 base_url、hwid 与设备令牌。
+        """
+        try:
+            timeout_ms = int(timeout_ms or 0)
+        except Exception:
+            timeout_ms = 2500
+        timeout_ms = max(0, min(timeout_ms, 8000))
+
+        tm = get_telemetry_manager()
+        base_state = self.init_app_state()
+        requires_device_token = bool(resolve_client_auth_secret())
+
+        def _build_state():
+            state = self.init_app_state()
+            has_device_token = bool(get_client_device_token())
+            telemetry_base_url = str(state.get("telemetry_base_url") or "").strip()
+            state["telemetry_has_device_token"] = has_device_token
+            state["telemetry_ready"] = bool(telemetry_base_url) and (has_device_token or not requires_device_token)
+            return state
+
+        if not tm or not self._cfg_mgr.get_telemetry_enabled():
+            return _build_state()
+
+        if base_state.get("telemetry_ready"):
+            return _build_state()
+
+        try:
+            tm.report_startup()
+        except Exception:
+            return _build_state()
+
+        deadline = time.time() + (timeout_ms / 1000.0)
+        while time.time() < deadline:
+            state = _build_state()
+            if state.get("telemetry_ready"):
+                return state
+            time.sleep(0.12)
+
+        return _build_state()
 
     def save_theme_selection(self, filename):
         # 保存前端选择的主题文件名到配置。
@@ -5013,7 +5058,7 @@ def main() -> int:
     # 创建窗口实例（x/y 指定启动位置）
     try:
         window = webview.create_window(
-            title="Aimer WT v2 Beta",
+            title="Aimer WT v3 内测",
             url=str(index_html),
             js_api=api,
             width=window_width,

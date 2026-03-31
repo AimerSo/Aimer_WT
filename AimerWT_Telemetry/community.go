@@ -69,8 +69,14 @@ type commentReplyCountRow struct {
 	ReplyCount int
 }
 
+type commentAuthorMeta struct {
+	Tags      string
+	IsAdmin   bool
+	IsStarred bool
+}
+
 // 序列化评论为前端友好的格式，关联 UID 序号和标签
-func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint]struct{}, tagsMap map[string]string, nicknameMap map[string]string) map[string]interface{} {
+func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint]struct{}, authorMetaMap map[string]commentAuthorMeta, nicknameMap map[string]string, tagDefs map[string]UserTag) map[string]interface{} {
 	uid := "?"
 	if seqID, ok := seqMap[c.MachineID]; ok {
 		uid = fmt.Sprintf("%d", seqID)
@@ -78,8 +84,9 @@ func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint
 	_, liked := likedSet[c.ID]
 
 	tags := "[]"
-	if t, ok := tagsMap[c.MachineID]; ok && t != "" {
-		tags = t
+	meta := authorMetaMap[c.MachineID]
+	if meta.Tags != "" {
+		tags = meta.Tags
 	}
 
 	nickname := ""
@@ -99,6 +106,9 @@ func serializeComment(c NoticeComment, seqMap map[string]uint, likedSet map[uint
 		"liked":             liked,
 		"status":            c.Status,
 		"tags":              tags,
+		"tag_items":         buildCommentTagItems(tags, tagDefs),
+		"is_admin":          meta.IsAdmin,
+		"is_starred":        meta.IsStarred,
 		"weight_adjustment": roundCommentWeight(c.WeightAdjustment),
 		"created_at":        c.CreatedAt.Format("2006-01-02 15:04:05"),
 	}
@@ -140,6 +150,95 @@ func buildTagsMap(machineIDs []string) map[string]string {
 		result[r.MachineID] = r.Tags
 	}
 	return result
+}
+
+func buildCommentAuthorMetaMap(machineIDs []string) map[string]commentAuthorMeta {
+	if len(machineIDs) == 0 {
+		return map[string]commentAuthorMeta{}
+	}
+
+	type metaRow struct {
+		MachineID string
+		Tags      string
+		IsAdmin   bool
+		IsStarred bool
+	}
+
+	var rows []metaRow
+	db.Model(&TelemetryRecord{}).
+		Where("machine_id IN ?", machineIDs).
+		Select("machine_id, tags, is_admin, is_starred").
+		Scan(&rows)
+
+	result := make(map[string]commentAuthorMeta, len(rows))
+	for _, row := range rows {
+		result[row.MachineID] = commentAuthorMeta{
+			Tags:      row.Tags,
+			IsAdmin:   row.IsAdmin,
+			IsStarred: row.IsStarred,
+		}
+	}
+	return result
+}
+
+func collectTagNamesFromAuthorMeta(metaMap map[string]commentAuthorMeta) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0)
+	for _, meta := range metaMap {
+		for _, tagName := range parseUserTags(meta.Tags) {
+			tagName = strings.TrimSpace(tagName)
+			if tagName == "" {
+				continue
+			}
+			if _, ok := seen[tagName]; ok {
+				continue
+			}
+			seen[tagName] = struct{}{}
+			result = append(result, tagName)
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+func buildTagDefinitionMap(tagNames []string) map[string]UserTag {
+	if len(tagNames) == 0 {
+		return map[string]UserTag{}
+	}
+
+	var rows []UserTag
+	db.Where("name IN ?", tagNames).Find(&rows)
+
+	result := make(map[string]UserTag, len(rows))
+	for _, row := range rows {
+		result[row.Name] = row
+	}
+	return result
+}
+
+func buildCommentTagItems(tagsRaw string, tagDefs map[string]UserTag) []map[string]interface{} {
+	tagNames := parseUserTags(tagsRaw)
+	if len(tagNames) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	items := make([]map[string]interface{}, 0, len(tagNames))
+	for _, tagName := range tagNames {
+		tagName = strings.TrimSpace(tagName)
+		if tagName == "" {
+			continue
+		}
+		item := map[string]interface{}{
+			"name": tagName,
+		}
+		if def, ok := tagDefs[tagName]; ok {
+			item["display_name"] = def.DisplayName
+			item["icon"] = def.Icon
+			item["color"] = def.Color
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 func buildAliasMap(machineIDs []string) map[string]string {
@@ -262,7 +361,7 @@ func extractLegacyReplyAlias(content string) string {
 	return strings.TrimSpace(rest[:idx])
 }
 
-func resolveReplyTargetCommentID(comment NoticeComment, seqMap map[string]uint, aliasMap map[string]string, commentMap map[uint]NoticeComment) uint {
+func resolveReplyTargetCommentID(comment NoticeComment, seqMap map[string]uint, aliasMap map[string]string, nicknameMap map[string]string, commentMap map[uint]NoticeComment) uint {
 	if comment.ReplyToID > 0 {
 		return comment.ReplyToID
 	}
@@ -285,6 +384,9 @@ func resolveReplyTargetCommentID(comment NoticeComment, seqMap map[string]uint, 
 		if strings.TrimSpace(aliasMap[candidate.MachineID]) == legacyAlias {
 			return candidate.ID
 		}
+		if strings.TrimSpace(nicknameMap[candidate.MachineID]) == legacyAlias {
+			return candidate.ID
+		}
 		if seqID, ok := seqMap[candidate.MachineID]; ok && ("用户#"+fmt.Sprintf("%d", seqID) == legacyAlias || fmt.Sprintf("%d", seqID) == legacyAlias) {
 			return candidate.ID
 		}
@@ -293,11 +395,8 @@ func resolveReplyTargetCommentID(comment NoticeComment, seqMap map[string]uint, 
 	return 0
 }
 
-func attachCommentMeta(item map[string]interface{}, comment NoticeComment, viewerMachineID string, viewerIsAdmin bool, viewerCanDeleteOthers bool, seqMap map[string]uint, aliasMap map[string]string, commentMap map[uint]NoticeComment) {
-	item["can_delete"] = viewerIsAdmin || viewerCanDeleteOthers || (viewerMachineID != "" && comment.MachineID == viewerMachineID)
-	item["can_manage"] = viewerIsAdmin
-
-	replyTargetID := resolveReplyTargetCommentID(comment, seqMap, aliasMap, commentMap)
+func attachReplyTargetMeta(item map[string]interface{}, comment NoticeComment, seqMap map[string]uint, aliasMap map[string]string, nicknameMap map[string]string, commentMap map[uint]NoticeComment) {
+	replyTargetID := resolveReplyTargetCommentID(comment, seqMap, aliasMap, nicknameMap, commentMap)
 	if replyTargetID == 0 {
 		return
 	}
@@ -307,7 +406,19 @@ func attachCommentMeta(item map[string]interface{}, comment NoticeComment, viewe
 		if seqID, found := seqMap[target.MachineID]; found {
 			item["reply_to_uid"] = fmt.Sprintf("%d", seqID)
 		}
+		if nickname := strings.TrimSpace(nicknameMap[target.MachineID]); nickname != "" {
+			item["reply_to_nickname"] = nickname
+		}
 	}
+}
+
+func attachCommentMeta(item map[string]interface{}, comment NoticeComment, viewerMachineID string, viewerIsAdmin bool, seqMap map[string]uint, aliasMap map[string]string, nicknameMap map[string]string, commentMap map[uint]NoticeComment) {
+	isSelf := viewerMachineID != "" && comment.MachineID == viewerMachineID
+	item["is_self"] = isSelf
+	item["can_delete"] = viewerIsAdmin || isSelf
+	item["can_manage"] = viewerIsAdmin
+
+	attachReplyTargetMeta(item, comment, seqMap, aliasMap, nicknameMap, commentMap)
 }
 
 func deleteNoticeCommentCascade(commentID uint) error {
@@ -383,6 +494,10 @@ func buildTopRepliesMap(noticeID uint, parentIDs []uint, viewerMachineID string,
 		return result
 	}
 
+	var parents []NoticeComment
+	db.Where("notice_id = ? AND id IN ? AND parent_id = 0 AND status = 'visible'", noticeID, parentIDs).
+		Find(&parents)
+
 	var allReplies []NoticeComment
 	db.Where("notice_id = ? AND parent_id IN ? AND status = 'visible'", noticeID, parentIDs).
 		Find(&allReplies)
@@ -394,9 +509,15 @@ func buildTopRepliesMap(noticeID uint, parentIDs []uint, viewerMachineID string,
 	// 收集所有 machine_id
 	idSet := map[string]bool{}
 	replyIDs := make([]uint, 0, len(allReplies))
+	commentMap := make(map[uint]NoticeComment, len(parents)+len(allReplies))
+	for _, parent := range parents {
+		idSet[parent.MachineID] = true
+		commentMap[parent.ID] = parent
+	}
 	for _, r := range allReplies {
 		idSet[r.MachineID] = true
 		replyIDs = append(replyIDs, r.ID)
+		commentMap[r.ID] = r
 	}
 	idList := make([]string, 0, len(idSet))
 	for k := range idSet {
@@ -405,9 +526,10 @@ func buildTopRepliesMap(noticeID uint, parentIDs []uint, viewerMachineID string,
 
 	seqMap := buildSeqMap(idList)
 	aliasMap := buildAliasMap(idList)
+	authorMetaMap := buildCommentAuthorMetaMap(idList)
+	tagDefs := buildTagDefinitionMap(collectTagNamesFromAuthorMeta(authorMetaMap))
 	authorWeightMap := buildCommentAuthorWeightMap(idList, weightCfg)
 	likedSet := buildLikedCommentSet(viewerMachineID, replyIDs)
-	tagsMap := buildTagsMap(idList)
 	nicknameMap := buildNicknameMap(idList)
 
 	// 按 parent_id 分组并排序取 top 2
@@ -435,11 +557,12 @@ func buildTopRepliesMap(noticeID uint, parentIDs []uint, viewerMachineID string,
 		}
 		previews := make([]map[string]interface{}, 0, topN)
 		for _, ranked := range items[:topN] {
-			item := serializeComment(ranked.Comment, seqMap, likedSet, tagsMap, nicknameMap)
+			item := serializeComment(ranked.Comment, seqMap, likedSet, authorMetaMap, nicknameMap, tagDefs)
 			// 附加 alias 用于前端显示用户名
 			if alias, ok := aliasMap[ranked.Comment.MachineID]; ok && strings.TrimSpace(alias) != "" {
 				item["alias"] = alias
 			}
+			attachReplyTargetMeta(item, ranked.Comment, seqMap, aliasMap, nicknameMap, commentMap)
 			item["weight_score"] = ranked.WeightScore
 			previews = append(previews, item)
 		}
@@ -527,7 +650,6 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		machineID := c.Query("machine_id")
 		viewerRecord := loadCommentUserRecord(machineID)
 		viewerIsAdmin := viewerRecord != nil && viewerRecord.IsAdmin
-		viewerCanDeleteOthers := hasCommentPerm(viewerRecord, "can_delete_others")
 		weightCfg := LoadCommentWeightConfig()
 		offset := parseCommentPageOffset(c.DefaultQuery("offset", "0"))
 		limit := parseCommentPageLimit(c.DefaultQuery("limit", "12"))
@@ -560,7 +682,8 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		}
 		seqMap := buildSeqMap(idList)
 		likedSet := buildLikedCommentSet(machineID, pageCommentIDs)
-		tagsMap := buildTagsMap(idList)
+		authorMetaMap := buildCommentAuthorMetaMap(idList)
+		tagDefs := buildTagDefinitionMap(collectTagNamesFromAuthorMeta(authorMetaMap))
 		nicknameMap := buildNicknameMap(idList)
 
 		result := make([]map[string]interface{}, 0, len(pageItems))
@@ -575,7 +698,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		topRepliesMap := buildTopRepliesMap(noticeID, allParentIDs, machineID, weightCfg)
 
 		for _, ranked := range pageItems {
-			item := serializeComment(ranked.Comment, seqMap, likedSet, tagsMap, nicknameMap)
+			item := serializeComment(ranked.Comment, seqMap, likedSet, authorMetaMap, nicknameMap, tagDefs)
 			item["replies"] = []map[string]interface{}{}
 			item["reply_count"] = ranked.ReplyCount
 			item["author_weight"] = ranked.AuthorWeight
@@ -585,7 +708,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			} else {
 				item["top_replies"] = []map[string]interface{}{}
 			}
-			attachCommentMeta(item, ranked.Comment, machineID, viewerIsAdmin, viewerCanDeleteOthers, seqMap, nil, nil)
+			attachCommentMeta(item, ranked.Comment, machineID, viewerIsAdmin, seqMap, nil, nicknameMap, nil)
 			result = append(result, item)
 		}
 
@@ -685,19 +808,19 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		likedSet := buildLikedCommentSet(machineID, replyIDs)
 		weightCfg := LoadCommentWeightConfig()
 		authorWeightMap := buildCommentAuthorWeightMap(idList, weightCfg)
-		tagsMap := buildTagsMap(idList)
+		authorMetaMap := buildCommentAuthorMetaMap(idList)
+		tagDefs := buildTagDefinitionMap(collectTagNamesFromAuthorMeta(authorMetaMap))
 		aliasMap := buildAliasMap(idList)
 		nicknameMap := buildNicknameMap(idList)
 
 		result := make([]map[string]interface{}, 0, len(replies))
 		for _, reply := range replies {
 			authorWeight := authorWeightMap[reply.MachineID]
-			item := serializeComment(reply, seqMap, likedSet, tagsMap, nicknameMap)
+			item := serializeComment(reply, seqMap, likedSet, authorMetaMap, nicknameMap, tagDefs)
 			item["reply_count"] = 0
 			item["author_weight"] = authorWeight
 			item["weight_score"] = computeCommentWeight(reply.LikeCount, 0, authorWeight, reply.WeightAdjustment)
-			viewerCanDeleteOthers := hasCommentPerm(viewerRecord, "can_delete_others")
-			attachCommentMeta(item, reply, machineID, viewerIsAdmin, viewerCanDeleteOthers, seqMap, aliasMap, commentMap)
+			attachCommentMeta(item, reply, machineID, viewerIsAdmin, seqMap, aliasMap, nicknameMap, commentMap)
 			result = append(result, item)
 		}
 
@@ -803,14 +926,16 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			req.ReplyToID = 0
 		}
 
-		// 频率限制：同一用户对同一公告 30 秒内最多 1 条
+		// 频率限制：同一用户对同一公告在配置窗口内最多发送指定条数
+		commentRateWindow := normalizeCommentRateWindowValue(weightCfg.CommentRateWindow, defaultCommentRateWindow)
+		commentRateMax := normalizeCommentRateCountValue(weightCfg.CommentRateMax, defaultCommentRateMax)
 		var recentCount int64
-		threshold := time.Now().Add(-30 * time.Second)
+		threshold := time.Now().Add(-time.Duration(commentRateWindow) * time.Second)
 		db.Model(&NoticeComment{}).
 			Where("notice_id = ? AND machine_id = ? AND created_at > ?", req.NoticeID, req.MachineID, threshold).
 			Count(&recentCount)
-		if recentCount > 0 {
-			c.JSON(429, gin.H{"error": "发送太频繁，请稍后再试"})
+		if recentCount >= int64(commentRateMax) {
+			c.JSON(429, gin.H{"error": fmt.Sprintf("发送太频繁，%d 秒内最多发送 %d 条", commentRateWindow, commentRateMax)})
 			return
 		}
 
@@ -848,14 +973,15 @@ func initCommunityClientRoutes(r *gin.Engine) {
 
 		seqMap := buildSeqMap(machineIDs)
 		authorWeight := buildCommentAuthorWeightMap([]string{req.MachineID}, weightCfg)[req.MachineID]
-		tagsMap := buildTagsMap([]string{req.MachineID})
+		authorMetaMap := buildCommentAuthorMetaMap([]string{req.MachineID})
+		tagDefs := buildTagDefinitionMap(collectTagNamesFromAuthorMeta(authorMetaMap))
 		aliasMap := buildAliasMap(machineIDs)
 		nicknameMap := buildNicknameMap([]string{req.MachineID})
-		commentResp := serializeComment(comment, seqMap, nil, tagsMap, nicknameMap)
+		commentResp := serializeComment(comment, seqMap, nil, authorMetaMap, nicknameMap, tagDefs)
 		commentResp["reply_count"] = 0
 		commentResp["author_weight"] = authorWeight
 		commentResp["weight_score"] = computeCommentWeight(comment.LikeCount, 0, authorWeight, comment.WeightAdjustment)
-		attachCommentMeta(commentResp, comment, req.MachineID, commenterRecord != nil && commenterRecord.IsAdmin, hasCommentPerm(commenterRecord, "can_delete_others"), seqMap, aliasMap, commentMap)
+		attachCommentMeta(commentResp, comment, req.MachineID, commenterRecord != nil && commenterRecord.IsAdmin, seqMap, aliasMap, nicknameMap, commentMap)
 
 		// 审计日志：评论创建
 		var userVersion string
@@ -985,6 +1111,10 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			c.JSON(404, gin.H{"error": "评论不存在"})
 			return
 		}
+		if comment.MachineID == req.MachineID {
+			c.JSON(403, gin.H{"error": "不能举报自己的评论"})
+			return
+		}
 		// 防重复：同一用户对同一评论只能举报一次
 		var existingCount int64
 		db.Model(&CommentReport{}).Where("comment_id = ? AND reporter_machine_id = ?", req.CommentID, req.MachineID).Count(&existingCount)
@@ -1037,7 +1167,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			c.JSON(404, gin.H{"error": "评论不存在"})
 			return
 		}
-		if !(actor != nil && actor.IsAdmin) && !hasCommentPerm(actor, "can_delete_others") && comment.MachineID != machineID {
+		if !(actor != nil && actor.IsAdmin) && comment.MachineID != machineID {
 			c.JSON(403, gin.H{"error": "您没有权限删除该评论"})
 			return
 		}

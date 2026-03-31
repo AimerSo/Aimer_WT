@@ -1616,6 +1616,7 @@ func initRouter(r *gin.Engine) {
 			MachineID string
 			ID        uint
 			Alias     string
+			Nickname  string
 		}
 		var identityRows []identityRow
 		if len(machineIDs) > 0 {
@@ -1623,13 +1624,19 @@ func initRouter(r *gin.Engine) {
 			for k := range machineIDs {
 				keys = append(keys, k)
 			}
-			db.Model(&TelemetryRecord{}).Where("machine_id IN ?", keys).Select("machine_id, id, alias").Scan(&identityRows)
+			db.Table("telemetry_records AS tr").
+				Select("tr.machine_id, tr.id, tr.alias, COALESCE(up.nickname, '') AS nickname").
+				Joins("LEFT JOIN user_profiles AS up ON up.machine_id = tr.machine_id").
+				Where("tr.machine_id IN ?", keys).
+				Scan(&identityRows)
 		}
 		seqMap := map[string]uint{}
 		aliasMap := map[string]string{}
+		nicknameMap := map[string]string{}
 		for _, row := range identityRows {
 			seqMap[row.MachineID] = row.ID
 			aliasMap[row.MachineID] = row.Alias
+			nicknameMap[row.MachineID] = row.Nickname
 		}
 
 		type reactionItem struct {
@@ -1656,6 +1663,9 @@ func initRouter(r *gin.Engine) {
 			}
 			g.Users = append(g.Users, uid)
 			userDetail := map[string]string{"uid": uid}
+			if nickname := strings.TrimSpace(nicknameMap[r.MachineID]); nickname != "" {
+				userDetail["nickname"] = nickname
+			}
 			if alias := strings.TrimSpace(aliasMap[r.MachineID]); alias != "" {
 				userDetail["alias"] = alias
 			}

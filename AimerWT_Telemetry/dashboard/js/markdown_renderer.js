@@ -173,7 +173,7 @@
      */
     function parseChangelog(md) {
         var lines = String(md || '').split('\n');
-        var data = { title: '更新日志', version: 'Latest', sections: [] };
+        var data = { title: '', version: 'Latest', sections: [] };
         var currentSection = null;
 
         lines.forEach(function (line) {
@@ -231,7 +231,7 @@
     function parseArticleMarkdown(md, fallbackTitle) {
         var blocks = String(md || '').split(/\n{2,}/);
         var data = {
-            title: fallbackTitle || '日常公告',
+            title: fallbackTitle || '',
             date: new Date().toLocaleDateString(),
             content: []
         };

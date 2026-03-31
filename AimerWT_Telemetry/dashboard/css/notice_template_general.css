@@ -1,4 +1,8 @@
 /* 日常/维护/活动公告弹窗模板样式 */
+.notice-detail-overlay {
+    z-index: 11000;
+}
+
 .notice-detail-shell {
     width: 100%;
     display: flex;

@@ -157,7 +157,14 @@ func executeRedeemPayload(store *gorm.DB, machineID string, redeemCode *RedeemCo
 			if err != nil {
 				return nil, fmt.Errorf("读取每日额度失败: %w", err)
 			}
-			newLimit := existing.DailyLimit + dlb
+			baseLimit := existing.DailyLimit
+			if baseLimit <= 0 {
+				baseLimit = aiConfig.DailyLimit
+			}
+			if baseLimit <= 0 {
+				baseLimit = defaultAIConfig().DailyLimit
+			}
+			newLimit := baseLimit + dlb
 			if err := store.Model(existing).Update("daily_limit", newLimit).Error; err != nil {
 				return nil, fmt.Errorf("发放每日额度失败: %w", err)
 			}
@@ -227,15 +234,15 @@ func executeRedeemPayload(store *gorm.DB, machineID string, redeemCode *RedeemCo
 	}
 
 	cmd := map[string]interface{}{
-		"type":           "redeem_result",
-		"success":        true,
-		"title":          title,
-		"message":        resultMsg,
-		"popup_style":    redeemCode.PopupStyle,
-		"popup_subtitle": redeemCode.PopupSubtitle,
-		"popup_logo":     redeemCode.PopupLogo,
+		"type":             "redeem_result",
+		"success":          true,
+		"title":            title,
+		"message":          resultMsg,
+		"popup_style":      redeemCode.PopupStyle,
+		"popup_subtitle":   redeemCode.PopupSubtitle,
+		"popup_logo":       redeemCode.PopupLogo,
 		"popup_icon_color": redeemCode.PopupIconColor,
-		"theme_unlocked": themeUnlocked,
+		"theme_unlocked":   themeUnlocked,
 	}
 	if themeUnlocked {
 		cmd["theme_file"] = themeFile

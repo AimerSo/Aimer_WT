@@ -62,6 +62,27 @@
         return text || '?';
     }
 
+    function normalizePublicNickname(value) {
+        return String(value == null ? '' : value).trim();
+    }
+
+    function getPublicUserName(entry) {
+        var nickname = normalizePublicNickname(entry && entry.nickname);
+        var uid = normalizeUidValue(entry && entry.uid);
+        return nickname || ('用户#' + uid);
+    }
+
+    function getPublicUserTitle(entry) {
+        return getPublicUserName(entry);
+    }
+
+    function getReplyTargetPublicName(entry) {
+        var replyNickname = normalizePublicNickname(entry && entry.reply_to_nickname);
+        if (replyNickname) return replyNickname;
+        var replyUid = normalizeUidValue(entry && entry.reply_to_uid);
+        return replyUid === '?' ? '' : ('用户#' + replyUid);
+    }
+
     function getUidLengthClass(uid) {
         var len = Array.from(normalizeUidValue(uid)).length;
         if (len >= 6) return 'nc-uid-len-6p';
@@ -115,6 +136,10 @@
                 showWeightScore: false,
                 commentCharLimit: DEFAULT_COMMENT_CHAR_LIMIT,
                 banExpiresAt: '',
+                commentLoadError: '',
+                isSubmittingReaction: false,
+                reactionLoadToken: 0,
+                pendingCommentLikes: {},
                 localPinnedComments: {},
                 localPinnedCommentOrder: []
             };
@@ -134,6 +159,34 @@
         return window._userSeqId || '';
     }
 
+    function _hydrateClientContext(forceReady) {
+        var needsBaseUrl = !window._telemetryBaseUrl;
+        var needsHwid = !window._telemetryHWID;
+        var needsSeqId = !window._userSeqId;
+        if (!forceReady && !needsBaseUrl && !needsHwid && !needsSeqId) {
+            return Promise.resolve();
+        }
+        if (!(window.pywebview && window.pywebview.api)) {
+            return Promise.resolve();
+        }
+        var loader = forceReady && typeof window.pywebview.api.ensure_telemetry_ready === 'function'
+            ? function () { return window.pywebview.api.ensure_telemetry_ready(2500); }
+            : (typeof window.pywebview.api.init_app_state === 'function'
+                ? function () { return window.pywebview.api.init_app_state(); }
+                : null);
+        if (!loader) {
+            return Promise.resolve();
+        }
+        return loader().then(function (state) {
+            if (!state || typeof state !== 'object') return;
+            if (state.telemetry_base_url) window._telemetryBaseUrl = state.telemetry_base_url;
+            if (state.hwid) window._telemetryHWID = state.hwid;
+            if (state.user_seq_id) window._userSeqId = state.user_seq_id;
+        }).catch(function () {
+            return null;
+        });
+    }
+
     function _buildTelemetryHeaders(path, method, machineID, includeJsonContentType) {
         var headers = { 'X-AimerWT-Client': '1' };
         if (includeJsonContentType) headers['Content-Type'] = 'application/json';
@@ -151,6 +204,70 @@
                 });
         }
         return Promise.resolve(headers);
+    }
+
+    function _parseJsonResponse(response, fallbackMessage) {
+        if (window.NoticeClientHelper && typeof window.NoticeClientHelper.parseJsonResponse === 'function') {
+            return window.NoticeClientHelper.parseJsonResponse(response, fallbackMessage);
+        }
+        if (!response) {
+            return Promise.reject(new Error(fallbackMessage || '请求失败'));
+        }
+        return response.json().catch(function () {
+            return {};
+        }).then(function (data) {
+            if (response.ok) {
+                return data;
+            }
+            var error = new Error((data && data.error) || fallbackMessage || ('请求失败（' + response.status + '）'));
+            error.status = response.status;
+            error.payload = data;
+            throw error;
+        });
+    }
+
+    function _shouldRetryWithTelemetry(error) {
+        if (window.NoticeClientHelper && typeof window.NoticeClientHelper.shouldRetryWithTelemetry === 'function') {
+            return window.NoticeClientHelper.shouldRetryWithTelemetry(error);
+        }
+        var status = Number(error && error.status || 0);
+        var message = String(error && error.message || '');
+        if (status !== 403) return false;
+        return /设备令牌|访问被拒绝|设备绑定/.test(message);
+    }
+
+    function _requestJsonWithTelemetryRetry(requestFactory, fallbackMessage) {
+        return Promise.resolve().then(function () {
+            return requestFactory();
+        }).then(function (response) {
+            return _parseJsonResponse(response, fallbackMessage);
+        }).catch(function (error) {
+            var message = String(error && error.message || '');
+            var shouldRetry = _shouldRetryWithTelemetry(error) ||
+                (!Number(error && error.status || 0) && /Failed to fetch|NetworkError|Load failed|fetch failed|无法连接到服务器/i.test(message));
+            if (!shouldRetry) {
+                if (window.NoticeClientHelper && typeof window.NoticeClientHelper.decorateError === 'function') {
+                    throw window.NoticeClientHelper.decorateError(error, fallbackMessage);
+                }
+                throw error;
+            }
+            return _hydrateClientContext(true).then(function () {
+                return requestFactory();
+            }).then(function (response) {
+                return _parseJsonResponse(response, fallbackMessage);
+            }).catch(function (retryError) {
+                if (window.NoticeClientHelper && typeof window.NoticeClientHelper.decorateError === 'function') {
+                    throw window.NoticeClientHelper.decorateError(retryError, fallbackMessage);
+                }
+                throw retryError;
+            });
+        });
+    }
+
+    function _isServerBackedNoticeId(noticeId) {
+        var text = String(noticeId == null ? '' : noticeId).trim();
+        if (!/^\d+$/.test(text)) return false;
+        return Number(text) > 0;
     }
 
     function _isFeatureEnabled(key) {
@@ -189,12 +306,14 @@
         if (entry && typeof entry === 'object') {
             return {
                 uid: String(entry.uid || '?'),
-                alias: String(entry.alias || '')
+                alias: String(entry.alias || ''),
+                nickname: String(entry.nickname || '')
             };
         }
         return {
             uid: String(entry || '?'),
-            alias: ''
+            alias: '',
+            nickname: ''
         };
     }
 
@@ -247,13 +366,13 @@
         } else {
             body.innerHTML = users.map(function (user) {
                 var uid = normalizeUidValue(user.uid);
-                var safeUid = escapeHtml(uid);
-                var alias = escapeHtml((user.alias || '').trim() || '暂无昵称');
+                var publicName = getPublicUserName(user);
+                var subtitle = normalizePublicNickname(user.nickname) ? ('用户#' + uid) : '未设置显示名称';
                 return '<div class="nc-likers-item">' +
-                    '  ' + renderUidAvatar('nc-likers-avatar', uid, '用户#' + uid) +
+                    '  ' + renderUidAvatar('nc-likers-avatar', uid, getPublicUserTitle(user)) +
                     '  <div class="nc-likers-meta">' +
-                    '    <div class="nc-likers-name">用户#' + safeUid + '</div>' +
-                    '    <div class="nc-likers-alias">' + alias + '</div>' +
+                    '    <div class="nc-likers-name">' + escapeHtml(publicName) + '</div>' +
+                    '    <div class="nc-likers-alias">' + escapeHtml(subtitle) + '</div>' +
                     '  </div>' +
                     '</div>';
             }).join('');
@@ -296,6 +415,9 @@
     }
 
     function _renderCommentFooter(state) {
+        if (state.commentLoadError && !state.comments.length) {
+            return '<div class="nc-comment-error"><i class="ri-error-warning-line"></i><span>' + escapeHtml(state.commentLoadError) + '</span><button class="nc-comment-retry-btn" type="button" data-action="retry-comments">重试</button></div>';
+        }
         if (state.isLoadingComments && !state.comments.length) {
             return '<div class="nc-comment-loading"><i class="ri-loader-4-line"></i><span>正在加载评论...</span></div>';
         }
@@ -325,6 +447,12 @@
     }
 
     function renderPanel(noticeId, container) {
+        _hydrateClientContext(true).finally(function () {
+            _renderPanelResolved(noticeId, container);
+        });
+    }
+
+    function _renderPanelResolved(noticeId, container) {
         if (!container || !noticeId) return;
         var id = noticeId;
         _panelState[id] = null;
@@ -338,6 +466,16 @@
                 '  <div class="nc-offline-icon"><i class="ri-cloud-off-line"></i></div>' +
                 '  <div class="nc-offline-title">未连接服务器</div>' +
                 '  <div class="nc-offline-desc">评论功能需要连接服务器后才能使用</div>' +
+                '</div>';
+            return;
+        }
+        if (!_isServerBackedNoticeId(id)) {
+            container.classList.add('nc-offline');
+            container.innerHTML =
+                '<div class="nc-offline-wrap">' +
+                '  <div class="nc-offline-icon"><i class="ri-chat-off-line"></i></div>' +
+                '  <div class="nc-offline-title">当前公告暂不支持评论</div>' +
+                '  <div class="nc-offline-desc">这条公告还没有绑定服务端评论主题，因此无法加载评论区</div>' +
                 '</div>';
             return;
         }
@@ -439,11 +577,13 @@
         });
     }
 
-    function _loadReactions(noticeId) {
+    function _loadReactions(noticeId, options) {
+        options = options || {};
         if (!_isFeatureEnabled('notice_reaction_enabled')) {
             _renderReactions(noticeId, []);
             return;
         }
+        var state = _getState(noticeId);
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
         if (!baseUrl) {
@@ -452,24 +592,47 @@
         }
         var url = baseUrl + '/notice-reactions/' + noticeId;
         if (hwid) url += '?machine_id=' + encodeURIComponent(hwid);
+        url += (url.indexOf('?') === -1 ? '?' : '&') + '_t=' + Date.now();
+        state.reactionLoadToken += 1;
+        var loadToken = state.reactionLoadToken;
 
-        _buildTelemetryHeaders('/notice-reactions/' + noticeId, 'GET', hwid, false).then(function (headers) {
-            return fetch(url, { method: 'GET', headers: headers });
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            _renderReactions(noticeId, data.reactions || []);
+        _requestJsonWithTelemetryRetry(function () {
+            return _buildTelemetryHeaders('/notice-reactions/' + noticeId, 'GET', hwid, false).then(function (headers) {
+                return fetch(url, { method: 'GET', headers: headers, cache: 'no-store' });
+            });
+        }, '加载互动数据失败').then(function (data) {
+            if (loadToken !== state.reactionLoadToken) return;
+            var reactions = Array.isArray(data && data.reactions) ? data.reactions : [];
+            if (window.NoticeClientHelper && typeof window.NoticeClientHelper.cacheReactions === 'function') {
+                reactions = window.NoticeClientHelper.cacheReactions(noticeId, reactions);
+            }
+            _renderReactions(noticeId, reactions);
         }).catch(function () {
-            _renderReactionsFromGlobal(noticeId);
+            if (loadToken !== state.reactionLoadToken) return;
+            if (options.keepCurrentOnFailure && window.NoticeClientHelper && typeof window.NoticeClientHelper.getCachedReactions === 'function') {
+                var cached = window.NoticeClientHelper.getCachedReactions(noticeId);
+                if (cached) {
+                    _renderReactions(noticeId, cached);
+                    return;
+                }
+            }
+            _renderReactions(noticeId, []);
         });
     }
 
     function _renderReactionsFromGlobal(noticeId) {
-        var raw = window._noticeReactionsData;
-        if (!Array.isArray(raw)) { _renderReactions(noticeId, []); return; }
-        var reactions = [];
-        raw.forEach(function (r) {
-            if (String(r.notice_id) !== String(noticeId)) return;
-            reactions.push({ emoji: r.emoji, count: r.count || 0, users: [], reacted: false });
-        });
+        var reactions = window.NoticeClientHelper && typeof window.NoticeClientHelper.getSummaryReactions === 'function'
+            ? window.NoticeClientHelper.getSummaryReactions(noticeId)
+            : [];
+        if ((!reactions || !reactions.length) && Array.isArray(window._noticeReactionsData)) {
+            window._noticeReactionsData.forEach(function (r) {
+                if (String(r.notice_id) !== String(noticeId)) return;
+                reactions.push({ emoji: r.emoji, count: r.count || 0, users: [], reacted: false });
+            });
+        }
+        if (window.NoticeClientHelper && typeof window.NoticeClientHelper.cacheReactions === 'function') {
+            reactions = window.NoticeClientHelper.cacheReactions(noticeId, reactions);
+        }
         _renderReactions(noticeId, reactions);
     }
 
@@ -491,7 +654,7 @@
         var pills = visibleReactions.map(function (r) {
             var userDetails = Array.isArray(r.user_details) ? r.user_details : [];
             var tooltipParts = userDetails.slice(0, 5).map(function (u) {
-                return (u.alias && u.alias.trim()) ? u.alias.trim() : ('UID' + u.uid);
+                return getPublicUserName(u);
             });
             if (userDetails.length > 5) tooltipParts.push('...');
             var titleText = tooltipParts.length ? tooltipParts.join(', ') : '';
@@ -582,17 +745,46 @@
         if (!_isFeatureEnabled('notice_reaction_enabled')) return;
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
-        if (!baseUrl || !hwid) return;
+        var state = _getState(noticeId);
+        if (!baseUrl) {
+            _showToast('未连接服务器');
+            return;
+        }
+        if (!hwid) {
+            _showToast('客户端身份未就绪，请稍后重试');
+            return;
+        }
+        if (state.isSubmittingReaction) return;
 
-        _buildTelemetryHeaders('/notice-reaction', 'POST', hwid, true).then(function (headers) {
-            return fetch(baseUrl + '/notice-reaction', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({ notice_id: Number(noticeId), machine_id: hwid, emoji: emoji })
+        var previousReactions = window.NoticeClientHelper
+            ? (window.NoticeClientHelper.getCachedReactions(noticeId) ||
+                window.NoticeClientHelper.getSummaryReactions(noticeId) ||
+                [])
+            : [];
+        var optimisticReactions = window.NoticeClientHelper && typeof window.NoticeClientHelper.buildOptimisticReactions === 'function'
+            ? window.NoticeClientHelper.buildOptimisticReactions(previousReactions, emoji)
+            : previousReactions;
+        state.isSubmittingReaction = true;
+        // 作废旧的表情加载结果，避免刚切换成功又被旧快照覆盖。
+        state.reactionLoadToken += 1;
+        _renderReactions(noticeId, optimisticReactions);
+
+        _requestJsonWithTelemetryRetry(function () {
+            return _buildTelemetryHeaders('/notice-reaction', 'POST', hwid, true).then(function (headers) {
+                return fetch(baseUrl + '/notice-reaction', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ notice_id: Number(noticeId), machine_id: hwid, emoji: emoji })
+                });
             });
-        }).then(function () {
-            _loadReactions(noticeId);
-        }).catch(function () { });
+        }, '提交表情互动失败').then(function () {
+            _loadReactions(noticeId, { keepCurrentOnFailure: true });
+        }).catch(function (err) {
+            _renderReactions(noticeId, previousReactions);
+            _showToast((err && err.message) || '表情互动失败，请稍后重试');
+        }).finally(function () {
+            state.isSubmittingReaction = false;
+        });
     }
 
     function _loadComments(noticeId, options) {
@@ -607,6 +799,7 @@
         } else {
             if (state.isLoadingComments) return;
             state.isLoadingComments = true;
+            state.commentLoadError = '';
             if (reset) {
                 state.commentOffset = 0;
                 state.comments = [];
@@ -619,7 +812,12 @@
 
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
-        if (!baseUrl) return;
+        if (!baseUrl) {
+            state.isLoadingComments = false;
+            state.isAppendingComments = false;
+            _renderComments(noticeId);
+            return;
+        }
 
         var offset = append ? state.commentOffset : 0;
         var url = baseUrl + '/notice-comments/' + noticeId +
@@ -627,10 +825,13 @@
             '&limit=' + encodeURIComponent(state.commentLimit);
         if (hwid) url += '&machine_id=' + encodeURIComponent(hwid);
 
-        _buildTelemetryHeaders('/notice-comments/' + noticeId, 'GET', hwid, false).then(function (headers) {
-            return fetch(url, { method: 'GET', headers: headers });
-        }).then(function (r) { return r.json(); }).then(function (data) {
+        _requestJsonWithTelemetryRetry(function () {
+            return _buildTelemetryHeaders('/notice-comments/' + noticeId, 'GET', hwid, false).then(function (headers) {
+                return fetch(url, { method: 'GET', headers: headers, cache: 'no-store' });
+            });
+        }, '评论加载失败，请稍后重试').then(function (data) {
             var incoming = Array.isArray(data.comments) ? data.comments : [];
+            state.commentLoadError = '';
             if (append) {
                 var seen = {};
                 state.comments.forEach(function (item) { seen[item.id] = true; });
@@ -653,8 +854,15 @@
             _renderComments(noticeId);
             _updateStats(noticeId);
             _updateComposerState(noticeId);
-        }).catch(function () {
-            _showToast('评论加载失败，请稍后重试');
+        }).catch(function (err) {
+            state.commentLoadError = (err && err.message) || '评论加载失败，请稍后重试';
+            _showToast(state.commentLoadError);
+            state.totalCount = 0;
+            state.totalLikes = 0;
+            state.noticeLikeCount = 0;
+            state.noticeLiked = false;
+            state.noticeLikers = [];
+            _updateStats(noticeId);
         }).finally(function () {
             state.isLoadingComments = false;
             state.isAppendingComments = false;
@@ -665,11 +873,15 @@
     function _loadReplies(noticeId, commentId) {
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
-        if (!baseUrl) return;
-
         var state = _getState(noticeId);
         var replyState = state.replyCache[commentId] || { items: [], loading: false, loaded: false, visibleCount: REPLY_BATCH_SIZE };
         if (replyState.loading || replyState.loaded) return;
+
+        if (!baseUrl) {
+            replyState.loading = false;
+            _renderComments(noticeId);
+            return;
+        }
 
         replyState.loading = true;
         state.replyCache[commentId] = replyState;
@@ -678,9 +890,11 @@
         var url = baseUrl + '/notice-comments/' + noticeId + '/replies/' + commentId;
         if (hwid) url += '?machine_id=' + encodeURIComponent(hwid);
 
-        _buildTelemetryHeaders('/notice-comments/' + noticeId + '/replies/' + commentId, 'GET', hwid, false).then(function (headers) {
-            return fetch(url, { method: 'GET', headers: headers });
-        }).then(function (r) { return r.json(); }).then(function (data) {
+        _requestJsonWithTelemetryRetry(function () {
+            return _buildTelemetryHeaders('/notice-comments/' + noticeId + '/replies/' + commentId, 'GET', hwid, false).then(function (headers) {
+                return fetch(url, { method: 'GET', headers: headers, cache: 'no-store' });
+            });
+        }, '回复加载失败，请稍后重试').then(function (data) {
             replyState.items = Array.isArray(data.replies) ? data.replies : [];
             replyState.loaded = true;
             replyState.visibleCount = Math.min(REPLY_BATCH_SIZE, replyState.items.length || REPLY_BATCH_SIZE);
@@ -691,8 +905,8 @@
             if (data.comment_limit_chars != null) {
                 state.commentCharLimit = normalizeCommentCharLimit(data.comment_limit_chars);
             }
-        }).catch(function () {
-            _showToast('回复加载失败，请稍后重试');
+        }).catch(function (err) {
+            _showToast((err && err.message) || '回复加载失败，请稍后重试');
         }).finally(function () {
             replyState.loading = false;
             _renderComments(noticeId);
@@ -895,6 +1109,7 @@
     function _renderCommentItem(c, noticeId) {
         var state = _getState(noticeId);
         var uid = normalizeUidValue(c.uid);
+        var publicName = getPublicUserName(c);
         var replyCount = Number(c.reply_count || 0);
         var isExpanded = !!state.expandedReplies[c.id];
         var replyState = state.replyCache[c.id] || { items: [], loading: false, loaded: false, visibleCount: REPLY_BATCH_SIZE };
@@ -908,17 +1123,19 @@
                     repliesHtml += '<div class="nc-preview-replies">';
                     repliesHtml += topReplies.slice(0, 2).map(function (r) {
                         var rUid = r.uid || '?';
-                        var rName = (r.alias && r.alias.trim()) ? escapeHtml(r.alias.trim()) : ('用户#' + escapeHtml(rUid));
-                        var rContent = escapeHtml(String(r.content || '').replace(/^\s*回复\s*@[^:：]+[:：]\s*/, ''));
+                        var rName = escapeHtml(getPublicUserName(r));
+                        var rContent = _renderReplyPreviewContent(r);
                         var likeCount = Number(r.like_count || 0);
                         var likeHtml = '<button class="nc-preview-reply-like' + (r.liked ? ' nc-liked' : '') + '" type="button" data-action="like" data-cid="' + r.id + '">' +
                             '<i class="' + (r.liked ? 'ri-heart-fill' : 'ri-heart-line') + '"></i>' +
                             '<span>' + likeCount + '</span>' +
                             '</button>';
+                        var moreHtml = '<button class="nc-preview-reply-more" type="button" data-action="more" data-cid="' + r.id + '" title="更多操作"><i class="ri-more-fill"></i></button>';
                         return '<div class="nc-preview-reply">' +
                             '<span class="nc-preview-reply-name">' + rName + '：</span>' +
                             '<span class="nc-preview-reply-content">' + rContent + '</span>' +
-                            likeHtml + '</div>';
+                            likeHtml +
+                            moreHtml + '</div>';
                     }).join('');
                     repliesHtml += '</div>';
                 }
@@ -951,8 +1168,8 @@
 
         return '<div class="nc-comment-item" data-comment-id="' + c.id + '">' +
             '<div class="nc-comment-head">' +
-            '  ' + renderUidAvatar('nc-comment-avatar', uid, '用户#' + uid) +
-            '  <span class="nc-comment-uid">用户#' + escapeHtml(uid) + '</span>' +
+            '  ' + renderUidAvatar('nc-comment-avatar', uid, getPublicUserTitle(c)) +
+            '  <span class="nc-comment-uid">' + escapeHtml(publicName) + '</span>' +
             selfBadge +
             _renderTagBadges(c.tags) +
             (state.showWeightScore ? ('  <span class="nc-comment-score">权重 ' + escapeHtml(formatWeight(c.weight_score || 0)) + '</span>') : '') +
@@ -961,7 +1178,7 @@
             '<div class="nc-comment-body">' + escapeHtml(c.content) + '</div>' +
             '<div class="nc-comment-actions">' +
             '  <button class="nc-action-btn' + (c.liked ? ' nc-liked' : '') + '" data-action="like" data-cid="' + c.id + '"><i class="' + (c.liked ? 'ri-heart-fill' : 'ri-heart-line') + '"></i> ' + (c.like_count || '') + '</button>' +
-            '  <button class="nc-action-btn" data-action="reply" data-cid="' + c.id + '" data-root-cid="' + c.id + '" data-target-cid="' + c.id + '" data-uid="' + escapeHtml(uid) + '">回复</button>' +
+            '  <button class="nc-action-btn" data-action="reply" data-cid="' + c.id + '" data-root-cid="' + c.id + '" data-target-cid="' + c.id + '" data-uid="' + escapeHtml(uid) + '" data-name="' + escapeHtml(publicName) + '">回复</button>' +
             '  <span class="nc-more-dots" data-action="more" data-cid="' + c.id + '"><i class="ri-more-fill"></i></span>' +
             '</div>' +
             repliesHtml +
@@ -971,12 +1188,13 @@
     function _renderReplyItem(r, noticeId) {
         var state = _getState(noticeId);
         var uid = normalizeUidValue(r.uid);
+        var publicName = getPublicUserName(r);
         var bodyHtml = _renderReplyBody(r);
         var selfBadge = (String(_getUserSeqId()) === String(uid) && uid !== '?') ? '<span class="nc-self-badge">我</span>' : '';
         return '<div class="nc-reply-item" data-comment-id="' + r.id + '">' +
             '<div class="nc-reply-head">' +
-            '  ' + renderUidAvatar('nc-reply-avatar', uid, '用户#' + uid) +
-            '  <span class="nc-reply-uid">用户#' + escapeHtml(uid) + '</span>' +
+            '  ' + renderUidAvatar('nc-reply-avatar', uid, getPublicUserTitle(r)) +
+            '  <span class="nc-reply-uid">' + escapeHtml(publicName) + '</span>' +
             selfBadge +
             _renderTagBadges(r.tags) +
             (state.showWeightScore ? ('  <span class="nc-comment-score nc-reply-score">权重 ' + escapeHtml(formatWeight(r.weight_score || 0)) + '</span>') : '') +
@@ -985,7 +1203,7 @@
             '<div class="nc-reply-body">' + bodyHtml + '</div>' +
             '<div class="nc-reply-actions">' +
             '  <button class="nc-action-btn' + (r.liked ? ' nc-liked' : '') + '" data-action="like" data-cid="' + r.id + '"><i class="' + (r.liked ? 'ri-heart-fill' : 'ri-heart-line') + '"></i> ' + (r.like_count || '') + '</button>' +
-            '  <button class="nc-action-btn" data-action="reply" data-cid="' + r.id + '" data-root-cid="' + r.parent_id + '" data-target-cid="' + r.id + '" data-uid="' + escapeHtml(uid) + '">回复</button>' +
+            '  <button class="nc-action-btn" data-action="reply" data-cid="' + r.id + '" data-root-cid="' + r.parent_id + '" data-target-cid="' + r.id + '" data-uid="' + escapeHtml(uid) + '" data-name="' + escapeHtml(publicName) + '">回复</button>' +
             '  <span class="nc-more-dots" data-action="more" data-cid="' + r.id + '"><i class="ri-more-fill"></i></span>' +
             '</div>' +
             '</div>';
@@ -1003,7 +1221,8 @@
                 var rootCommentId = Number(btn.getAttribute('data-root-cid') || btn.getAttribute('data-cid'));
                 var targetCommentId = Number(btn.getAttribute('data-target-cid') || btn.getAttribute('data-cid'));
                 var uid = btn.getAttribute('data-uid');
-                _setReplyTarget(noticeId, rootCommentId, targetCommentId, uid);
+                var publicName = btn.getAttribute('data-name');
+                _setReplyTarget(noticeId, rootCommentId, targetCommentId, uid, publicName);
             });
         });
 
@@ -1036,29 +1255,37 @@
                 _showMoreMenu(dots, cid, noticeId);
             });
         });
+
+        container.querySelectorAll('[data-action="retry-comments"]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                _loadComments(noticeId, { reset: true });
+            });
+        });
     }
 
-    function _setReplyTarget(noticeId, rootCommentId, targetCommentId, uid) {
+    function _setReplyTarget(noticeId, rootCommentId, targetCommentId, uid, publicName) {
         var state = _getState(noticeId);
         if (!state.canComment) {
             _showToast(state.banReason ? ('评论资格已封禁：' + state.banReason) : '评论资格已被封禁');
             return;
         }
+        var replyName = normalizePublicNickname(publicName) || ('用户#' + normalizeUidValue(uid));
         state.replyingTo = {
             rootId: rootCommentId,
             targetId: targetCommentId,
-            uid: uid
+            uid: uid,
+            publicName: replyName
         };
         state.expandedReplies[rootCommentId] = true;
 
         var indicator = document.getElementById('nc-ri-' + noticeId);
         var nameEl = document.getElementById('nc-ri-name-' + noticeId);
         if (indicator) indicator.classList.add('nc-active');
-        if (nameEl) nameEl.textContent = '@用户#' + uid;
+        if (nameEl) nameEl.textContent = '@' + replyName;
 
         var input = document.getElementById('nc-input-' + noticeId);
         if (input) {
-            input.placeholder = '回复 @用户#' + uid + '...';
+            input.placeholder = '回复 @' + replyName + '...';
             input.focus();
         }
     }
@@ -1098,10 +1325,18 @@
     function _toggleLike(commentId, noticeId) {
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
-        if (!baseUrl || !hwid) return;
+        if (!baseUrl) {
+            _showToast('未连接服务器');
+            return;
+        }
+        if (!hwid) {
+            _showToast('客户端身份未就绪，请稍后重试');
+            return;
+        }
 
         // 乐观更新：立即切换UI状态
         var state = _getState(noticeId);
+        if (state.pendingCommentLikes[commentId]) return;
         var allItems = state.comments.slice();
         state.comments.forEach(function (comment) {
             if (Array.isArray(comment.top_replies) && comment.top_replies.length) {
@@ -1123,14 +1358,17 @@
             target.like_count = Math.max(0, (target.like_count || 0) + (wasLiked ? -1 : 1));
             _renderComments(noticeId);
         }
+        state.pendingCommentLikes[commentId] = true;
 
-        _buildTelemetryHeaders('/notice-comment-like', 'POST', hwid, true).then(function (headers) {
-            return fetch(baseUrl + '/notice-comment-like', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({ comment_id: commentId, machine_id: hwid })
+        _requestJsonWithTelemetryRetry(function () {
+            return _buildTelemetryHeaders('/notice-comment-like', 'POST', hwid, true).then(function (headers) {
+                return fetch(baseUrl + '/notice-comment-like', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ comment_id: commentId, machine_id: hwid })
+                });
             });
-        }).then(function (r) { return r.json(); }).then(function (data) {
+        }, '点赞失败，请重试').then(function (data) {
             // 用后端返回的精确数据同步权重
             if (target && data) {
                 if (typeof data.like_count === 'number') target.like_count = data.like_count;
@@ -1140,15 +1378,16 @@
             } else {
                 _loadComments(noticeId, { reset: true });
             }
-        }).catch(function () {
+        }).catch(function (err) {
             // 失败时回滚
             if (target) {
                 target.liked = !target.liked;
                 target.like_count = Math.max(0, (target.like_count || 0) + (target.liked ? 1 : -1));
                 _renderComments(noticeId);
-            } else {
-                _showToast('点赞失败，请重试');
             }
+            _showToast((err && err.message) || '点赞失败，请重试');
+        }).finally(function () {
+            delete state.pendingCommentLikes[commentId];
         });
     }
 
@@ -1162,7 +1401,15 @@
         var hwid = _getHWID();
         var input = document.getElementById('nc-input-' + noticeId);
         var sendBtn = document.getElementById('nc-send-' + noticeId);
-        if (!baseUrl || !hwid || !input) return;
+        if (!input) return;
+        if (!baseUrl) {
+            _showToast('未连接服务器');
+            return;
+        }
+        if (!hwid) {
+            _showToast('客户端身份未就绪，请稍后重试');
+            return;
+        }
 
         var state = _getState(noticeId);
         if (!state.canComment) {
@@ -1184,19 +1431,21 @@
 
         if (sendBtn) sendBtn.disabled = true;
 
-        _buildTelemetryHeaders('/notice-comment', 'POST', hwid, true).then(function (headers) {
-            return fetch(baseUrl + '/notice-comment', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({
-                    notice_id: Number(noticeId),
-                    machine_id: hwid,
-                    content: content,
-                    parent_id: parentId,
-                    reply_to_id: replyToId
-                })
+        _requestJsonWithTelemetryRetry(function () {
+            return _buildTelemetryHeaders('/notice-comment', 'POST', hwid, true).then(function (headers) {
+                return fetch(baseUrl + '/notice-comment', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        notice_id: Number(noticeId),
+                        machine_id: hwid,
+                        content: content,
+                        parent_id: parentId,
+                        reply_to_id: replyToId
+                    })
+                });
             });
-        }).then(function (r) { return r.json(); }).then(function (data) {
+        }, '发送失败').then(function (data) {
             if (data.status === 'success') {
                 input.value = '';
                 if (sendBtn) sendBtn.disabled = true;
@@ -1217,8 +1466,14 @@
                 _cancelReply(noticeId);
                 _renderComments(noticeId);
                 _updateStats(noticeId);
+                _showToast(parentId > 0 ? '回复已发送' : '评论已发送', 'success');
                 var scrollToCommentId = (data.comment && data.comment.id) ? data.comment.id : null;
                 _loadComments(noticeId, { reset: true });
+                if (parentId > 0) {
+                    setTimeout(function () {
+                        _loadReplies(noticeId, parentId);
+                    }, 120);
+                }
                 // 发评论成功后滚动定位到新评论
                 if (scrollToCommentId) {
                     setTimeout(function () {
@@ -1236,8 +1491,8 @@
                 _showToast(data.error || '发送失败');
                 if (sendBtn) sendBtn.disabled = false;
             }
-        }).catch(function () {
-            _showToast('网络错误，请重试');
+        }).catch(function (err) {
+            _showToast((err && err.message) || '网络错误，请重试');
             if (sendBtn) sendBtn.disabled = false;
         });
     }
@@ -1246,11 +1501,20 @@
         return String(content || '').replace(/^\s*回复\s*@[^:：]+[:：]\s*/, '');
     }
 
-    function _renderReplyBody(reply) {
-        var targetUid = reply && reply.reply_to_uid ? String(reply.reply_to_uid) : '';
+    function _renderReplyPreviewContent(reply) {
+        var targetName = getReplyTargetPublicName(reply);
         var content = String(reply && reply.content ? reply.content : '');
-        if (targetUid) {
-            return '<span class="nc-reply-mention">回复 @用户#' + escapeHtml(targetUid) + '：</span>' + escapeHtml(_stripLegacyReplyPrefix(content));
+        if (targetName) {
+            return '<span class="nc-reply-mention">回复 @' + escapeHtml(targetName) + '：</span>' + escapeHtml(_stripLegacyReplyPrefix(content));
+        }
+        return escapeHtml(content);
+    }
+
+    function _renderReplyBody(reply) {
+        var targetName = getReplyTargetPublicName(reply);
+        var content = String(reply && reply.content ? reply.content : '');
+        if (targetName) {
+            return '<span class="nc-reply-mention">回复 @' + escapeHtml(targetName) + '：</span>' + escapeHtml(_stripLegacyReplyPrefix(content));
         }
         return escapeHtml(content).replace(/^(回复\s*)(@[^:：]+[:：])/, function (_, prefix, mention) {
             return prefix + '<span class="nc-reply-mention">' + mention + '</span>';
@@ -1284,6 +1548,7 @@
         var state = _getState(noticeId);
         var entry = _findCommentById(noticeId, commentId) || {};
         var items = [];
+        var isSelf = entry.is_self === true || (String(_getUserSeqId()) !== '' && String(entry.uid || '') === String(_getUserSeqId()));
 
         if (entry.can_delete) {
             items.push({ action: 'delete', label: '删除评论', className: 'nc-more-popup-danger' });
@@ -1292,7 +1557,9 @@
             items.push({ action: 'weight', label: '调整权重', className: 'nc-more-popup-admin' });
             items.push({ action: 'ban', label: '封禁评论权限', className: 'nc-more-popup-admin' });
         }
-        items.push({ action: 'report', label: '举报', className: 'nc-more-popup-report' });
+        if (!isSelf) {
+            items.push({ action: 'report', label: '举报', className: 'nc-more-popup-report' });
+        }
         items.push({ action: 'cancel', label: '取消', className: 'nc-more-popup-cancel' });
 
         var menu = document.createElement('div');
@@ -1419,12 +1686,14 @@
             return;
         }
 
-        _buildTelemetryHeaders('/notice-comments/' + commentId, 'DELETE', hwid, false).then(function (headers) {
-            return fetch(baseUrl + '/notice-comments/' + commentId + '?machine_id=' + encodeURIComponent(hwid), {
-                method: 'DELETE',
-                headers: headers
+        _requestJsonWithTelemetryRetry(function () {
+            return _buildTelemetryHeaders('/notice-comments/' + commentId, 'DELETE', hwid, false).then(function (headers) {
+                return fetch(baseUrl + '/notice-comments/' + commentId + '?machine_id=' + encodeURIComponent(hwid), {
+                    method: 'DELETE',
+                    headers: headers
+                });
             });
-        }).then(function (r) { return r.json(); }).then(function (data) {
+        }, '删除失败').then(function (data) {
             if (data.status === 'success') {
                 _showToast('评论已删除', 'success');
                 var state = _getState(noticeId);
@@ -1436,8 +1705,8 @@
             } else {
                 _showToast(data.error || '删除失败');
             }
-        }).catch(function () {
-            _showToast('网络错误，请重试');
+        }).catch(function (err) {
+            _showToast((err && err.message) || '网络错误，请重试');
         });
     }
 
@@ -1491,17 +1760,19 @@
             return;
         }
 
-        _buildTelemetryHeaders('/notice-comments/' + commentId + '/weight', 'POST', hwid, true).then(function (headers) {
-            return fetch(baseUrl + '/notice-comments/' + commentId + '/weight', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({
-                    machine_id: hwid,
-                    action: action,
-                    amount: amount
-                })
+        _requestJsonWithTelemetryRetry(function () {
+            return _buildTelemetryHeaders('/notice-comments/' + commentId + '/weight', 'POST', hwid, true).then(function (headers) {
+                return fetch(baseUrl + '/notice-comments/' + commentId + '/weight', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        machine_id: hwid,
+                        action: action,
+                        amount: amount
+                    })
+                });
             });
-        }).then(function (r) { return r.json(); }).then(function (data) {
+        }, '调整失败').then(function (data) {
             if (data.status === 'success') {
                 closeDialog();
                 _showToast('评论权重已更新', 'success');
@@ -1517,8 +1788,8 @@
             } else {
                 _showToast(data.error || '调整失败');
             }
-        }).catch(function () {
-            _showToast('网络错误，请重试');
+        }).catch(function (err) {
+            _showToast((err && err.message) || '网络错误，请重试');
         });
     }
 
@@ -1575,18 +1846,20 @@
             return;
         }
 
-        _buildTelemetryHeaders('/notice-comments/' + commentId + '/ban', 'POST', hwid, true).then(function (headers) {
-            return fetch(baseUrl + '/notice-comments/' + commentId + '/ban', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({
-                    machine_id: hwid,
-                    duration_value: durationValue,
-                    duration_unit: durationUnit,
-                    reason: reason
-                })
+        _requestJsonWithTelemetryRetry(function () {
+            return _buildTelemetryHeaders('/notice-comments/' + commentId + '/ban', 'POST', hwid, true).then(function (headers) {
+                return fetch(baseUrl + '/notice-comments/' + commentId + '/ban', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        machine_id: hwid,
+                        duration_value: durationValue,
+                        duration_unit: durationUnit,
+                        reason: reason
+                    })
+                });
             });
-        }).then(function (r) { return r.json(); }).then(function (data) {
+        }, '封禁失败').then(function (data) {
             if (data.status === 'success') {
                 closeDialog();
                 _showToast('评论权限已封禁', 'success');
@@ -1594,8 +1867,8 @@
             } else {
                 _showToast(data.error || '封禁失败');
             }
-        }).catch(function () {
-            _showToast('网络错误，请重试');
+        }).catch(function (err) {
+            _showToast((err && err.message) || '网络错误，请重试');
         });
     }
 
@@ -1702,18 +1975,20 @@
         var submitBtn = document.getElementById('nc-report-submit');
         if (submitBtn) submitBtn.disabled = true;
 
-        _buildTelemetryHeaders('/notice-comment-report', 'POST', hwid, true).then(function (headers) {
-            return fetch(baseUrl + '/notice-comment-report', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({
-                    comment_id: commentId,
-                    machine_id: hwid,
-                    report_type: reportType,
-                    reason: reason
-                })
+        _requestJsonWithTelemetryRetry(function () {
+            return _buildTelemetryHeaders('/notice-comment-report', 'POST', hwid, true).then(function (headers) {
+                return fetch(baseUrl + '/notice-comment-report', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        comment_id: commentId,
+                        machine_id: hwid,
+                        report_type: reportType,
+                        reason: reason
+                    })
+                });
             });
-        }).then(function (r) { return r.json(); }).then(function (data) {
+        }, '举报失败').then(function (data) {
             if (data.status === 'success') {
                 _showToast('举报已提交，感谢反馈');
                 closeDialog();
@@ -1721,8 +1996,8 @@
                 _showToast(data.error || '举报失败');
                 if (submitBtn) submitBtn.disabled = false;
             }
-        }).catch(function () {
-            _showToast('网络错误，请重试');
+        }).catch(function (err) {
+            _showToast((err && err.message) || '网络错误，请重试');
             if (submitBtn) submitBtn.disabled = false;
         });
     }

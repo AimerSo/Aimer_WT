@@ -563,6 +563,7 @@ const app = {
                 }
             }
             this.state.dashboardData = payload;
+            window._aimerTagOptions = Array.isArray(payload?.tag_options) ? payload.tag_options : [];
             this.updateDashboard(this.state.dashboardData);
             if (this.state.currentView === 'userdetail' && this.state.selectedUser) {
                 const selectedId = this.state.selectedUser.hwid || this.state.selectedUser.hwid_hash || this.state.selectedUser.machine_id || '';
@@ -577,6 +578,7 @@ const app = {
                 const fallback = await this.buildDashboardFallbackData();
                 if (fallback) {
                     this.state.dashboardData = fallback;
+                    window._aimerTagOptions = Array.isArray(fallback?.tag_options) ? fallback.tag_options : [];
                     this.updateDashboard(fallback);
                     this.showAlert('统计接口加载失败，已自动切换到基础数据视图', 'warning');
                     return;
@@ -4498,6 +4500,12 @@ const app = {
         return Math.min(Math.max(parsed, 1), 5000);
     },
 
+    _readUserRateValue(value, fallback, max = 1000) {
+        const parsed = parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+        return Math.min(Math.max(parsed, 1), max);
+    },
+
     _formatWeightNumber(value) {
         const normalized = Math.round(Number(value || 0) * 100) / 100;
         return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
@@ -4520,6 +4528,8 @@ const app = {
             base_user_comment_limit: this._readUserWeightLimit(document.getElementById('commentLimitBaseUser')?.value, 200),
             starred_comment_limit: this._readUserWeightLimit(document.getElementById('commentLimitStarredUser')?.value, 200),
             admin_comment_limit: this._readUserWeightLimit(document.getElementById('commentLimitAdminUser')?.value, 200),
+            comment_rate_window_seconds: this._readUserRateValue(document.getElementById('commentRateWindowSeconds')?.value, 60, 86400),
+            comment_rate_max_count: this._readUserRateValue(document.getElementById('commentRateMaxCount')?.value, 5, 1000),
             tag_weights: tagWeights
         };
     },
@@ -4571,6 +4581,8 @@ const app = {
         const baseLimit = this._readUserWeightLimit(cfg.base_user_comment_limit, 200);
         const starredLimit = this._readUserWeightLimit(cfg.starred_comment_limit, baseLimit);
         const adminLimit = this._readUserWeightLimit(cfg.admin_comment_limit, baseLimit);
+        const rateWindow = this._readUserRateValue(cfg.comment_rate_window_seconds, 60, 86400);
+        const rateMaxCount = this._readUserRateValue(cfg.comment_rate_max_count, 5, 1000);
         const tags = this.state.userWeightTags || [];
         const sampleTag = tags.find((tag) => Math.abs(cfg.tag_weights?.[tag.name] || 0) > 0.0001) || tags[0] || null;
         const sampleTagWeight = sampleTag ? (cfg.tag_weights?.[sampleTag.name] || 0) : 0;
@@ -4632,6 +4644,17 @@ const app = {
                 </div>
             `;
         }
+
+        const ratePreviewEl = document.getElementById('userWeightCommentRatePreview');
+        if (ratePreviewEl) {
+            ratePreviewEl.innerHTML = `
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">评论频率预览</div>
+                <div style="padding: 12px 14px; border-radius: 10px; background: rgba(59,130,246,0.08); color: var(--text); line-height: 1.7;">
+                    每位用户在单条公告下，<strong style="color: var(--primary);">${this.escapeHtmlSafe(String(rateWindow))} 秒</strong> 内最多可发送
+                    <strong style="color: var(--secondary);">${this.escapeHtmlSafe(String(rateMaxCount))} 条</strong> 评论或回复，超出后会提示发送过于频繁。
+                </div>
+            `;
+        }
     },
 
     async initUserWeight() {
@@ -4652,6 +4675,8 @@ const app = {
                 base_user_comment_limit: this._readUserWeightLimit(cfg.base_user_comment_limit, 200),
                 starred_comment_limit: this._readUserWeightLimit(cfg.starred_comment_limit, 200),
                 admin_comment_limit: this._readUserWeightLimit(cfg.admin_comment_limit, 200),
+                comment_rate_window_seconds: this._readUserRateValue(cfg.comment_rate_window_seconds, 60, 86400),
+                comment_rate_max_count: this._readUserRateValue(cfg.comment_rate_max_count, 5, 1000),
                 tag_weights: cfg.tag_weights || {}
             };
             this.state.userWeightTags = data.tags || [];
@@ -4663,7 +4688,9 @@ const app = {
                 weightAdminUser: this.state.userWeightConfig.admin_user_weight,
                 commentLimitBaseUser: this.state.userWeightConfig.base_user_comment_limit,
                 commentLimitStarredUser: this.state.userWeightConfig.starred_comment_limit,
-                commentLimitAdminUser: this.state.userWeightConfig.admin_comment_limit
+                commentLimitAdminUser: this.state.userWeightConfig.admin_comment_limit,
+                commentRateWindowSeconds: this.state.userWeightConfig.comment_rate_window_seconds,
+                commentRateMaxCount: this.state.userWeightConfig.comment_rate_max_count
             };
             Object.entries(fields).forEach(([id, value]) => {
                 const el = document.getElementById(id);
@@ -4693,7 +4720,7 @@ const app = {
             if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
             this.state.userWeightConfig = cfg;
             this.updateUserWeightPreview();
-            this.showAlert('用户权重与评论字数限制已保存', 'success');
+            this.showAlert('用户权重、评论字数限制和发送频率已保存', 'success');
         } catch (error) {
             this.showAlert(`保存失败：${error.message}`, 'danger');
         }
@@ -4707,6 +4734,8 @@ const app = {
             base_user_comment_limit: 200,
             starred_comment_limit: 200,
             admin_comment_limit: 200,
+            comment_rate_window_seconds: 60,
+            comment_rate_max_count: 5,
             tag_weights: {}
         };
         try {
@@ -4717,7 +4746,7 @@ const app = {
             });
             if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
             await this.initUserWeight();
-            this.showAlert('用户权重与评论字数限制已恢复默认值', 'success');
+            this.showAlert('用户权重、评论字数限制和发送频率已恢复默认值', 'success');
         } catch (error) {
             this.showAlert(`恢复默认失败：${error.message}`, 'danger');
         }
@@ -5296,6 +5325,7 @@ const app = {
         const resolution = user.resolution || user.screen_resolution || user.screenResolution || '-';
         const boundQQ = String(user.bound_qq || '').trim();
         const hasBoundQQ = !!boundQQ;
+        const approvedNickname = this.normalizeUserName(user.nickname);
         const qqDisplay = hasBoundQQ
             ? `<span style="font-family:monospace;">${this.escapeHtmlSafe(boundQQ)}</span>`
             : '<span style="color:var(--text-muted);">未绑定</span>';
@@ -5383,7 +5413,7 @@ const app = {
         </div>
 
         <div class="ud-info-grid">
-            ${_sc(iconUser, '基础信息', _ii('用户 ID', `<b style="color:var(--primary);"># ${user.id || '-'}</b>`) + _ii('在线状态', `<span class="status-dot ${statusClass}"></span>${statusText}`) + _ii('绑定 QQ', qqDisplay) + _ii('最近活跃', this.formatTimeAgo(minutes)) + _ii('最后更新', this.escapeHtmlSafe(lastSeen)) + _ii('注册时间', this.escapeHtmlSafe(registerTime)) + _ii('区域', this.escapeHtmlSafe(localeDisplay)))}
+            ${_sc(iconUser, '基础信息', _ii('用户 ID', `<b style="color:var(--primary);"># ${user.id || '-'}</b>`) + _ii('显示名称', approvedNickname ? `<b style="color:var(--primary);">${this.escapeHtmlSafe(approvedNickname)}</b>` : '<span style="color:var(--text-muted);">未设置，前台将显示为 用户#UID</span>') + _ii('在线状态', `<span class="status-dot ${statusClass}"></span>${statusText}`) + _ii('绑定 QQ', qqDisplay) + _ii('最近活跃', this.formatTimeAgo(minutes)) + _ii('最后更新', this.escapeHtmlSafe(lastSeen)) + _ii('注册时间', this.escapeHtmlSafe(registerTime)) + _ii('区域', this.escapeHtmlSafe(localeDisplay)))}
             ${_sc(iconDevice, '设备信息', _ii('操作系统', this.escapeHtmlSafe(osName)) + _ii('系统版本', this.escapeHtmlSafe(osVersion)) + _ii('构建版本', this.escapeHtmlSafe(osBuild)) + _ii('系统架构', this.escapeHtmlSafe(arch)) + _ii('分辨率', this.escapeHtmlSafe(resolution)) + _ii('HWID', `<span style="font-family:monospace;font-size:12px;">${this.escapeHtmlSafe(displayHwid)}</span>`))}
             ${_sc(iconApp, '应用环境', _ii('客户端版本', this.escapeHtmlSafe(version)) + _ii('Python 环境', this.escapeHtmlSafe(pythonVersion)))}
             ${_sc(iconAI, 'AI 用量统计', _ii('使用 Tokens', `<b style="color:var(--primary);">${(user.ai_tokens || 0).toLocaleString()}</b>`) + _ii('发送信息', `<b style="color:var(--secondary);">${(user.ai_messages || 0).toLocaleString()}</b>`) + _ii('违规次数', `<b style="color:var(--danger);">${(user.ai_violations || 0).toLocaleString()}</b>`) + _ii('每日限额', '<span id="userDetailDailyLimit">加载中...</span>') + _ii('永久额度', '<span id="userDetailBonus">加载中...</span>'))}
@@ -5397,7 +5427,7 @@ const app = {
             <div class="ud-manage-body">
                 <div class="ud-manage-group"><div class="ud-manage-group-label">基础操作</div><div class="ud-manage-group-btns">${_ab(`app.updateUserAlias('${hwid}')`, svgEdit, '添加备注')}${_ab(`app.bindUserQQ('${hwid}')`, svgChat, hasBoundQQ ? '修改QQ' : '绑定QQ', `border-color:${hasBoundQQ ? 'var(--secondary)' : 'var(--primary)'};color:${hasBoundQQ ? 'var(--secondary)' : 'var(--primary)'};`)}${_ab(`app.sendPopup('${hwid}')`, svgChat, '发送弹窗')}${_ab(`app.sendNotification('${hwid}')`, svgBell, '发送提示')}${_ab(`app.requestLog('${hwid}')`, svgUpload, '请求日志')}</div></div>
                 <div class="ud-manage-group"><div class="ud-manage-group-label">用户标记</div><div class="ud-manage-group-btns">${_ab(`app.toggleMarkUser('${hwid}')`, starIcon, markText, `border-color:${markColor};color:${markColor};`)}${_ab(`app.toggleAdminUser('${hwid}')`, svgKey, adminText, `border-color:${adminColor};color:${adminColor};`)}</div></div>
-                <div class="ud-manage-group"><div class="ud-manage-group-label">认证与昵称</div><div class="ud-manage-group-btns">${_ab(`app.toggleUserVerified('${hwid}')`, svgCheck(user.verified), user.verified ? '取消认证' : '认证用户', `border-color:${user.verified ? 'var(--secondary)' : 'var(--text-muted)'};color:${user.verified ? 'var(--secondary)' : 'var(--text-muted)'};`)}${_ab(`app.setUserNickname('${hwid}')`, svgEdit, '设置昵称', 'border-color:var(--primary);color:var(--primary);')}</div></div>
+                <div class="ud-manage-group"><div class="ud-manage-group-label">认证与显示名称</div><div class="ud-manage-group-btns">${_ab(`app.toggleUserVerified('${hwid}')`, svgCheck(user.verified), user.verified ? '取消认证' : '认证用户', `border-color:${user.verified ? 'var(--secondary)' : 'var(--text-muted)'};color:${user.verified ? 'var(--secondary)' : 'var(--text-muted)'};`)}${_ab(`app.setUserNickname('${hwid}')`, svgEdit, approvedNickname ? '修改显示名称' : '设置显示名称', 'border-color:var(--primary);color:var(--primary);')}</div></div>
                 <div class="ud-manage-group"><div class="ud-manage-group-label">用户标签</div><div id="userTagBadges" class="ud-manage-group-btns" style="gap:6px;"></div></div>
                 <div class="ud-manage-group"><div class="ud-manage-group-label">AI 额度管理</div><div class="ud-manage-group-btns">${_ab(`app.setUserDailyLimit('${hwid}','${alias || originalName}')`, svgClock, '提升每日限额', 'border-color:var(--primary);color:var(--primary);')}${_ab(`app.addBonusCredits('${hwid}','${alias || originalName}')`, svgPlus, '增加永久额度', 'border-color:#10b981;color:#10b981;')}</div></div>
                 <div class="ud-manage-group"><div class="ud-manage-group-label">主题赠送</div><div class="ud-manage-group-btns">${_ab(`app.grantSupporterTheme('${hwid}')`, svgHeart, '赠送 Supporter 主题', 'border-color:#e879f9;color:#e879f9;')}</div></div>
@@ -8942,9 +8972,33 @@ Object.assign(app, {
     },
 
     async setUserNickname(hwid) {
-        const input = prompt('设置用户昵称（中英文/数字/横杠/下划线，最多18字符，留空清除）：');
-        if (input === null) return;
-        const normalized = String(input || '').trim();
+        const user = this.getCachedUserByMachineId(hwid);
+        const currentNickname = this.normalizeUserName(user?.nickname);
+        const content = `
+            <div class="form-group">
+                <label>用户显示名称</label>
+                <input type="text" class="input" style="width: 100%;" id="nicknameInput" maxlength="18" placeholder="请输入显示名称，留空可清除" value="${this.escapeHtmlSafe(currentNickname)}">
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">前台显示规则：已批准名称优先，否则显示为 用户#UID。仅支持中英文、数字、横杠和下划线。</div>
+        `;
+
+        document.getElementById('controlModalTitle').textContent = currentNickname ? '修改显示名称' : '设置显示名称';
+        document.getElementById('controlModalBody').innerHTML = content;
+        document.getElementById('controlModal').dataset.hwid = hwid;
+
+        const submitBtn = document.getElementById('controlModalSubmit');
+        submitBtn.textContent = currentNickname ? '保存名称' : '设置名称';
+        submitBtn.setAttribute('onclick', 'app.submitSetUserNickname()');
+
+        document.getElementById('controlModalMask').classList.add('show');
+        document.getElementById('controlModal').classList.add('show');
+
+        setTimeout(() => document.getElementById('nicknameInput')?.focus(), 100);
+    },
+
+    async submitSetUserNickname() {
+        const hwid = document.getElementById('controlModal').dataset.hwid;
+        const normalized = String(document.getElementById('nicknameInput')?.value || '').trim();
         if (normalized) {
             const nicknameLen = Array.from(normalized).length;
             let validNickname = false;
@@ -8962,6 +9016,9 @@ Object.assign(app, {
                 return;
             }
         }
+
+        this.closeControlModal();
+
         try {
             const res = await fetch(`${this.config.apiBase}/admin/user-profiles`, {
                 method: 'PUT',
@@ -8973,7 +9030,7 @@ Object.assign(app, {
                 throw new Error(data.error || 'HTTP ' + res.status);
             }
             const updatedUser = await this.refreshUserCache(hwid);
-            this.showAlert('昵称已更新', 'success');
+            this.showAlert('显示名称已更新', 'success');
             this.renderUserDetailView(updatedUser || this.state.selectedUser);
             if (this.state.currentView === 'user_requests') {
                 this.initUserRequests();

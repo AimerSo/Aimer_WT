@@ -15,10 +15,15 @@ const (
 	defaultCommentReplyWeight = 0.5
 	defaultCommentAuthorBase  = 1.0
 	defaultCommentCharLimit   = 200
+	defaultCommentRateWindow  = 60
+	defaultCommentRateMax     = 5
 	defaultWeightValueMin     = -100.0
 	defaultWeightValueMax     = 100.0
 	defaultCommentLimitMin    = 1
 	defaultCommentLimitMax    = 5000
+	defaultCommentRateMin     = 1
+	defaultCommentRateMaxCap  = 1000
+	defaultCommentWindowMax   = 86400
 )
 
 type CommentWeightConfig struct {
@@ -28,6 +33,8 @@ type CommentWeightConfig struct {
 	BaseUserCommentLimit int                `json:"base_user_comment_limit"`
 	StarredCommentLimit  int                `json:"starred_comment_limit"`
 	AdminCommentLimit    int                `json:"admin_comment_limit"`
+	CommentRateWindow    int                `json:"comment_rate_window_seconds"`
+	CommentRateMax       int                `json:"comment_rate_max_count"`
 	TagWeights           map[string]float64 `json:"tag_weights"`
 }
 
@@ -39,6 +46,8 @@ func defaultCommentWeightConfig() CommentWeightConfig {
 		BaseUserCommentLimit: defaultCommentCharLimit,
 		StarredCommentLimit:  defaultCommentCharLimit,
 		AdminCommentLimit:    defaultCommentCharLimit,
+		CommentRateWindow:    defaultCommentRateWindow,
+		CommentRateMax:       defaultCommentRateMax,
 		TagWeights:           map[string]float64{},
 	}
 }
@@ -64,6 +73,8 @@ func normalizeCommentWeightConfig(cfg CommentWeightConfig) CommentWeightConfig {
 	cfg.BaseUserCommentLimit = normalizeCommentLimitValue(cfg.BaseUserCommentLimit, defaults.BaseUserCommentLimit)
 	cfg.StarredCommentLimit = normalizeCommentLimitValue(cfg.StarredCommentLimit, defaults.StarredCommentLimit)
 	cfg.AdminCommentLimit = normalizeCommentLimitValue(cfg.AdminCommentLimit, defaults.AdminCommentLimit)
+	cfg.CommentRateWindow = normalizeCommentRateWindowValue(cfg.CommentRateWindow, defaults.CommentRateWindow)
+	cfg.CommentRateMax = normalizeCommentRateCountValue(cfg.CommentRateMax, defaults.CommentRateMax)
 	if cfg.TagWeights == nil {
 		cfg.TagWeights = map[string]float64{}
 	}
@@ -88,6 +99,32 @@ func normalizeCommentLimitValue(value int, fallback int) int {
 	}
 	if value > defaultCommentLimitMax {
 		return defaultCommentLimitMax
+	}
+	return value
+}
+
+func normalizeCommentRateWindowValue(value int, fallback int) int {
+	if value <= 0 {
+		value = fallback
+	}
+	if value < defaultCommentRateMin {
+		return defaultCommentRateMin
+	}
+	if value > defaultCommentWindowMax {
+		return defaultCommentWindowMax
+	}
+	return value
+}
+
+func normalizeCommentRateCountValue(value int, fallback int) int {
+	if value <= 0 {
+		value = fallback
+	}
+	if value < defaultCommentRateMin {
+		return defaultCommentRateMin
+	}
+	if value > defaultCommentRateMaxCap {
+		return defaultCommentRateMaxCap
 	}
 	return value
 }

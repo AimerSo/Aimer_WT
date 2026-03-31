@@ -129,6 +129,9 @@ func TestCommentWeightRoutes(t *testing.T) {
 	if initial.Config.BaseUserCommentLimit != 200 || initial.Config.StarredCommentLimit != 200 || initial.Config.AdminCommentLimit != 200 {
 		t.Fatalf("unexpected default comment limits: %+v", initial.Config)
 	}
+	if initial.Config.CommentRateWindow != 60 || initial.Config.CommentRateMax != 5 {
+		t.Fatalf("unexpected default comment rate config: %+v", initial.Config)
+	}
 	if len(initial.Tags) != 1 || initial.Tags[0].Name != "sponsor_1" {
 		t.Fatalf("unexpected tags payload: %+v", initial.Tags)
 	}
@@ -140,6 +143,8 @@ func TestCommentWeightRoutes(t *testing.T) {
 		BaseUserCommentLimit: 200,
 		StarredCommentLimit:  240,
 		AdminCommentLimit:    360,
+		CommentRateWindow:    90,
+		CommentRateMax:       8,
 		TagWeights: map[string]float64{
 			"sponsor_1": 2,
 		},
@@ -154,6 +159,9 @@ func TestCommentWeightRoutes(t *testing.T) {
 		t.Fatalf("unexpected persisted config: %+v", reloaded)
 	}
 	if reloaded.StarredCommentLimit != 240 || reloaded.AdminCommentLimit != 360 {
+		t.Fatalf("unexpected persisted config: %+v", reloaded)
+	}
+	if reloaded.CommentRateWindow != 90 || reloaded.CommentRateMax != 8 {
 		t.Fatalf("unexpected persisted config: %+v", reloaded)
 	}
 }
@@ -188,6 +196,12 @@ func TestNoticeCommentsPaginationAndReplies(t *testing.T) {
 		if err := db.Create(&users[i]).Error; err != nil {
 			t.Fatalf("seed user %d: %v", i, err)
 		}
+	}
+	if err := db.Create(&UserTag{Name: "sponsor_1", DisplayName: "一级赞助者", Icon: "ri-vip-diamond-line"}).Error; err != nil {
+		t.Fatalf("seed user tag: %v", err)
+	}
+	if err := db.Create(&UserProfile{MachineID: "tagged", Nickname: "TagHero"}).Error; err != nil {
+		t.Fatalf("seed tagged profile: %v", err)
 	}
 
 	now := time.Now()
@@ -228,6 +242,16 @@ func TestNoticeCommentsPaginationAndReplies(t *testing.T) {
 			Weight     float64 `json:"weight_score"`
 			Liked      bool    `json:"liked"`
 			Replies    []any   `json:"replies"`
+			Nickname   string  `json:"nickname"`
+			TopReplies []struct {
+				ID              uint   `json:"id"`
+				ReplyToUID      string `json:"reply_to_uid"`
+				ReplyToNickname string `json:"reply_to_nickname"`
+			} `json:"top_replies"`
+			TagItems []struct {
+				Name        string `json:"name"`
+				DisplayName string `json:"display_name"`
+			} `json:"tag_items"`
 		} `json:"comments"`
 		HasMore           bool `json:"has_more"`
 		NextOffset        int  `json:"next_offset"`
@@ -241,6 +265,16 @@ func TestNoticeCommentsPaginationAndReplies(t *testing.T) {
 			Weight     float64 `json:"weight_score"`
 			Liked      bool    `json:"liked"`
 			Replies    []any   `json:"replies"`
+			Nickname   string  `json:"nickname"`
+			TopReplies []struct {
+				ID              uint   `json:"id"`
+				ReplyToUID      string `json:"reply_to_uid"`
+				ReplyToNickname string `json:"reply_to_nickname"`
+			} `json:"top_replies"`
+			TagItems []struct {
+				Name        string `json:"name"`
+				DisplayName string `json:"display_name"`
+			} `json:"tag_items"`
 		} `json:"comments"`
 		HasMore           bool `json:"has_more"`
 		NextOffset        int  `json:"next_offset"`
@@ -263,8 +297,26 @@ func TestNoticeCommentsPaginationAndReplies(t *testing.T) {
 	if !listPayload.Comments[1].Liked {
 		t.Fatalf("expected viewer like state on second comment")
 	}
+	if listPayload.Comments[0].Nickname != "TagHero" {
+		t.Fatalf("comment nickname = %q, want %q", listPayload.Comments[0].Nickname, "TagHero")
+	}
+	if len(listPayload.Comments[0].TagItems) != 1 || listPayload.Comments[0].TagItems[0].Name != "sponsor_1" || listPayload.Comments[0].TagItems[0].DisplayName != "一级赞助者" {
+		t.Fatalf("unexpected comment tag items: %+v", listPayload.Comments[0].TagItems)
+	}
 	if len(listPayload.Comments[0].Replies) != 0 {
 		t.Fatalf("top comment page should not eagerly return replies")
+	}
+	if len(listPayload.Comments[0].TopReplies) != 2 {
+		t.Fatalf("expected two top reply previews, got %+v", listPayload.Comments[0].TopReplies)
+	}
+	if listPayload.Comments[0].TopReplies[0].ReplyToUID != strconv.Itoa(int(users[5].ID)) {
+		t.Fatalf("legacy top reply target uid = %q, want %d", listPayload.Comments[0].TopReplies[0].ReplyToUID, users[5].ID)
+	}
+	if listPayload.Comments[0].TopReplies[1].ReplyToUID != strconv.Itoa(int(users[3].ID)) {
+		t.Fatalf("direct top reply target uid = %q, want %d", listPayload.Comments[0].TopReplies[1].ReplyToUID, users[3].ID)
+	}
+	if listPayload.Comments[0].TopReplies[1].ReplyToNickname != "TagHero" {
+		t.Fatalf("direct top reply target nickname = %q, want %q", listPayload.Comments[0].TopReplies[1].ReplyToNickname, "TagHero")
 	}
 	if !listPayload.HasMore || listPayload.NextOffset != 2 {
 		t.Fatalf("unexpected pagination payload: has_more=%v next_offset=%d", listPayload.HasMore, listPayload.NextOffset)
@@ -303,17 +355,23 @@ func TestNoticeCommentsPaginationAndReplies(t *testing.T) {
 	var replyPayload struct {
 		ReplyCount int `json:"reply_count"`
 		Replies    []struct {
-			ID         uint   `json:"id"`
-			ParentID   uint   `json:"parent_id"`
-			ReplyToUID string `json:"reply_to_uid"`
+			ID              uint   `json:"id"`
+			ParentID        uint   `json:"parent_id"`
+			ReplyToUID      string `json:"reply_to_uid"`
+			ReplyToNickname string `json:"reply_to_nickname"`
+			CanDelete       bool   `json:"can_delete"`
+			IsSelf          bool   `json:"is_self"`
 		} `json:"replies"`
 	}
 	replyPayload = decodeJSONBody[struct {
 		ReplyCount int `json:"reply_count"`
 		Replies    []struct {
-			ID         uint   `json:"id"`
-			ParentID   uint   `json:"parent_id"`
-			ReplyToUID string `json:"reply_to_uid"`
+			ID              uint   `json:"id"`
+			ParentID        uint   `json:"parent_id"`
+			ReplyToUID      string `json:"reply_to_uid"`
+			ReplyToNickname string `json:"reply_to_nickname"`
+			CanDelete       bool   `json:"can_delete"`
+			IsSelf          bool   `json:"is_self"`
 		} `json:"replies"`
 	}](t, replyResp)
 
@@ -328,8 +386,14 @@ func TestNoticeCommentsPaginationAndReplies(t *testing.T) {
 	if replyPayload.Replies[0].ReplyToUID != strconv.Itoa(int(users[3].ID)) {
 		t.Fatalf("first reply target uid = %q, want %d", replyPayload.Replies[0].ReplyToUID, users[3].ID)
 	}
+	if replyPayload.Replies[0].ReplyToNickname != "TagHero" {
+		t.Fatalf("first reply target nickname = %q, want %q", replyPayload.Replies[0].ReplyToNickname, "TagHero")
+	}
 	if replyPayload.Replies[1].ReplyToUID != strconv.Itoa(int(users[5].ID)) {
 		t.Fatalf("legacy reply target uid = %q, want %d", replyPayload.Replies[1].ReplyToUID, users[5].ID)
+	}
+	if replyPayload.Replies[0].CanDelete || replyPayload.Replies[0].IsSelf {
+		t.Fatalf("viewer should not be able to delete others reply: %+v", replyPayload.Replies[0])
 	}
 
 	page2Resp := performRequest(router, http.MethodGet, "/notice-comments/11?machine_id=viewer&limit=2&offset=2", nil)
@@ -338,19 +402,24 @@ func TestNoticeCommentsPaginationAndReplies(t *testing.T) {
 	}
 	var page2Payload struct {
 		Comments []struct {
-			ID uint `json:"id"`
+			ID        uint `json:"id"`
+			IsStarred bool `json:"is_starred"`
 		} `json:"comments"`
 		HasMore bool `json:"has_more"`
 	}
 	page2Payload = decodeJSONBody[struct {
 		Comments []struct {
-			ID uint `json:"id"`
+			ID        uint `json:"id"`
+			IsStarred bool `json:"is_starred"`
 		} `json:"comments"`
 		HasMore bool `json:"has_more"`
 	}](t, page2Resp)
 
 	if len(page2Payload.Comments) != 1 || page2Payload.Comments[0].ID != comment3.ID || page2Payload.HasMore {
 		t.Fatalf("unexpected second page payload: %+v", page2Payload)
+	}
+	if !page2Payload.Comments[0].IsStarred {
+		t.Fatalf("expected starred flag on second page comment")
 	}
 }
 
@@ -407,6 +476,166 @@ func TestNoticeCommentPostRespectsGroupCharacterLimit(t *testing.T) {
 	}
 }
 
+func TestNoticeCommentPostRateLimitUsesConfiguredWindow(t *testing.T) {
+	setupCommunityTestDB(t)
+	router := setupCommunityTestRouter()
+	prevSecret := clientAuthSecret
+	clientAuthSecret = "community-rate-secret"
+	testClientDeviceTokens = sync.Map{}
+	defer func() {
+		clientAuthSecret = prevSecret
+	}()
+
+	if err := SaveCommentWeightConfig(CommentWeightConfig{
+		BaseUserWeight:       1,
+		StarredUserWeight:    0,
+		AdminUserWeight:      0,
+		BaseUserCommentLimit: 200,
+		StarredCommentLimit:  200,
+		AdminCommentLimit:    200,
+		CommentRateWindow:    60,
+		CommentRateMax:       5,
+		TagWeights:           map[string]float64{},
+	}); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	user := TelemetryRecord{MachineID: "rate_user", Alias: "rate_user"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		resp := performSignedCommunityRequest(router, http.MethodPost, "/notice-comment", gin.H{
+			"notice_id":  99,
+			"machine_id": "rate_user",
+			"content":    "comment " + strconv.Itoa(i+1),
+			"parent_id":  0,
+		}, "rate_user")
+		if resp.Code != http.StatusOK {
+			t.Fatalf("post %d status = %d body=%s", i+1, resp.Code, resp.Body.String())
+		}
+	}
+
+	limited := performSignedCommunityRequest(router, http.MethodPost, "/notice-comment", gin.H{
+		"notice_id":  99,
+		"machine_id": "rate_user",
+		"content":    "comment 6",
+		"parent_id":  0,
+	}, "rate_user")
+	if limited.Code != http.StatusTooManyRequests {
+		t.Fatalf("6th comment status = %d body=%s", limited.Code, limited.Body.String())
+	}
+	var limitedPayload struct {
+		Error string `json:"error"`
+	}
+	limitedPayload = decodeJSONBody[struct {
+		Error string `json:"error"`
+	}](t, limited)
+	if limitedPayload.Error != "发送太频繁，60 秒内最多发送 5 条" {
+		t.Fatalf("unexpected rate limit error: %+v", limitedPayload)
+	}
+
+	if err := db.Model(&NoticeComment{}).
+		Where("notice_id = ? AND machine_id = ?", 99, "rate_user").
+		Update("created_at", time.Now().Add(-2*time.Minute)).Error; err != nil {
+		t.Fatalf("age comments: %v", err)
+	}
+
+	recovered := performSignedCommunityRequest(router, http.MethodPost, "/notice-comment", gin.H{
+		"notice_id":  99,
+		"machine_id": "rate_user",
+		"content":    "comment after reset",
+		"parent_id":  0,
+	}, "rate_user")
+	if recovered.Code != http.StatusOK {
+		t.Fatalf("post after rate window reset status = %d body=%s", recovered.Code, recovered.Body.String())
+	}
+}
+
+func TestNoticeCommentLikeToggle(t *testing.T) {
+	setupCommunityTestDB(t)
+	router := setupCommunityTestRouter()
+	prevSecret := clientAuthSecret
+	clientAuthSecret = "community-like-secret"
+	testClientDeviceTokens = sync.Map{}
+	defer func() {
+		clientAuthSecret = prevSecret
+	}()
+
+	users := []TelemetryRecord{
+		{MachineID: "viewer", Alias: "viewer"},
+		{MachineID: "author", Alias: "author"},
+	}
+	for i := range users {
+		if err := db.Create(&users[i]).Error; err != nil {
+			t.Fatalf("seed user %d: %v", i, err)
+		}
+	}
+
+	comment := NoticeComment{NoticeID: 77, MachineID: "author", Content: "hello", Status: "visible"}
+	if err := db.Create(&comment).Error; err != nil {
+		t.Fatalf("seed comment: %v", err)
+	}
+
+	likeResp := performSignedCommunityRequest(router, http.MethodPost, "/notice-comment-like", gin.H{
+		"comment_id": comment.ID,
+		"machine_id": "viewer",
+	}, "viewer")
+	if likeResp.Code != http.StatusOK {
+		t.Fatalf("like status = %d body=%s", likeResp.Code, likeResp.Body.String())
+	}
+	var likePayload struct {
+		Status    string `json:"status"`
+		Liked     bool   `json:"liked"`
+		LikeCount int    `json:"like_count"`
+	}
+	likePayload = decodeJSONBody[struct {
+		Status    string `json:"status"`
+		Liked     bool   `json:"liked"`
+		LikeCount int    `json:"like_count"`
+	}](t, likeResp)
+	if likePayload.Status != "liked" || !likePayload.Liked || likePayload.LikeCount != 1 {
+		t.Fatalf("unexpected like payload: %+v", likePayload)
+	}
+
+	var reloaded NoticeComment
+	if err := db.First(&reloaded, comment.ID).Error; err != nil {
+		t.Fatalf("reload liked comment: %v", err)
+	}
+	if reloaded.LikeCount != 1 {
+		t.Fatalf("persisted like_count = %d, want 1", reloaded.LikeCount)
+	}
+
+	unlikeResp := performSignedCommunityRequest(router, http.MethodPost, "/notice-comment-like", gin.H{
+		"comment_id": comment.ID,
+		"machine_id": "viewer",
+	}, "viewer")
+	if unlikeResp.Code != http.StatusOK {
+		t.Fatalf("unlike status = %d body=%s", unlikeResp.Code, unlikeResp.Body.String())
+	}
+	var unlikePayload struct {
+		Status    string `json:"status"`
+		Liked     bool   `json:"liked"`
+		LikeCount int    `json:"like_count"`
+	}
+	unlikePayload = decodeJSONBody[struct {
+		Status    string `json:"status"`
+		Liked     bool   `json:"liked"`
+		LikeCount int    `json:"like_count"`
+	}](t, unlikeResp)
+	if unlikePayload.Status != "unliked" || unlikePayload.Liked || unlikePayload.LikeCount != 0 {
+		t.Fatalf("unexpected unlike payload: %+v", unlikePayload)
+	}
+
+	if err := db.First(&reloaded, comment.ID).Error; err != nil {
+		t.Fatalf("reload unliked comment: %v", err)
+	}
+	if reloaded.LikeCount != 0 {
+		t.Fatalf("persisted like_count after unlike = %d, want 0", reloaded.LikeCount)
+	}
+}
+
 func TestNoticeCommentClientModerationRoutes(t *testing.T) {
 	setupCommunityTestDB(t)
 	router := setupCommunityTestRouter()
@@ -419,7 +648,7 @@ func TestNoticeCommentClientModerationRoutes(t *testing.T) {
 
 	users := []TelemetryRecord{
 		{MachineID: "admin_user", Alias: "admin_user", IsAdmin: true},
-		{MachineID: "author_user", Alias: "author_user"},
+		{MachineID: "author_user", Alias: "author_user", CommentPerms: `{"can_delete_others":true,"can_pin_comment":true,"can_ban_user":true}`},
 		{MachineID: "other_user", Alias: "other_user"},
 	}
 	for i := range users {
@@ -440,6 +669,14 @@ func TestNoticeCommentClientModerationRoutes(t *testing.T) {
 	threadReply := NoticeComment{NoticeID: 88, ParentID: ownComment.ID, ReplyToID: ownComment.ID, MachineID: "other_user", Content: "reply to own", Status: "visible", CreatedAt: now.Add(-30 * time.Second)}
 	if err := db.Create(&threadReply).Error; err != nil {
 		t.Fatalf("seed thread reply: %v", err)
+	}
+	foreignTop := NoticeComment{NoticeID: 88, MachineID: "other_user", Content: "foreign thread", Status: "visible", CreatedAt: now.Add(-20 * time.Second)}
+	if err := db.Create(&foreignTop).Error; err != nil {
+		t.Fatalf("seed foreign top: %v", err)
+	}
+	ownChildReply := NoticeComment{NoticeID: 88, ParentID: foreignTop.ID, ReplyToID: foreignTop.ID, MachineID: "author_user", Content: "own child reply", Status: "visible", CreatedAt: now.Add(-10 * time.Second)}
+	if err := db.Create(&ownChildReply).Error; err != nil {
+		t.Fatalf("seed own child reply: %v", err)
 	}
 
 	deleteResp := performSignedCommunityRequestWithRoute(
@@ -469,6 +706,114 @@ func TestNoticeCommentClientModerationRoutes(t *testing.T) {
 	)
 	if forbiddenDelete.Code != http.StatusForbidden {
 		t.Fatalf("delete others comment status = %d body=%s", forbiddenDelete.Code, forbiddenDelete.Body.String())
+	}
+
+	listRespWithPerm := performRequest(router, http.MethodGet, "/notice-comments/88?machine_id=author_user", nil)
+	if listRespWithPerm.Code != http.StatusOK {
+		t.Fatalf("author list status = %d body=%s", listRespWithPerm.Code, listRespWithPerm.Body.String())
+	}
+	var authorListPayload struct {
+		Comments []struct {
+			ID        uint `json:"id"`
+			CanDelete bool `json:"can_delete"`
+			IsSelf    bool `json:"is_self"`
+		} `json:"comments"`
+	}
+	authorListPayload = decodeJSONBody[struct {
+		Comments []struct {
+			ID        uint `json:"id"`
+			CanDelete bool `json:"can_delete"`
+			IsSelf    bool `json:"is_self"`
+		} `json:"comments"`
+	}](t, listRespWithPerm)
+	for _, item := range authorListPayload.Comments {
+		if item.ID == adminTarget.ID && (item.CanDelete || item.IsSelf) {
+			t.Fatalf("non-admin should not be able to moderate others top comment: %+v", item)
+		}
+	}
+
+	ownReplyListResp := performRequest(router, http.MethodGet, "/notice-comments/88/replies/"+strconv.Itoa(int(foreignTop.ID))+"?machine_id=author_user", nil)
+	if ownReplyListResp.Code != http.StatusOK {
+		t.Fatalf("own reply list status = %d body=%s", ownReplyListResp.Code, ownReplyListResp.Body.String())
+	}
+	var ownReplyListPayload struct {
+		Replies []struct {
+			ID        uint `json:"id"`
+			CanDelete bool `json:"can_delete"`
+			IsSelf    bool `json:"is_self"`
+		} `json:"replies"`
+	}
+	ownReplyListPayload = decodeJSONBody[struct {
+		Replies []struct {
+			ID        uint `json:"id"`
+			CanDelete bool `json:"can_delete"`
+			IsSelf    bool `json:"is_self"`
+		} `json:"replies"`
+	}](t, ownReplyListResp)
+	foundOwnReply := false
+	for _, item := range ownReplyListPayload.Replies {
+		if item.ID == ownChildReply.ID {
+			foundOwnReply = true
+			if !item.CanDelete || !item.IsSelf {
+				t.Fatalf("author should be able to delete own child reply: %+v", item)
+			}
+			continue
+		}
+		if item.CanDelete || item.IsSelf {
+			t.Fatalf("author should not be able to delete others child reply: %+v", item)
+		}
+	}
+	if !foundOwnReply {
+		t.Fatalf("own child reply %d not found in reply list", ownChildReply.ID)
+	}
+
+	deleteOwnReplyResp := performSignedCommunityRequestWithRoute(
+		router,
+		http.MethodDelete,
+		"/notice-comments/"+strconv.Itoa(int(ownChildReply.ID))+"?machine_id=author_user",
+		"/notice-comments/"+strconv.Itoa(int(ownChildReply.ID)),
+		nil,
+		"author_user",
+	)
+	if deleteOwnReplyResp.Code != http.StatusOK {
+		t.Fatalf("author delete own child reply status = %d body=%s", deleteOwnReplyResp.Code, deleteOwnReplyResp.Body.String())
+	}
+	var ownReplyDeletedCount int64
+	db.Model(&NoticeComment{}).Where("id = ?", ownChildReply.ID).Count(&ownReplyDeletedCount)
+	if ownReplyDeletedCount != 0 {
+		t.Fatalf("expected own child reply to be deleted, remaining=%d", ownReplyDeletedCount)
+	}
+
+	reportOtherResp := performSignedCommunityRequest(
+		router,
+		http.MethodPost,
+		"/notice-comment-report",
+		gin.H{
+			"comment_id":  adminTarget.ID,
+			"machine_id":  "author_user",
+			"report_type": "spam",
+			"reason":      "test report",
+		},
+		"author_user",
+	)
+	if reportOtherResp.Code != http.StatusOK {
+		t.Fatalf("report others status = %d body=%s", reportOtherResp.Code, reportOtherResp.Body.String())
+	}
+
+	reportSelfResp := performSignedCommunityRequest(
+		router,
+		http.MethodPost,
+		"/notice-comment-report",
+		gin.H{
+			"comment_id":  ownReply.ID,
+			"machine_id":  "author_user",
+			"report_type": "spam",
+			"reason":      "should fail",
+		},
+		"author_user",
+	)
+	if reportSelfResp.Code != http.StatusForbidden {
+		t.Fatalf("self report status = %d body=%s", reportSelfResp.Code, reportSelfResp.Body.String())
 	}
 
 	weightResp := performSignedCommunityRequest(

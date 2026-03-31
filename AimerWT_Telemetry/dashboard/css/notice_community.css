@@ -442,6 +442,34 @@
     white-space: nowrap;
 }
 
+.nc-user-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.nc-user-tag {
+    padding: 0 5px;
+    border-radius: 4px;
+    font-size: 9px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: #64748b;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    white-space: nowrap;
+    line-height: 16px;
+    flex-shrink: 0;
+}
+
+.nc-user-tag i {
+    font-size: 10px;
+}
+
 .nc-comment-time {
     font-size: 11px;
     color: #9ca3af;
@@ -637,6 +665,7 @@
     font-weight: 700;
     color: #059669;
     flex-shrink: 0;
+    margin-top: 5px;
 }
 
 .nc-input-main {
@@ -722,7 +751,7 @@
     cursor: pointer;
     transition: background 0.15s ease, transform 0.1s ease;
     flex-shrink: 0;
-    margin-top: 2px;
+    margin-top: 3px;
 }
 
 .nc-send-btn:hover {
@@ -774,7 +803,7 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
-    z-index: 10000;
+    z-index: 12100;
 }
 
 .nc-likers-overlay.show {
@@ -1003,7 +1032,7 @@
 /* 三点弹出小菜单 */
 .nc-more-popup {
     position: fixed;
-    z-index: 20050;
+    z-index: 12250;
     background: #ffffff;
     border: 1px solid #e5e7eb;
     border-radius: 10px;
@@ -1053,7 +1082,7 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
-    z-index: 10000;
+    z-index: 12200;
     opacity: 0;
     transition: opacity 0.2s ease;
     pointer-events: none;
@@ -1174,7 +1203,7 @@
 
 .nc-report-overlay .app-dropdown-wrapper,
 .nc-report-overlay .app-dropdown-menu {
-    z-index: 10020;
+    z-index: 12220;
 }
 
 .nc-report-select:focus {
@@ -1255,7 +1284,7 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
-    z-index: 20000;
+    z-index: 12300;
     opacity: 0;
     transition: opacity 0.2s ease;
     pointer-events: none;
@@ -1640,6 +1669,11 @@
 [data-theme="dark"] .nc-comment-uid,
 [data-theme="dark"] .nc-reply-uid {
     color: #e2e8f0;
+}
+
+[data-theme="dark"] .nc-user-tag {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.12);
 }
 
 [data-theme="dark"] .nc-comment-body {

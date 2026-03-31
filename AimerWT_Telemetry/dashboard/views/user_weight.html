@@ -91,6 +91,32 @@
                 <div class="panel">
                     <div class="panel-header" style="padding: 14px 16px;">
                         <div>
+                            <div class="panel-title">评论发送频率</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">默认按每位用户、每条公告分别统计，推荐设置为 60 秒内最多 5 条。</div>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding: 16px; display: flex; flex-direction: column; gap: 14px;">
+                        <label style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+                            <div>
+                                <div style="font-size: 13px; font-weight: 600; color: var(--text);">统计窗口</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">达到这个秒数后，会重新开始下一轮计数</div>
+                            </div>
+                            <input class="input" id="commentRateWindowSeconds" type="number" min="1" step="1" style="width: 110px; text-align: right;" oninput="app.updateUserWeightPreview()">
+                        </label>
+                        <label style="display: flex; justify-content: space-between; align-items: center; gap: 14px;">
+                            <div>
+                                <div style="font-size: 13px; font-weight: 600; color: var(--text);">窗口内上限</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">同一用户在单条公告内允许发送的最大评论数</div>
+                            </div>
+                            <input class="input" id="commentRateMaxCount" type="number" min="1" step="1" style="width: 110px; text-align: right;" oninput="app.updateUserWeightPreview()">
+                        </label>
+                        <div id="userWeightCommentRatePreview" style="padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg);"></div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header" style="padding: 14px 16px;">
+                        <div>
                             <div class="panel-title">公式预览</div>
                             <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">这里展示的是当前配置下的实际计算方式。</div>
                         </div>

@@ -2937,7 +2937,7 @@ i[class^="ri-"] {
     display: none;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
+    z-index: 12000;
 }
 
 .modal-overlay.show {
@@ -7023,4 +7023,3 @@ i[class^="ri-"] {
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
-

@@ -51,6 +51,27 @@
         return text || '?';
     }
 
+    function normalizePublicNickname(value) {
+        return String(value == null ? '' : value).trim();
+    }
+
+    function getPublicUserName(entry) {
+        var nickname = normalizePublicNickname(entry && entry.nickname);
+        var uid = normalizeUidValue(entry && entry.uid);
+        return nickname || ('用户#' + uid);
+    }
+
+    function getPublicUserTitle(entry) {
+        return getPublicUserName(entry);
+    }
+
+    function getReplyTargetPublicName(entry) {
+        var replyNickname = normalizePublicNickname(entry && entry.reply_to_nickname);
+        if (replyNickname) return replyNickname;
+        var replyUid = normalizeUidValue(entry && entry.reply_to_uid);
+        return replyUid === '?' ? '' : ('用户#' + replyUid);
+    }
+
     function getUidLengthClass(uid) {
         var len = Array.from(normalizeUidValue(uid)).length;
         if (len >= 6) return 'nc-uid-len-6p';
@@ -89,6 +110,8 @@
                 noticeLikeCount: 0,
                 noticeLiked: false,
                 noticeLikers: [],
+                isSubmittingReaction: false,
+                reactionLoadToken: 0,
                 replyingTo: null,
                 expandedReplies: {},
                 replyCache: {},
@@ -172,16 +195,78 @@
         _renderReactions(noticeId, reactions);
     }
 
+    function _cloneReactions(reactions) {
+        if (!Array.isArray(reactions)) return [];
+        return reactions.map(function (reaction) {
+            return Object.assign({}, reaction, {
+                users: Array.isArray(reaction && reaction.users) ? reaction.users.slice() : [],
+                user_details: Array.isArray(reaction && reaction.user_details) ? reaction.user_details.map(function (item) {
+                    return Object.assign({}, item);
+                }) : []
+            });
+        });
+    }
+
+    function _buildOptimisticReactions(reactions, emoji) {
+        var next = _cloneReactions(reactions);
+        var currentReactedIndex = -1;
+        var targetIndex = -1;
+
+        next.forEach(function (reaction, index) {
+            if (reaction && reaction.reacted) currentReactedIndex = index;
+            if (reaction && reaction.emoji === emoji) targetIndex = index;
+        });
+
+        if (currentReactedIndex !== -1) {
+            var currentReaction = next[currentReactedIndex];
+            currentReaction.reacted = false;
+            currentReaction.count = Math.max(0, Number(currentReaction.count || 0) - 1);
+            if (currentReaction.count <= 0) {
+                next.splice(currentReactedIndex, 1);
+                if (targetIndex > currentReactedIndex) targetIndex -= 1;
+                if (targetIndex === currentReactedIndex) targetIndex = -1;
+            }
+            if (currentReaction.emoji === emoji) return next;
+        }
+
+        if (targetIndex === -1) {
+            next.push({
+                emoji: emoji,
+                count: 1,
+                users: [],
+                user_details: [],
+                reacted: true
+            });
+            return next;
+        }
+
+        next[targetIndex].count = Math.max(0, Number(next[targetIndex].count || 0)) + 1;
+        next[targetIndex].reacted = true;
+        return next;
+    }
+
+    function _renderReplyPreviewContent(reply) {
+        var content = String(reply && reply.content ? reply.content : '');
+        var targetName = getReplyTargetPublicName(reply);
+        if (targetName) {
+            return '<span class="nc-reply-mention">回复 @' + escapeHtml(targetName) + '：</span>' +
+                escapeHtml(_stripLegacyReplyPrefix(content));
+        }
+        return escapeHtml(content);
+    }
+
     function _normalizeLiker(entry) {
         if (entry && typeof entry === 'object') {
             return {
                 uid: String(entry.uid || '?'),
-                alias: String(entry.alias || '')
+                alias: String(entry.alias || ''),
+                nickname: String(entry.nickname || '')
             };
         }
         return {
             uid: String(entry || '?'),
-            alias: ''
+            alias: '',
+            nickname: ''
         };
     }
 
@@ -234,13 +319,14 @@
         } else {
             body.innerHTML = users.map(function (user) {
                 var uid = normalizeUidValue(user.uid);
+                var publicName = getPublicUserName(user);
                 var safeUid = escapeHtml(uid);
-                var alias = escapeHtml((user.alias || '').trim() || '暂无昵称');
+                var subtitle = normalizePublicNickname(user.nickname) ? ('用户#' + uid) : '未设置显示名称';
                 return '<div class="nc-likers-item">' +
-                    '  ' + renderUidAvatar('nc-likers-avatar', uid, '用户#' + uid) +
+                    '  ' + renderUidAvatar('nc-likers-avatar', uid, getPublicUserTitle(user)) +
                     '  <div class="nc-likers-meta">' +
-                    '    <div class="nc-likers-name">用户#' + safeUid + '</div>' +
-                    '    <div class="nc-likers-alias">' + alias + '</div>' +
+                    '    <div class="nc-likers-name">' + escapeHtml(publicName) + '</div>' +
+                    '    <div class="nc-likers-alias">' + escapeHtml(subtitle) + '</div>' +
                     '  </div>' +
                     '</div>';
             }).join('');
@@ -425,26 +511,43 @@
         });
     }
 
-    function _loadReactions(noticeId) {
+    function _loadReactions(noticeId, options) {
+        options = options || {};
         if (!_isFeatureEnabled('notice_reaction_enabled')) {
             _renderReactions(noticeId, []);
-            return;
+            return Promise.resolve([]);
         }
+        var state = _getState(noticeId);
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
         if (!baseUrl) {
             _renderReactionsFromGlobal(noticeId);
-            return;
+            return Promise.resolve(state.reactions || []);
         }
         var url = baseUrl + '/notice-reactions/' + noticeId;
         if (hwid) url += '?machine_id=' + encodeURIComponent(hwid);
+        url += (url.indexOf('?') === -1 ? '?' : '&') + '_t=' + Date.now();
+        state.reactionLoadToken += 1;
+        var loadToken = state.reactionLoadToken;
 
-        _buildTelemetryHeaders('/notice-reactions/' + noticeId, 'GET', hwid, false).then(function (headers) {
-            return fetch(url, { method: 'GET', headers: headers });
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            _renderReactions(noticeId, data.reactions || []);
+        return _buildTelemetryHeaders('/notice-reactions/' + noticeId, 'GET', hwid, false).then(function (headers) {
+            return fetch(url, { method: 'GET', headers: headers, cache: 'no-store' });
+        }).then(function (r) {
+            if (!r.ok) throw new Error('获取表情状态失败');
+            return r.json();
+        }).then(function (data) {
+            if (loadToken !== state.reactionLoadToken) return state.reactions || [];
+            var reactions = Array.isArray(data && data.reactions) ? data.reactions : [];
+            _renderReactions(noticeId, reactions);
+            return reactions;
         }).catch(function () {
-            _renderReactionsFromGlobal(noticeId);
+            if (loadToken !== state.reactionLoadToken) return state.reactions || [];
+            if (options.keepCurrentOnFailure) {
+                _renderReactions(noticeId, state.reactions || []);
+                return state.reactions || [];
+            }
+            _renderReactions(noticeId, []);
+            return state.reactions || [];
         });
     }
 
@@ -477,7 +580,7 @@
         var pills = visibleReactions.map(function (r) {
             var userDetails = Array.isArray(r.user_details) ? r.user_details : [];
             var tooltipParts = userDetails.slice(0, 5).map(function (u) {
-                return (u.nickname && u.nickname.trim()) ? u.nickname.trim() : (u.alias && u.alias.trim()) ? u.alias.trim() : ('UID' + u.uid);
+                return getPublicUserName(u);
             });
             if (userDetails.length > 5) tooltipParts.push('...');
             var titleText = tooltipParts.length ? tooltipParts.join(', ') : '';
@@ -569,6 +672,15 @@
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
         if (!baseUrl || !hwid) return;
+        var state = _getState(noticeId);
+        if (state.isSubmittingReaction) return;
+
+        var previousReactions = _cloneReactions(state.reactions);
+        var optimisticReactions = _buildOptimisticReactions(state.reactions, emoji);
+        state.isSubmittingReaction = true;
+        // 作废旧的表情加载结果，避免刚切换成功又被旧快照覆盖。
+        state.reactionLoadToken += 1;
+        _renderReactions(noticeId, optimisticReactions);
 
         _buildTelemetryHeaders('/notice-reaction', 'POST', hwid, true).then(function (headers) {
             return fetch(baseUrl + '/notice-reaction', {
@@ -576,9 +688,22 @@
                 headers: headers,
                 body: JSON.stringify({ notice_id: Number(noticeId), machine_id: hwid, emoji: emoji })
             });
+        }).then(function (r) {
+            if (r.ok) return r.json().catch(function () { return {}; });
+            return r.json().catch(function () { return {}; }).then(function (data) {
+                throw new Error((data && data.error) ? String(data.error) : '表情操作失败，请稍后重试');
+            });
         }).then(function () {
-            _loadReactions(noticeId);
-        }).catch(function () { });
+            return _loadReactions(noticeId, { keepCurrentOnFailure: true });
+        }).then(function () {
+            state.isSubmittingReaction = false;
+        }).catch(function (err) {
+            state.isSubmittingReaction = false;
+            _renderReactions(noticeId, previousReactions);
+            if (typeof _showToast === 'function') {
+                _showToast((err && err.message) ? err.message : '表情操作失败，请稍后重试');
+            }
+        });
     }
 
     function _loadComments(noticeId, options) {
@@ -641,6 +766,12 @@
             _updateComposerState(noticeId);
         }).catch(function () {
             _showToast('评论加载失败，请稍后重试');
+            state.totalCount = 0;
+            state.totalLikes = 0;
+            state.noticeLikeCount = 0;
+            state.noticeLiked = false;
+            state.noticeLikers = [];
+            _updateStats(noticeId);
         }).finally(function () {
             state.isLoadingComments = false;
             state.isAppendingComments = false;
@@ -806,16 +937,89 @@
         });
     }
 
-    // 赞助者/主播标签映射
-    var _COMMENT_TAG_MAP = {
-        'sponsor_1': { label: '一级赞助', color: '#b07c3b', bg: 'rgba(176,124,59,.1)' },
-        'sponsor_2': { label: '二级赞助', color: '#94a3b8', bg: 'rgba(148,163,184,.1)' },
-        'sponsor_3': { label: '三级赞助', color: '#d99a00', bg: 'rgba(217,154,0,.1)' },
-        'sponsor_4': { label: '四级赞助', color: '#1a1a1a', bg: 'rgba(26,26,26,.06)' },
-        'streamer':  { label: '主播',       color: '#dc2626', bg: 'rgba(220,38,38,.08)' }
+    var _COMMENT_TAG_META_MAP = {
+        'streamer':  { label: '主播',       icon: 'ri-live-line' },
+        'sponsor_1': { label: '一级赞助者', icon: 'ri-vip-diamond-line' },
+        'sponsor_2': { label: '二级赞助者', icon: 'ri-vip-diamond-line' },
+        'sponsor_3': { label: '三级赞助者', icon: 'ri-vip-diamond-fill' },
+        'sponsor_4': { label: '四级赞助者', icon: 'ri-vip-crown-2-line' },
+        'risk':      { label: '风险用户',   icon: 'ri-error-warning-line' },
+        'vip':       { label: 'VIP',        icon: 'ri-vip-crown-line' },
+        'friend':    { label: '朋友',       icon: 'ri-user-heart-line' },
+        'internal':  { label: '内测组',     icon: 'ri-flask-line' },
+        'tester':    { label: '测试志愿者', icon: 'ri-bug-line' }
     };
 
-    function _renderTagBadges(tagsRaw) {
+    var _COMMENT_TAG_COLOR_MAP = {
+        'streamer':  { color: '#dc2626', bg: 'rgba(220,38,38,.08)', borderColor: 'rgba(220,38,38,.3)' },
+        'sponsor_1': { color: '#b07c3b', bg: 'rgba(176,124,59,.08)', borderColor: 'rgba(176,124,59,.3)' },
+        'sponsor_2': { color: '#94a3b8', bg: 'rgba(148,163,184,.10)', borderColor: 'rgba(148,163,184,.4)' },
+        'sponsor_3': { color: '#d99a00', bg: 'rgba(217,154,0,.08)', borderColor: 'rgba(217,154,0,.3)' },
+        'sponsor_4': { color: '#1a1a1a', bg: 'linear-gradient(135deg, rgba(26,26,26,.06), rgba(217,154,0,.08))', borderColor: '#1a1a1a' },
+        'risk':      { color: '#dc2626', bg: 'rgba(220,38,38,.08)', borderColor: 'rgba(220,38,38,.3)' },
+        'vip':       { color: '#d99a00', bg: 'rgba(217,154,0,.08)', borderColor: 'rgba(217,154,0,.3)' },
+        'friend':    { color: '#16a34a', bg: 'rgba(22,163,74,.08)', borderColor: 'rgba(22,163,74,.3)' },
+        'internal':  { color: '#1a1a1a', bg: 'rgba(26,26,26,.06)', borderColor: 'rgba(26,26,26,.3)' },
+        'tester':    { color: '#2563eb', bg: 'rgba(37,99,235,.08)', borderColor: 'rgba(37,99,235,.3)' },
+        '_admin':    { color: '#2563eb', bg: 'rgba(37,99,235,.06)', borderColor: 'rgba(37,99,235,.3)' },
+        '_starred':  { color: '#f59e0b', bg: 'rgba(245,158,11,.06)', borderColor: 'rgba(245,158,11,.3)' }
+    };
+
+    function _stripTagEmoji(text) {
+        if (!text) return '';
+        return String(text).replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{FE0F}\u{200D}\u{20E3}\u{2702}-\u{27B0}\u{26A0}]+\s*/u, '').trim();
+    }
+
+    function _getCommentTagColor(tagName) {
+        return _COMMENT_TAG_COLOR_MAP[tagName] || { color: '#64748b', bg: 'transparent', borderColor: '#d1d5db' };
+    }
+
+    function _renderSingleTagBadge(tagName, label, iconCls) {
+        var safeTagName = String(tagName || '').trim();
+        if (!safeTagName || !label) return '';
+        var colors = _getCommentTagColor(safeTagName);
+        var iconHtml = iconCls ? '<i class="' + escapeHtml(iconCls) + '"></i>' : '';
+        return '<span class="nc-user-tag" style="color:' + colors.color + ';border-color:' + colors.borderColor + ';background:' + colors.bg + ';">' +
+            iconHtml + '<span>' + escapeHtml(label) + '</span></span>';
+    }
+
+    function _renderTagBadges(entry) {
+        if (!entry || typeof entry !== 'object') return '';
+        var html = '';
+        if (entry.is_admin) {
+            html += _renderSingleTagBadge('_admin', '管理员', 'ri-pencil-line');
+        }
+        if (entry.is_starred) {
+            html += _renderSingleTagBadge('_starred', '星标用户', 'ri-star-fill');
+        }
+
+        var tagItems = Array.isArray(entry.tag_items) ? entry.tag_items : [];
+        if (!tagItems.length) {
+            var tags = [];
+            if (typeof entry.tags === 'string' && entry.tags.length > 2) {
+                try { tags = JSON.parse(entry.tags); } catch (e) { tags = []; }
+            } else if (Array.isArray(entry.tags)) {
+                tags = entry.tags;
+            }
+            tagItems = tags.map(function (tagName) {
+                return { name: tagName };
+            });
+        }
+
+        tagItems.forEach(function (item) {
+            var tagName = String((item && item.name) || '').trim();
+            if (!tagName) return;
+            var fallbackMeta = _COMMENT_TAG_META_MAP[tagName] || {};
+            var label = _stripTagEmoji(item && item.display_name) || fallbackMeta.label || tagName;
+            var iconCls = (item && item.icon) || fallbackMeta.icon || 'ri-price-tag-3-line';
+            html += _renderSingleTagBadge(tagName, label, iconCls);
+        });
+
+        if (!html) return '';
+        return '<span class="nc-user-badges">' + html + '</span>';
+    }
+
+    function _renderLegacyTagBadges(tagsRaw) {
         var tags = [];
         if (typeof tagsRaw === 'string' && tagsRaw.length > 2) {
             try { tags = JSON.parse(tagsRaw); } catch (e) { tags = []; }
@@ -825,12 +1029,12 @@
         if (!tags.length) return '';
         var html = '';
         tags.forEach(function (t) {
-            var def = _COMMENT_TAG_MAP[t];
+            var def = _COMMENT_TAG_META_MAP[t];
             if (def) {
-                html += '<span class="nc-tag-badge" style="color:' + def.color + ';background:' + def.bg + ';border:1px solid ' + def.color + '22;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:500;margin-left:4px;">' + def.label + '</span>';
+                html += _renderSingleTagBadge(t, def.label, def.icon);
             }
         });
-        return html;
+        return html ? ('<span class="nc-user-badges">' + html + '</span>') : '';
     }
 
     function _renderCommentItem(c, noticeId) {
@@ -849,8 +1053,8 @@
                     repliesHtml += '<div class="nc-preview-replies">';
                     repliesHtml += topReplies.slice(0, 2).map(function (r) {
                         var rUid = r.uid || '?';
-                        var rName = (r.nickname && r.nickname.trim()) ? escapeHtml(r.nickname.trim()) : (r.alias && r.alias.trim()) ? escapeHtml(r.alias.trim()) : ('用户#' + escapeHtml(rUid));
-                        var rContent = escapeHtml(String(r.content || '').replace(/^\s*回复\s*@[^:：]+[:：]\s*/, ''));
+                        var rName = escapeHtml(getPublicUserName(r));
+                        var rContent = _renderReplyPreviewContent(r);
                         var likeHtml = r.like_count ? '<span class="nc-preview-reply-like"><i class="ri-heart-line"></i> ' + r.like_count + '</span>' : '';
                         return '<div class="nc-preview-reply">' +
                             '<span class="nc-preview-reply-name">' + rName + '：</span>' +
@@ -885,20 +1089,22 @@
         }
 
         var selfBadge = (String(_getUserSeqId()) === String(uid) && uid !== '?') ? '<span class="nc-self-badge">我</span>' : '';
+        var tagBadges = _renderTagBadges(c) || _renderLegacyTagBadges(c.tags);
+        var publicName = getPublicUserName(c);
 
         return '<div class="nc-comment-item" data-comment-id="' + c.id + '">' +
             '<div class="nc-comment-head">' +
-            '  ' + renderUidAvatar('nc-comment-avatar', uid, (c.nickname || '') || '用户#' + uid) +
-            '  <span class="nc-comment-uid">' + escapeHtml((c.nickname && c.nickname.trim()) || '用户#' + uid) + '</span>' +
+            '  ' + renderUidAvatar('nc-comment-avatar', uid, getPublicUserTitle(c)) +
+            '  <span class="nc-comment-uid">' + escapeHtml(publicName) + '</span>' +
             selfBadge +
-            _renderTagBadges(c.tags) +
+            tagBadges +
             (state.showWeightScore ? ('  <span class="nc-comment-score">权重 ' + escapeHtml(formatWeight(c.weight_score || 0)) + '</span>') : '') +
             '  <span class="nc-comment-time">' + timeAgo(c.created_at) + '</span>' +
             '</div>' +
             '<div class="nc-comment-body">' + escapeHtml(c.content) + '</div>' +
             '<div class="nc-comment-actions">' +
             '  <button class="nc-action-btn' + (c.liked ? ' nc-liked' : '') + '" data-action="like" data-cid="' + c.id + '"><i class="' + (c.liked ? 'ri-heart-fill' : 'ri-heart-line') + '"></i> ' + (c.like_count || '') + '</button>' +
-            '  <button class="nc-action-btn" data-action="reply" data-cid="' + c.id + '" data-root-cid="' + c.id + '" data-target-cid="' + c.id + '" data-uid="' + escapeHtml(uid) + '">回复</button>' +
+            '  <button class="nc-action-btn" data-action="reply" data-cid="' + c.id + '" data-root-cid="' + c.id + '" data-target-cid="' + c.id + '" data-uid="' + escapeHtml(uid) + '" data-name="' + escapeHtml(publicName) + '">回复</button>' +
             '  <span class="nc-more-dots" data-action="more" data-cid="' + c.id + '"><i class="ri-more-fill"></i></span>' +
             '</div>' +
             repliesHtml +
@@ -910,19 +1116,21 @@
         var uid = normalizeUidValue(r.uid);
         var bodyHtml = _renderReplyBody(r);
         var selfBadge = (String(_getUserSeqId()) === String(uid) && uid !== '?') ? '<span class="nc-self-badge">我</span>' : '';
+        var tagBadges = _renderTagBadges(r) || _renderLegacyTagBadges(r.tags);
+        var publicName = getPublicUserName(r);
         return '<div class="nc-reply-item" data-comment-id="' + r.id + '">' +
             '<div class="nc-reply-head">' +
-            '  ' + renderUidAvatar('nc-reply-avatar', uid, (r.nickname || '') || '用户#' + uid) +
-            '  <span class="nc-reply-uid">' + escapeHtml((r.nickname && r.nickname.trim()) || '用户#' + uid) + '</span>' +
+            '  ' + renderUidAvatar('nc-reply-avatar', uid, getPublicUserTitle(r)) +
+            '  <span class="nc-reply-uid">' + escapeHtml(publicName) + '</span>' +
             selfBadge +
-            _renderTagBadges(r.tags) +
+            tagBadges +
             (state.showWeightScore ? ('  <span class="nc-comment-score nc-reply-score">权重 ' + escapeHtml(formatWeight(r.weight_score || 0)) + '</span>') : '') +
             '  <span class="nc-reply-time">' + timeAgo(r.created_at) + '</span>' +
             '</div>' +
             '<div class="nc-reply-body">' + bodyHtml + '</div>' +
             '<div class="nc-reply-actions">' +
             '  <button class="nc-action-btn' + (r.liked ? ' nc-liked' : '') + '" data-action="like" data-cid="' + r.id + '"><i class="' + (r.liked ? 'ri-heart-fill' : 'ri-heart-line') + '"></i> ' + (r.like_count || '') + '</button>' +
-            '  <button class="nc-action-btn" data-action="reply" data-cid="' + r.id + '" data-root-cid="' + r.parent_id + '" data-target-cid="' + r.id + '" data-uid="' + escapeHtml(uid) + '">回复</button>' +
+            '  <button class="nc-action-btn" data-action="reply" data-cid="' + r.id + '" data-root-cid="' + r.parent_id + '" data-target-cid="' + r.id + '" data-uid="' + escapeHtml(uid) + '" data-name="' + escapeHtml(publicName) + '">回复</button>' +
             '  <span class="nc-more-dots" data-action="more" data-cid="' + r.id + '"><i class="ri-more-fill"></i></span>' +
             '</div>' +
             '</div>';
@@ -940,7 +1148,8 @@
                 var rootCommentId = Number(btn.getAttribute('data-root-cid') || btn.getAttribute('data-cid'));
                 var targetCommentId = Number(btn.getAttribute('data-target-cid') || btn.getAttribute('data-cid'));
                 var uid = btn.getAttribute('data-uid');
-                _setReplyTarget(noticeId, rootCommentId, targetCommentId, uid);
+                var publicName = btn.getAttribute('data-name');
+                _setReplyTarget(noticeId, rootCommentId, targetCommentId, uid, publicName);
             });
         });
 
@@ -975,27 +1184,29 @@
         });
     }
 
-    function _setReplyTarget(noticeId, rootCommentId, targetCommentId, uid) {
+    function _setReplyTarget(noticeId, rootCommentId, targetCommentId, uid, publicName) {
         var state = _getState(noticeId);
         if (!state.canComment) {
             _showToast(state.banReason ? ('评论资格已封禁：' + state.banReason) : '评论资格已被封禁');
             return;
         }
+        var replyName = normalizePublicNickname(publicName) || ('用户#' + normalizeUidValue(uid));
         state.replyingTo = {
             rootId: rootCommentId,
             targetId: targetCommentId,
-            uid: uid
+            uid: uid,
+            publicName: replyName
         };
         state.expandedReplies[rootCommentId] = true;
 
         var indicator = document.getElementById('nc-ri-' + noticeId);
         var nameEl = document.getElementById('nc-ri-name-' + noticeId);
         if (indicator) indicator.classList.add('nc-active');
-        if (nameEl) nameEl.textContent = '@用户#' + uid;
+        if (nameEl) nameEl.textContent = '@' + replyName;
 
         var input = document.getElementById('nc-input-' + noticeId);
         if (input) {
-            input.placeholder = '回复 @用户#' + uid + '...';
+            input.placeholder = '回复 @' + replyName + '...';
             input.focus();
         }
     }
@@ -1133,8 +1344,14 @@
                     delete state.replyCache[parentId];
                 }
                 _cancelReply(noticeId);
+                _showToast(parentId > 0 ? '回复已发送' : '评论已发送', 'success');
                 var scrollToCommentId = (data.comment && data.comment.id) ? data.comment.id : null;
                 _loadComments(noticeId, { reset: true });
+                if (parentId > 0) {
+                    setTimeout(function () {
+                        _loadReplies(noticeId, parentId);
+                    }, 120);
+                }
                 // 发评论成功后滚动定位到新评论
                 if (scrollToCommentId) {
                     setTimeout(function () {
@@ -1163,10 +1380,10 @@
     }
 
     function _renderReplyBody(reply) {
-        var targetUid = reply && reply.reply_to_uid ? String(reply.reply_to_uid) : '';
+        var targetName = getReplyTargetPublicName(reply);
         var content = String(reply && reply.content ? reply.content : '');
-        if (targetUid) {
-            return '<span class="nc-reply-mention">回复 @用户#' + escapeHtml(targetUid) + '：</span>' + escapeHtml(_stripLegacyReplyPrefix(content));
+        if (targetName) {
+            return '<span class="nc-reply-mention">回复 @' + escapeHtml(targetName) + '：</span>' + escapeHtml(_stripLegacyReplyPrefix(content));
         }
         return escapeHtml(content).replace(/^(回复\s*)(@[^:：]+[:：])/, function (_, prefix, mention) {
             return prefix + '<span class="nc-reply-mention">' + mention + '</span>';
