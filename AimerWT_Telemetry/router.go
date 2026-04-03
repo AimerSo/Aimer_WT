@@ -181,6 +181,31 @@ func initRouter(r *gin.Engine) {
 		c.Next()
 	})
 
+	applyClientNoStoreHeaders := func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		c.Header("Pragma", "no-cache")
+		c.Header("Expires", "0")
+	}
+
+	r.Use(func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if path == "/telemetry" ||
+			path == "/feedback" ||
+			path == "/redeem" ||
+			path == "/user-profile" ||
+			path == "/notice-reaction" ||
+			path == "/notice-comment" ||
+			path == "/notice-comment-like" ||
+			path == "/notice-comment-report" ||
+			path == "/latest-version" ||
+			strings.HasPrefix(path, "/api/ai/") ||
+			strings.HasPrefix(path, "/notice-comments/") ||
+			strings.HasPrefix(path, "/notice-reactions/") {
+			applyClientNoStoreHeaders(c)
+		}
+		c.Next()
+	})
+
 	// 静态文件服务：上传的广告图片
 	uploadsDir := "uploads"
 	if _, err := os.Stat(uploadsDir); os.IsNotExist(err) {
@@ -1811,7 +1836,13 @@ func initRouter(r *gin.Engine) {
 			"user_command": pendingCmd,
 			"user_seq_id":  userSeqID,
 		}
-		if !hasClientDeviceToken(record.MachineID) {
+		// 统一 token 签发：首次引导或 token 失效重签均走此路径，
+		// issueClientDeviceToken 内部使用 Upsert 保证幂等。
+		needIssue := !hasClientDeviceToken(record.MachineID)
+		if _, renew := c.Get("_deviceTokenRenew"); renew {
+			needIssue = true
+		}
+		if needIssue {
 			deviceToken, err := issueClientDeviceToken(record.MachineID)
 			if err != nil {
 				c.JSON(500, gin.H{"status": "error", "error": "设备令牌签发失败"})

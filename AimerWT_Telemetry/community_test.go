@@ -101,6 +101,18 @@ func decodeJSONBody[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 	return target
 }
 
+func seedVerifiedProfile(t *testing.T, machineID string) {
+	t.Helper()
+	if err := db.Create(&UserProfile{
+		MachineID: machineID,
+		Level:     1,
+		Verified:  true,
+		Badges:    "[]",
+	}).Error; err != nil {
+		t.Fatalf("seed verified profile %s: %v", machineID, err)
+	}
+}
+
 func TestCommentWeightRoutes(t *testing.T) {
 	setupCommunityTestDB(t)
 	router := setupCommunityTestRouter()
@@ -454,6 +466,8 @@ func TestNoticeCommentPostRespectsGroupCharacterLimit(t *testing.T) {
 			t.Fatalf("seed user %d: %v", i, err)
 		}
 	}
+	seedVerifiedProfile(t, "normal_user")
+	seedVerifiedProfile(t, "starred_user")
 
 	tooLongForNormal := performSignedCommunityRequest(router, http.MethodPost, "/notice-comment", gin.H{
 		"notice_id":  66,
@@ -504,6 +518,7 @@ func TestNoticeCommentPostRateLimitUsesConfiguredWindow(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
+	seedVerifiedProfile(t, "rate_user")
 
 	for i := 0; i < 5; i++ {
 		resp := performSignedCommunityRequest(router, http.MethodPost, "/notice-comment", gin.H{
@@ -550,6 +565,136 @@ func TestNoticeCommentPostRateLimitUsesConfiguredWindow(t *testing.T) {
 	}, "rate_user")
 	if recovered.Code != http.StatusOK {
 		t.Fatalf("post after rate window reset status = %d body=%s", recovered.Code, recovered.Body.String())
+	}
+}
+
+func TestNoticeCommentRequiresVerifiedProfile(t *testing.T) {
+	setupCommunityTestDB(t)
+	router := setupCommunityTestRouter()
+	prevSecret := clientAuthSecret
+	clientAuthSecret = "community-verified-secret"
+	testClientDeviceTokens = sync.Map{}
+	defer func() {
+		clientAuthSecret = prevSecret
+	}()
+
+	user := TelemetryRecord{MachineID: "guest_user", Alias: "guest_user"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	listResp := performRequest(router, http.MethodGet, "/notice-comments/101?machine_id=guest_user", nil)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d body=%s", listResp.Code, listResp.Body.String())
+	}
+	var listPayload struct {
+		CanComment bool   `json:"can_comment"`
+		BanReason  string `json:"ban_reason"`
+	}
+	listPayload = decodeJSONBody[struct {
+		CanComment bool   `json:"can_comment"`
+		BanReason  string `json:"ban_reason"`
+	}](t, listResp)
+	if listPayload.CanComment || listPayload.BanReason != "需要通过认证后才能发表评论" {
+		t.Fatalf("unexpected list payload for unverified user: %+v", listPayload)
+	}
+
+	postResp := performSignedCommunityRequest(router, http.MethodPost, "/notice-comment", gin.H{
+		"notice_id":  101,
+		"machine_id": "guest_user",
+		"content":    "hello",
+		"parent_id":  0,
+	}, "guest_user")
+	if postResp.Code != http.StatusForbidden {
+		t.Fatalf("unverified post status = %d body=%s", postResp.Code, postResp.Body.String())
+	}
+	var postPayload struct {
+		Error string `json:"error"`
+	}
+	postPayload = decodeJSONBody[struct {
+		Error string `json:"error"`
+	}](t, postResp)
+	if postPayload.Error != "需要通过认证后才能发表评论" {
+		t.Fatalf("unexpected post error: %+v", postPayload)
+	}
+}
+
+func TestNoticeCommentReplyPostReturnsReplyTargetNickname(t *testing.T) {
+	setupCommunityTestDB(t)
+	router := setupCommunityTestRouter()
+	prevSecret := clientAuthSecret
+	clientAuthSecret = "community-reply-secret"
+	testClientDeviceTokens = sync.Map{}
+	defer func() {
+		clientAuthSecret = prevSecret
+	}()
+
+	users := []TelemetryRecord{
+		{MachineID: "target_user", Alias: "target_user"},
+		{MachineID: "reply_user", Alias: "reply_user"},
+	}
+	for i := range users {
+		if err := db.Create(&users[i]).Error; err != nil {
+			t.Fatalf("seed user %d: %v", i, err)
+		}
+	}
+
+	if err := db.Create(&UserProfile{MachineID: "target_user", Nickname: "TargetNick", Verified: true, Badges: "[]"}).Error; err != nil {
+		t.Fatalf("seed target profile: %v", err)
+	}
+	seedVerifiedProfile(t, "reply_user")
+
+	topComment := NoticeComment{
+		NoticeID:  123,
+		MachineID: "target_user",
+		Content:   "top comment",
+		Status:    "visible",
+	}
+	if err := db.Create(&topComment).Error; err != nil {
+		t.Fatalf("seed top comment: %v", err)
+	}
+
+	replyResp := performSignedCommunityRequest(router, http.MethodPost, "/notice-comment", gin.H{
+		"notice_id":   123,
+		"machine_id":  "reply_user",
+		"content":     "reply content",
+		"parent_id":   topComment.ID,
+		"reply_to_id": topComment.ID,
+	}, "reply_user")
+	if replyResp.Code != http.StatusOK {
+		t.Fatalf("reply post status = %d body=%s", replyResp.Code, replyResp.Body.String())
+	}
+
+	var payload struct {
+		Status  string `json:"status"`
+		Comment struct {
+			ParentID        uint   `json:"parent_id"`
+			ReplyToID       uint   `json:"reply_to_id"`
+			ReplyToUID      string `json:"reply_to_uid"`
+			ReplyToNickname string `json:"reply_to_nickname"`
+		} `json:"comment"`
+	}
+	payload = decodeJSONBody[struct {
+		Status  string `json:"status"`
+		Comment struct {
+			ParentID        uint   `json:"parent_id"`
+			ReplyToID       uint   `json:"reply_to_id"`
+			ReplyToUID      string `json:"reply_to_uid"`
+			ReplyToNickname string `json:"reply_to_nickname"`
+		} `json:"comment"`
+	}](t, replyResp)
+
+	if payload.Status != "success" {
+		t.Fatalf("reply status = %q, want success", payload.Status)
+	}
+	if payload.Comment.ParentID != topComment.ID || payload.Comment.ReplyToID != topComment.ID {
+		t.Fatalf("unexpected reply linkage: %+v", payload.Comment)
+	}
+	if payload.Comment.ReplyToUID != strconv.Itoa(int(users[0].ID)) {
+		t.Fatalf("reply target uid = %q, want %d", payload.Comment.ReplyToUID, users[0].ID)
+	}
+	if payload.Comment.ReplyToNickname != "TargetNick" {
+		t.Fatalf("reply target nickname = %q, want TargetNick", payload.Comment.ReplyToNickname)
 	}
 }
 

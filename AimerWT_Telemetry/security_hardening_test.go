@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -266,4 +267,155 @@ func basicAuthHeader(user, pass string) string {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.SetBasicAuth(user, pass)
 	return strings.TrimPrefix(req.Header.Get("Authorization"), "Basic ")
+}
+
+func TestIssueClientDeviceTokenIsIdempotent(t *testing.T) {
+	setupClientRouteProtectionDB(t)
+	gin.SetMode(gin.TestMode)
+
+	prevAdminUser := adminUser
+	prevAdminPass := adminPass
+	prevSecret := clientAuthSecret
+	prevSysConfig := sysConfig
+	adminUser = "admin-test"
+	adminPass = "pass-test"
+	clientAuthSecret = "idempotent-secret"
+	sysConfig = SystemConfig{
+		BadgeSystemEnabled:    true,
+		NicknameChangeEnabled: true,
+		AvatarUploadEnabled:   true,
+		NoticeCommentEnabled:  true,
+		NoticeReactionEnabled: true,
+		RedeemCodeEnabled:     true,
+		FeedbackEnabled:       true,
+	}
+	defer func() {
+		adminUser = prevAdminUser
+		adminPass = prevAdminPass
+		clientAuthSecret = prevSecret
+		sysConfig = prevSysConfig
+	}()
+
+	router := gin.New()
+	initRouter(router)
+
+	// 首次 bootstrap：签发 token
+	token1 := bootstrapTestClientToken(t, router, "idempotent-machine", clientAuthSecret)
+
+	// 再次 bootstrap（模拟重复签发）：不应报错，应返回新 token
+	token2 := bootstrapTestClientToken(t, router, "idempotent-machine", clientAuthSecret)
+
+	if token1 == token2 {
+		t.Fatalf("expected different tokens on reissue, got identical")
+	}
+}
+
+func TestTelemetryBootstrapAfterTokenInvalidation(t *testing.T) {
+	setupClientRouteProtectionDB(t)
+	gin.SetMode(gin.TestMode)
+
+	prevAdminUser := adminUser
+	prevAdminPass := adminPass
+	prevSecret := clientAuthSecret
+	prevSysConfig := sysConfig
+	adminUser = "admin-test"
+	adminPass = "pass-test"
+	clientAuthSecret = "reauth-secret"
+	sysConfig = SystemConfig{
+		BadgeSystemEnabled:    true,
+		NicknameChangeEnabled: true,
+		AvatarUploadEnabled:   true,
+		NoticeCommentEnabled:  true,
+		NoticeReactionEnabled: true,
+		RedeemCodeEnabled:     true,
+		FeedbackEnabled:       true,
+	}
+	defer func() {
+		adminUser = prevAdminUser
+		adminPass = prevAdminPass
+		clientAuthSecret = prevSecret
+		sysConfig = prevSysConfig
+	}()
+
+	router := gin.New()
+	initRouter(router)
+
+	// 首次 bootstrap
+	_ = bootstrapTestClientToken(t, router, "reauth-machine", clientAuthSecret)
+
+	// 模拟客户端丢失 token 后重新请求（不带 device_token）
+	// 对于 /telemetry 端点（allowBootstrap=true），应自动重签
+	testClientDeviceTokens.Delete("reauth-machine")
+	noTokenHeaders := buildSignedTestHeadersWithoutDeviceToken("/telemetry", http.MethodPost, "reauth-machine", clientAuthSecret)
+	resp := performSecurityJSONRequest(router, http.MethodPost, "/telemetry", map[string]any{
+		"machine_id": "reauth-machine",
+		"version":    "1.0.0",
+	}, noTokenHeaders)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected auto-reissue on /telemetry without token, got %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var payload struct {
+		ClientDeviceToken string `json:"client_device_token"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode reissue response: %v", err)
+	}
+	if strings.TrimSpace(payload.ClientDeviceToken) == "" {
+		t.Fatalf("expected new client_device_token in reissue response")
+	}
+}
+
+func TestConcurrentTelemetryBootstrap(t *testing.T) {
+	setupClientRouteProtectionDB(t)
+	gin.SetMode(gin.TestMode)
+
+	prevAdminUser := adminUser
+	prevAdminPass := adminPass
+	prevSecret := clientAuthSecret
+	prevSysConfig := sysConfig
+	adminUser = "admin-test"
+	adminPass = "pass-test"
+	clientAuthSecret = "concurrent-secret"
+	sysConfig = SystemConfig{
+		BadgeSystemEnabled:    true,
+		NicknameChangeEnabled: true,
+		AvatarUploadEnabled:   true,
+		NoticeCommentEnabled:  true,
+		NoticeReactionEnabled: true,
+		RedeemCodeEnabled:     true,
+		FeedbackEnabled:       true,
+	}
+	defer func() {
+		adminUser = prevAdminUser
+		adminPass = prevAdminPass
+		clientAuthSecret = prevSecret
+		sysConfig = prevSysConfig
+	}()
+
+	router := gin.New()
+	initRouter(router)
+
+	const concurrency = 5
+	errors := make(chan error, concurrency)
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			headers := buildSignedTestHeadersWithoutDeviceToken("/telemetry", http.MethodPost, "concurrent-machine", clientAuthSecret)
+			resp := performSecurityJSONRequest(router, http.MethodPost, "/telemetry", map[string]any{
+				"machine_id": "concurrent-machine",
+				"version":    "1.0.0",
+			}, headers)
+			if resp.Code != http.StatusOK {
+				errors <- fmt.Errorf("concurrent bootstrap failed: %d body=%s", resp.Code, resp.Body.String())
+			} else {
+				errors <- nil
+			}
+		}()
+	}
+
+	for i := 0; i < concurrency; i++ {
+		if err := <-errors; err != nil {
+			t.Fatalf("concurrent bootstrap error: %v", err)
+		}
+	}
 }

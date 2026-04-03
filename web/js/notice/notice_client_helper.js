@@ -134,6 +134,44 @@
         return /设备令牌|设备绑定|访问被拒绝|缺少设备令牌|unauthorized|forbidden|device token|binding|access denied/i.test(message);
     }
 
+    function requestTelemetryJsonViaBridge(path, options) {
+        options = options || {};
+        if (!(window.pywebview && window.pywebview.api && typeof window.pywebview.api.request_telemetry_json === 'function')) {
+            return null;
+        }
+
+        var method = String(options.method || 'GET').toUpperCase();
+        var params = options.params && typeof options.params === 'object' ? options.params : null;
+        var payload = options.payload && typeof options.payload === 'object' ? options.payload : null;
+        var timeoutMs = Number(options.timeoutMs || 8000);
+        if (!isFinite(timeoutMs) || timeoutMs <= 0) timeoutMs = 8000;
+        timeoutMs = Math.max(1000, Math.min(Math.round(timeoutMs), 20000));
+        var ensureReady = options.ensureReady !== false;
+        var fallbackMessage = sanitizeMessage(options.fallbackMessage) || '请求失败，请稍后重试';
+
+        return window.pywebview.api.request_telemetry_json(path, method, params, payload, timeoutMs, ensureReady)
+            .then(function (result) {
+                if (result && result.ok) {
+                    return result.data && typeof result.data === 'object' ? result.data : {};
+                }
+                var error = new Error(
+                    sanitizeMessage(result && result.error) ||
+                    fallbackMessage ||
+                    '请求失败，请稍后重试'
+                );
+                error.status = Number(result && result.status || 0);
+                error.payload = result && result.data && typeof result.data === 'object' ? result.data : {};
+                error.serverMessage = sanitizeMessage(
+                    (error.payload && (error.payload.error || error.payload.message)) ||
+                    error.message
+                );
+                throw decorateError(error, fallbackMessage);
+            })
+            .catch(function (error) {
+                throw decorateError(error, fallbackMessage);
+            });
+    }
+
     function cloneReactions(reactions) {
         if (!Array.isArray(reactions)) return [];
         return reactions.map(function (reaction) {
@@ -185,6 +223,12 @@
     }
 
     var reactionCache = {};
+    var commentCache = {};
+
+    function cloneCommentPayload(payload) {
+        if (!payload || typeof payload !== 'object') return null;
+        return JSON.parse(JSON.stringify(payload));
+    }
 
     function updateReactionSummary(noticeId, reactions) {
         var key = String(noticeId);
@@ -233,15 +277,32 @@
         return reactions;
     }
 
+    function cacheCommentPayload(noticeId, payload) {
+        var key = String(noticeId);
+        var cloned = cloneCommentPayload(payload);
+        if (!cloned) return null;
+        commentCache[key] = cloned;
+        return cloneCommentPayload(cloned);
+    }
+
+    function getCachedCommentPayload(noticeId) {
+        var key = String(noticeId);
+        if (!Object.prototype.hasOwnProperty.call(commentCache, key)) return null;
+        return cloneCommentPayload(commentCache[key]);
+    }
+
     window.NoticeClientHelper = {
         buildUserMessage: buildUserMessage,
         decorateError: decorateError,
         parseJsonResponse: parseJsonResponse,
         shouldRetryWithTelemetry: shouldRetryWithTelemetry,
+        requestTelemetryJsonViaBridge: requestTelemetryJsonViaBridge,
         cloneReactions: cloneReactions,
         buildOptimisticReactions: buildOptimisticReactions,
         cacheReactions: cacheReactions,
         getCachedReactions: getCachedReactions,
-        getSummaryReactions: getSummaryReactions
+        getSummaryReactions: getSummaryReactions,
+        cacheCommentPayload: cacheCommentPayload,
+        getCachedCommentPayload: getCachedCommentPayload
     };
 })();

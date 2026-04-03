@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 var dashboardHTML []byte
@@ -62,7 +63,14 @@ func validateRuntimeConfig() {
 
 func initDB() {
 	var err error
-	db, err = gorm.Open(sqlite.Open("telemetry.db"), &gorm.Config{})
+	db, err = gorm.Open(sqlite.Open("telemetry.db"), &gorm.Config{
+		Logger: gormlogger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), gormlogger.Config{
+			SlowThreshold:             time.Second,
+			LogLevel:                  gormlogger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  false,
+		}),
+	})
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}

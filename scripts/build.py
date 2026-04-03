@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import os
 import shutil
 import hashlib
@@ -44,12 +44,13 @@ def clean_build_artifacts():
             log.warning(f"   ! 删除 build 文件夹失败: {e}")
 
     # 删除 spec 文件
-    if os.path.exists('WT_Aimer_Voice.spec'):
-        try:
-            os.remove('WT_Aimer_Voice.spec')
-            log.info("   - 已删除 spec 文件")
-        except Exception as e:
-            log.warning(f"   ! 删除 spec 文件失败: {e}")
+    for spec_name in ('WT_Aimer_Voice.spec', 'AimerWT内测版本.spec'):
+        if os.path.exists(spec_name):
+            try:
+                os.remove(spec_name)
+                log.info(f'   - 已删除 spec 文件: {spec_name}')
+            except Exception as e:
+                log.warning(f'   ! 删除 spec 文件失败: {e}')
 
 
 def load_dotenv(path=".env"):
@@ -116,13 +117,34 @@ def build_exe():
     # Os specific separator
     sep = ';' if os.name == 'nt' else ':'
 
+    EXE_DISPLAY_NAME = "AimerWT内测版本"
+
+    # 版本资源文件路径（相对于 scripts/ 目录）
+    version_file = Path("scripts/version_info.txt")
+
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconsole",
         "--onefile",
-        "--add-data", f"web{sep}web",  # 将 web 文件夹打包到 exe 内部的 web 目录
-        "--name", "WT_Aimer_Voice",
-        "--clean",  # 清理 PyInstaller 缓存
+        "--add-data", f"web{sep}web",
+        "--name", EXE_DISPLAY_NAME,
+        "--clean",
+        # hidden imports：确保 pywebview 各后端、pystray、pythonnet 均被打包
+        "--hidden-import", "webview.platforms.winforms",
+        "--hidden-import", "webview.platforms.cef",
+        "--hidden-import", "webview.platforms.gtk",
+        "--hidden-import", "clr",
+        "--hidden-import", "clr_loader",
+        "--hidden-import", "pystray._win32",
+        "--hidden-import", "PIL._imaging",
+        "--hidden-import", "PIL.Image",
+        "--hidden-import", "PIL.IcoImagePlugin",
+        "--hidden-import", "requests",
+        "--hidden-import", "certifi",
+        "--hidden-import", "charset_normalizer",
+        "--hidden-import", "bottle",
+        "--collect-all", "webview",
+        "--collect-all", "pystray",
         "main.py"
     ]
 
@@ -132,11 +154,14 @@ def build_exe():
     else:
         log.warning("未发现 tools 目录，跳过工具文件打包")
 
-    # Add icon if exists and on Windows/Mac (Linux mostly ignores or handles differently)
     if os.name == 'nt':
         cmd.extend(["--icon", "web/assets/logo.ico"])
+        if version_file.exists():
+            cmd.extend(["--version-file", str(version_file)])
+            log.info(f"已加载版本资源文件: {version_file}")
+        else:
+            log.warning(f"未找到版本资源文件，跳过: {version_file}")
     else:
-        # Strip symbols on Linux/Mac to reduce size
         cmd.append("--strip")
 
     log.info(f"执行命令: {' '.join(cmd)}")
@@ -161,7 +186,7 @@ def build_exe():
         log.exception(f"[X] 打包失败！错误: {e}")
         sys.exit(1)
     else:
-        exe_name = "WT_Aimer_Voice.exe" if os.name == 'nt' else "WT_Aimer_Voice"
+        exe_name = f"{EXE_DISPLAY_NAME}.exe" if os.name == 'nt' else EXE_DISPLAY_NAME
         exe_path = Path("../dist") / exe_name
         log.info("[OK] 打包成功！")
         log.info(f"输出文件: {exe_path}")
@@ -174,8 +199,8 @@ def main():
         return
 
     # 2. 生成校验文件
-    # Determine exe name based on OS
-    exe_name = "WT_Aimer_Voice.exe" if os.name == 'nt' else "WT_Aimer_Voice"
+    exe_display_name = "AimerWT内测版本"
+    exe_name = f"{exe_display_name}.exe" if os.name == 'nt' else exe_display_name
     dist_dir = Path(__file__).parent.parent / "dist"
     exe_path = dist_dir / exe_name
 

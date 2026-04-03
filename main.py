@@ -19,6 +19,8 @@ import platform
 import subprocess
 import zipfile
 
+import requests
+
 # ==================== 控制台编码设置（已移至 utils.logger）====================
 # 详细逻辑请参考 utils/logger.py 中的 _setup_console_encoding 函数
 
@@ -54,6 +56,7 @@ from services.telemetry_manager import (
     resolve_related_endpoint,
     resolve_client_auth_secret,
     resolve_service_base_url,
+    set_client_device_token,
     submit_feedback,
 )
 from utils.utils import get_docs_data_dir
@@ -1338,6 +1341,136 @@ class AppApi:
             except Exception:
                 resolved_machine_id = ""
         return build_client_auth_headers(path, method=method, machine_id=resolved_machine_id)
+
+    def _request_telemetry_json_once(self, path, method="GET", params=None, payload=None, timeout_ms=8000):
+        """
+        通过 Python requests 请求遥测关联接口，避免前端 WebView 与系统网络栈差异导致的直连失败。
+        """
+        tm = get_telemetry_manager()
+        if not tm or not self._cfg_mgr.get_telemetry_enabled():
+            return {"ok": False, "status": 0, "data": {}, "error": "遥测服务未启用"}
+
+        normalized_path = "/" + str(path or "").strip().lstrip("/")
+        base_url = resolve_service_base_url(tm.report_url)
+        if not base_url:
+            return {"ok": False, "status": 0, "data": {}, "error": "遥测服务地址未配置"}
+
+        query = params if isinstance(params, dict) else {}
+        body = payload if isinstance(payload, dict) else None
+
+        machine_id = str(query.get("machine_id") or "").strip()
+        if not machine_id and isinstance(body, dict):
+            machine_id = str(body.get("machine_id") or "").strip()
+        if not machine_id:
+            try:
+                machine_id = str(tm.get_machine_id() or "").strip()
+            except Exception:
+                machine_id = ""
+
+        method_upper = str(method or "GET").upper()
+        timeout_seconds = max(3.0, min(float(timeout_ms or 0) / 1000.0, 20.0))
+        headers = build_client_auth_headers(normalized_path, method=method_upper, machine_id=machine_id)
+        headers.setdefault("Accept", "application/json")
+
+        request_kwargs = {
+            "headers": headers,
+            "params": query or None,
+            "timeout": timeout_seconds,
+        }
+        if body is not None and method_upper != "GET":
+            request_kwargs["json"] = body
+
+        url = base_url.rstrip("/") + normalized_path
+
+        try:
+            response = requests.request(method_upper, url, **request_kwargs)
+        except requests.RequestException as exc:
+            return {"ok": False, "status": 0, "data": {}, "error": str(exc) or type(exc).__name__}
+
+        text = response.text or ""
+        data = {}
+        if text:
+            try:
+                data = response.json()
+            except ValueError:
+                data = {"message": text}
+
+        issued_token = str(
+            response.headers.get("X-AimerWT-Device-Token")
+            or (data.get("client_device_token", "") if isinstance(data, dict) else "")
+            or ""
+        ).strip()
+        if issued_token:
+            set_client_device_token(issued_token)
+
+        error_message = ""
+        if not response.ok:
+            if isinstance(data, dict):
+                error_message = str(data.get("error") or data.get("message") or "").strip()
+            if not error_message and text:
+                error_message = text.strip()
+            if not error_message:
+                error_message = f"请求失败（{response.status_code}）"
+
+        return {
+            "ok": response.ok,
+            "status": int(response.status_code),
+            "data": data if isinstance(data, dict) else {},
+            "error": error_message,
+        }
+
+    def request_telemetry_json(self, path, method="GET", params=None, payload=None, timeout_ms=8000, ensure_ready=True):
+        """
+        提供给前端的遥测接口代理：
+        - 优先走 Python 侧 requests，绕开 WebView 直接 fetch 的网络兼容问题。
+        - 403/缺少设备令牌时自动触发一次重握手并重试。
+        """
+        try:
+            timeout_ms = int(timeout_ms or 0)
+        except Exception:
+            timeout_ms = 8000
+        timeout_ms = max(1000, min(timeout_ms, 20000))
+
+        if ensure_ready:
+            try:
+                self.ensure_telemetry_ready(min(timeout_ms, 3000))
+            except Exception:
+                pass
+
+        result = self._request_telemetry_json_once(
+            path,
+            method=method,
+            params=params,
+            payload=payload,
+            timeout_ms=timeout_ms,
+        )
+
+        response_data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        should_retry = (
+            result.get("status") in (401, 403)
+            or bool(response_data.get("should_reauth"))
+        )
+
+        if should_retry:
+            tm = get_telemetry_manager()
+            if tm:
+                try:
+                    tm.report_startup()
+                except Exception:
+                    pass
+            try:
+                self.ensure_telemetry_ready(min(timeout_ms, 3500))
+            except Exception:
+                pass
+            result = self._request_telemetry_json_once(
+                path,
+                method=method,
+                params=params,
+                payload=payload,
+                timeout_ms=timeout_ms,
+            )
+
+        return result
 
     def get_autostart_status(self):
         """

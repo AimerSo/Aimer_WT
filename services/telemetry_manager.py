@@ -176,12 +176,16 @@ def build_client_auth_headers(path_or_url: str, method: str = "POST", machine_id
 
 
 class TelemetryManager:
+    # 连续失败达到此阈值后才标记连接已断开
+    _DISCONNECT_THRESHOLD = 3
+
     def __init__(self, app_version: str, report_url: Optional[str] = None):
         self._stop_heartbeat = None
         self._is_log_error = False
         self._server_connected = False
         self._heartbeat_interval = 60
         self._telemetry_started = False
+        self._consecutive_failures = 0
         self.app_version = app_version
 
         self.report_url = resolve_report_url(report_url)
@@ -378,6 +382,7 @@ class TelemetryManager:
                 if response.status_code == 200 or response.status_code == 503:
                     self._is_log_error = False
                     self._server_connected = True
+                    self._consecutive_failures = 0
                     try:
                         data = response.json()
                         issued_token = str(
@@ -423,19 +428,24 @@ class TelemetryManager:
                     except Exception:
                         pass
                 elif response.status_code == 403:
-                    self._server_connected = False
-                    set_client_device_token("")
+                    self._consecutive_failures += 1
+                    if self._consecutive_failures >= self._DISCONNECT_THRESHOLD:
+                        self._server_connected = False
                     if self._log_callback and not self._is_log_error:
-                        self._log_callback.error("[遥测] 客户端设备令牌无效，已清理本地会话")
+                        self._log_callback.error("[遥测] 服务器拒绝了当前请求，等待自动恢复")
                         self._is_log_error = True
                 else:
-                    self._server_connected = False
+                    self._consecutive_failures += 1
+                    if self._consecutive_failures >= self._DISCONNECT_THRESHOLD:
+                        self._server_connected = False
                     if self._log_callback and not self._is_log_error:
                         self._log_callback.error(f"[遥测] 服务异常: {response.status_code}")
                         self._is_log_error = True
 
             except Exception as e:
-                self._server_connected = False
+                self._consecutive_failures += 1
+                if self._consecutive_failures >= self._DISCONNECT_THRESHOLD:
+                    self._server_connected = False
                 if self._log_callback and not self._is_log_error:
                     self._log_callback.error(f"[遥测] 服务交互异常: {type(e).__name__}")
                     self._is_log_error = True

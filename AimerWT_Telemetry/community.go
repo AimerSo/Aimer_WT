@@ -291,6 +291,47 @@ func loadCommentUserRecord(machineID string) *TelemetryRecord {
 	return &record
 }
 
+func loadUserProfile(machineID string) *UserProfile {
+	machineID = strings.TrimSpace(machineID)
+	if machineID == "" {
+		return nil
+	}
+
+	var profile UserProfile
+	if err := db.Select("machine_id, level, verified").
+		Where("machine_id = ?", machineID).
+		First(&profile).Error; err != nil {
+		return nil
+	}
+	return &profile
+}
+
+func resolveCommentPermissionState(machineID string, record *TelemetryRecord) (bool, string, *NoticeCommentBan) {
+	machineID = strings.TrimSpace(machineID)
+	if machineID == "" {
+		return false, "客户端身份未就绪，请稍后重试", nil
+	}
+
+	if record != nil && record.IsAdmin {
+		ban := getNoticeCommentBan(machineID)
+		if ban != nil {
+			return false, ban.Reason, ban
+		}
+		return true, "", nil
+	}
+
+	ban := getNoticeCommentBan(machineID)
+	if ban != nil {
+		return false, ban.Reason, ban
+	}
+
+	profile := loadUserProfile(machineID)
+	if profile == nil || !profile.Verified || profile.Level < 1 {
+		return false, "需要通过认证后才能发表评论", nil
+	}
+	return true, "", nil
+}
+
 // hasCommentPerm 检查用户是否拥有指定的评论区权限
 func hasCommentPerm(record *TelemetryRecord, perm string) bool {
 	if record == nil || record.CommentPerms == "" || record.CommentPerms == "{}" {
@@ -721,12 +762,10 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			Select("COALESCE(SUM(like_count), 0)").
 			Scan(&totalLikes)
 
-		ban := getNoticeCommentBan(machineID)
-		canComment := ban == nil
-		banReason := ""
+		canComment, commentBlockReason, ban := resolveCommentPermissionState(machineID, viewerRecord)
+		banReason := commentBlockReason
 		banExpiresAt := ""
 		if ban != nil {
-			banReason = ban.Reason
 			banExpiresAt = formatOptionalTimestamp(ban.ExpiresAt)
 		}
 		commentLimitChars := resolveCommentCharacterLimit(viewerRecord, weightCfg)
@@ -862,9 +901,12 @@ func initCommunityClientRoutes(r *gin.Engine) {
 			return
 		}
 
-		if ban := getNoticeCommentBan(req.MachineID); ban != nil {
+		canComment, commentBlockReason, ban := resolveCommentPermissionState(req.MachineID, loadCommentUserRecord(req.MachineID))
+		if !canComment {
 			msg := "您已被禁止发表评论"
-			if ban.Reason != "" {
+			if ban == nil {
+				msg = commentBlockReason
+			} else if ban.Reason != "" {
 				msg += "：" + ban.Reason
 			}
 			c.JSON(403, gin.H{"error": msg})
@@ -976,7 +1018,7 @@ func initCommunityClientRoutes(r *gin.Engine) {
 		authorMetaMap := buildCommentAuthorMetaMap([]string{req.MachineID})
 		tagDefs := buildTagDefinitionMap(collectTagNamesFromAuthorMeta(authorMetaMap))
 		aliasMap := buildAliasMap(machineIDs)
-		nicknameMap := buildNicknameMap([]string{req.MachineID})
+		nicknameMap := buildNicknameMap(machineIDs)
 		commentResp := serializeComment(comment, seqMap, nil, authorMetaMap, nicknameMap, tagDefs)
 		commentResp["reply_count"] = 0
 		commentResp["author_weight"] = authorWeight

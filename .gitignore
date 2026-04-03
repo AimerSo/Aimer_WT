@@ -25,6 +25,9 @@ desktop.ini
 build/
 dist/
 *.spec
+# dist 目录内容（打包产物，不上传）
+dist/*
+!dist/.gitkeep
 
 # App data (large / local content)
 WT待解压区/
@@ -127,3 +130,11 @@ AimerWT_Telemetry/telemetry.db-wal
 # 日常与本次更新的开发测试无用产物拦截（不上传）
 AimerWT_Telemetry/telemetry_test_build
 公告.md
+
+# Git 开发辅助文件（本地生成，不上传）
+git_diff.txt
+
+# 打包版本资源文件（含内部版本命名，不上传）
+scripts/version_info.txt
+# 打包启动器（本地运行脚本，不上传）
+scripts/run_build.py

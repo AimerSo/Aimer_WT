@@ -110,6 +110,7 @@
     }
 
     var _panelState = {};
+    var _panelRenderSeq = 0;
 
     function _getState(noticeId) {
         if (!_panelState[noticeId]) {
@@ -141,10 +142,17 @@
                 reactionLoadToken: 0,
                 pendingCommentLikes: {},
                 localPinnedComments: {},
-                localPinnedCommentOrder: []
+                localPinnedCommentOrder: [],
+                renderSequence: 0
             };
         }
         return _panelState[noticeId];
+    }
+
+    function _isActiveRender(noticeId, renderSequence) {
+        var state = _panelState[noticeId];
+        if (!state) return false;
+        return Number(state.renderSequence || 0) === Number(renderSequence || 0);
     }
 
     function _getBaseUrl() {
@@ -262,6 +270,57 @@
                 throw retryError;
             });
         });
+    }
+
+    function _requestTelemetryJson(path, method, fallbackMessage, requestFactory, options) {
+        options = options || {};
+        if (window.NoticeClientHelper && typeof window.NoticeClientHelper.requestTelemetryJsonViaBridge === 'function') {
+            var bridgePromise = window.NoticeClientHelper.requestTelemetryJsonViaBridge(path, {
+                method: method,
+                params: options.params,
+                payload: options.payload,
+                timeoutMs: options.timeoutMs,
+                ensureReady: options.ensureReady,
+                fallbackMessage: fallbackMessage
+            });
+            if (bridgePromise) return bridgePromise;
+        }
+        return _requestJsonWithTelemetryRetry(requestFactory, fallbackMessage);
+    }
+
+    function _cacheCommentSnapshot(noticeId) {
+        if (!(window.NoticeClientHelper && typeof window.NoticeClientHelper.cacheCommentPayload === 'function')) return;
+        var state = _getState(noticeId);
+        window.NoticeClientHelper.cacheCommentPayload(noticeId, {
+            comments: Array.isArray(state.comments) ? state.comments : [],
+            total_count: Number(state.totalCount || 0),
+            total_likes: Number(state.totalLikes || 0),
+            can_comment: state.canComment !== false,
+            ban_reason: state.banReason || '',
+            ban_expires_at: state.banExpiresAt || '',
+            viewer_is_admin: state.viewerIsAdmin === true,
+            show_weight_score: state.showWeightScore === true,
+            comment_limit_chars: normalizeCommentCharLimit(state.commentCharLimit)
+        });
+    }
+
+    function _applyCachedCommentSnapshot(noticeId) {
+        if (!(window.NoticeClientHelper && typeof window.NoticeClientHelper.getCachedCommentPayload === 'function')) return false;
+        var cached = window.NoticeClientHelper.getCachedCommentPayload(noticeId);
+        if (!cached || typeof cached !== 'object') return false;
+
+        var state = _getState(noticeId);
+        state.comments = Array.isArray(cached.comments) ? cached.comments : [];
+        state.totalCount = Number(cached.total_count || 0);
+        state.totalLikes = Number(cached.total_likes || 0);
+        state.canComment = cached.can_comment !== false;
+        state.banReason = cached.ban_reason || '';
+        state.banExpiresAt = cached.ban_expires_at || '';
+        state.viewerIsAdmin = cached.viewer_is_admin === true || cached.show_weight_score === true;
+        state.showWeightScore = cached.show_weight_score === true;
+        state.commentCharLimit = normalizeCommentCharLimit(cached.comment_limit_chars);
+        state.commentLoadError = '';
+        return true;
     }
 
     function _isServerBackedNoticeId(noticeId) {
@@ -455,6 +514,8 @@
     function _renderPanelResolved(noticeId, container) {
         if (!container || !noticeId) return;
         var id = noticeId;
+        _panelRenderSeq += 1;
+        var renderSequence = _panelRenderSeq;
         _panelState[id] = null;
         container.setAttribute('data-nc-notice-id', id);
 
@@ -480,6 +541,9 @@
             return;
         }
         container.classList.remove('nc-offline');
+
+        var state = _getState(id);
+        state.renderSequence = renderSequence;
 
         var reactionEnabled = _isFeatureEnabled('notice_reaction_enabled');
 
@@ -520,7 +584,6 @@
             '  <button class="nc-send-btn" id="nc-send-' + id + '" disabled><i class="ri-send-plane-2-fill"></i></button>' +
             '</div>';
 
-        var state = _getState(id);
         state.commentLimit = _estimateCommentPageSize(id);
 
         var myUid = _getUserSeqId();
@@ -568,10 +631,22 @@
         _updateComposerState(id);
         _syncComposerHeight(id);
         _ensureCommentScroll(id);
+        if (_applyCachedCommentSnapshot(id)) {
+            _renderComments(id);
+            _updateStats(id);
+            _updateComposerState(id);
+        }
         if (reactionEnabled) {
+            var cachedReactions = window.NoticeClientHelper && typeof window.NoticeClientHelper.getCachedReactions === 'function'
+                ? window.NoticeClientHelper.getCachedReactions(id)
+                : null;
+            if (cachedReactions && cachedReactions.length) {
+                _renderReactions(id, cachedReactions);
+            }
             _loadReactions(id);
         }
         requestAnimationFrame(function () {
+            if (!_isActiveRender(id, renderSequence)) return;
             state.commentLimit = _estimateCommentPageSize(id);
             _loadComments(id, { reset: true });
         });
@@ -584,6 +659,7 @@
             return;
         }
         var state = _getState(noticeId);
+        var renderSequence = state.renderSequence;
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
         if (!baseUrl) {
@@ -596,20 +672,26 @@
         state.reactionLoadToken += 1;
         var loadToken = state.reactionLoadToken;
 
-        _requestJsonWithTelemetryRetry(function () {
+        _requestTelemetryJson('/notice-reactions/' + noticeId, 'GET', '加载互动数据失败', function () {
             return _buildTelemetryHeaders('/notice-reactions/' + noticeId, 'GET', hwid, false).then(function (headers) {
                 return fetch(url, { method: 'GET', headers: headers, cache: 'no-store' });
             });
-        }, '加载互动数据失败').then(function (data) {
-            if (loadToken !== state.reactionLoadToken) return;
+        }, {
+            params: hwid ? { machine_id: hwid } : null
+        }).then(function (data) {
+            if (!_isActiveRender(noticeId, renderSequence)) return;
+            var activeState = _getState(noticeId);
+            if (loadToken !== activeState.reactionLoadToken) return;
             var reactions = Array.isArray(data && data.reactions) ? data.reactions : [];
             if (window.NoticeClientHelper && typeof window.NoticeClientHelper.cacheReactions === 'function') {
                 reactions = window.NoticeClientHelper.cacheReactions(noticeId, reactions);
             }
             _renderReactions(noticeId, reactions);
         }).catch(function () {
-            if (loadToken !== state.reactionLoadToken) return;
-            if (options.keepCurrentOnFailure && window.NoticeClientHelper && typeof window.NoticeClientHelper.getCachedReactions === 'function') {
+            if (!_isActiveRender(noticeId, renderSequence)) return;
+            var activeState = _getState(noticeId);
+            if (loadToken !== activeState.reactionLoadToken) return;
+            if (window.NoticeClientHelper && typeof window.NoticeClientHelper.getCachedReactions === 'function') {
                 var cached = window.NoticeClientHelper.getCachedReactions(noticeId);
                 if (cached) {
                     _renderReactions(noticeId, cached);
@@ -755,21 +837,30 @@
             return;
         }
         if (state.isSubmittingReaction) return;
+        var renderSequence = state.renderSequence;
 
-        var previousReactions = window.NoticeClientHelper
-            ? (window.NoticeClientHelper.getCachedReactions(noticeId) ||
+        var previousReactions = [];
+        if (Array.isArray(state.reactions) && state.reactions.length) {
+            previousReactions = window.NoticeClientHelper && typeof window.NoticeClientHelper.cloneReactions === 'function'
+                ? window.NoticeClientHelper.cloneReactions(state.reactions)
+                : state.reactions.slice();
+        } else if (window.NoticeClientHelper) {
+            previousReactions = window.NoticeClientHelper.getCachedReactions(noticeId) ||
                 window.NoticeClientHelper.getSummaryReactions(noticeId) ||
-                [])
-            : [];
+                [];
+        }
         var optimisticReactions = window.NoticeClientHelper && typeof window.NoticeClientHelper.buildOptimisticReactions === 'function'
             ? window.NoticeClientHelper.buildOptimisticReactions(previousReactions, emoji)
             : previousReactions;
         state.isSubmittingReaction = true;
         // 作废旧的表情加载结果，避免刚切换成功又被旧快照覆盖。
         state.reactionLoadToken += 1;
+        if (window.NoticeClientHelper && typeof window.NoticeClientHelper.cacheReactions === 'function') {
+            optimisticReactions = window.NoticeClientHelper.cacheReactions(noticeId, optimisticReactions);
+        }
         _renderReactions(noticeId, optimisticReactions);
 
-        _requestJsonWithTelemetryRetry(function () {
+        _requestTelemetryJson('/notice-reaction', 'POST', '提交表情互动失败', function () {
             return _buildTelemetryHeaders('/notice-reaction', 'POST', hwid, true).then(function (headers) {
                 return fetch(baseUrl + '/notice-reaction', {
                     method: 'POST',
@@ -777,9 +868,13 @@
                     body: JSON.stringify({ notice_id: Number(noticeId), machine_id: hwid, emoji: emoji })
                 });
             });
-        }, '提交表情互动失败').then(function () {
+        }, {
+            payload: { notice_id: Number(noticeId), machine_id: hwid, emoji: emoji }
+        }).then(function () {
+            if (!_isActiveRender(noticeId, renderSequence)) return;
             _loadReactions(noticeId, { keepCurrentOnFailure: true });
         }).catch(function (err) {
+            if (!_isActiveRender(noticeId, renderSequence)) return;
             _renderReactions(noticeId, previousReactions);
             _showToast((err && err.message) || '表情互动失败，请稍后重试');
         }).finally(function () {
@@ -790,6 +885,7 @@
     function _loadComments(noticeId, options) {
         options = options || {};
         var state = _getState(noticeId);
+        var renderSequence = state.renderSequence;
         var append = !!options.append;
         var reset = options.reset !== false && !append;
 
@@ -825,11 +921,20 @@
             '&limit=' + encodeURIComponent(state.commentLimit);
         if (hwid) url += '&machine_id=' + encodeURIComponent(hwid);
 
-        _requestJsonWithTelemetryRetry(function () {
+        var commentParams = {
+            offset: offset,
+            limit: state.commentLimit
+        };
+        if (hwid) commentParams.machine_id = hwid;
+
+        _requestTelemetryJson('/notice-comments/' + noticeId, 'GET', '评论加载失败，请稍后重试', function () {
             return _buildTelemetryHeaders('/notice-comments/' + noticeId, 'GET', hwid, false).then(function (headers) {
                 return fetch(url, { method: 'GET', headers: headers, cache: 'no-store' });
             });
-        }, '评论加载失败，请稍后重试').then(function (data) {
+        }, {
+            params: commentParams
+        }).then(function (data) {
+            if (!_isActiveRender(noticeId, renderSequence)) return;
             var incoming = Array.isArray(data.comments) ? data.comments : [];
             state.commentLoadError = '';
             if (append) {
@@ -851,19 +956,30 @@
             state.viewerIsAdmin = data.viewer_is_admin === true || data.show_weight_score === true;
             state.showWeightScore = data.show_weight_score === true;
             state.commentCharLimit = normalizeCommentCharLimit(data.comment_limit_chars);
+            _cacheCommentSnapshot(noticeId);
             _renderComments(noticeId);
             _updateStats(noticeId);
             _updateComposerState(noticeId);
         }).catch(function (err) {
-            state.commentLoadError = (err && err.message) || '评论加载失败，请稍后重试';
-            _showToast(state.commentLoadError);
-            state.totalCount = 0;
-            state.totalLikes = 0;
-            state.noticeLikeCount = 0;
-            state.noticeLiked = false;
-            state.noticeLikers = [];
+            if (!_isActiveRender(noticeId, renderSequence)) return;
+            var cachedApplied = _applyCachedCommentSnapshot(noticeId);
+            state.commentLoadError = cachedApplied ? '' : ((err && err.message) || '评论加载失败，请稍后重试');
+            if (!cachedApplied) {
+                _showToast(state.commentLoadError);
+                state.totalCount = 0;
+                state.totalLikes = 0;
+                state.noticeLikeCount = 0;
+                state.noticeLiked = false;
+                state.noticeLikers = [];
+            }
             _updateStats(noticeId);
+            _updateComposerState(noticeId);
         }).finally(function () {
+            if (!_isActiveRender(noticeId, renderSequence)) {
+                state.isLoadingComments = false;
+                state.isAppendingComments = false;
+                return;
+            }
             state.isLoadingComments = false;
             state.isAppendingComments = false;
             _renderComments(noticeId);
@@ -874,6 +990,7 @@
         var baseUrl = _getBaseUrl();
         var hwid = _getHWID();
         var state = _getState(noticeId);
+        var renderSequence = state.renderSequence;
         var replyState = state.replyCache[commentId] || { items: [], loading: false, loaded: false, visibleCount: REPLY_BATCH_SIZE };
         if (replyState.loading || replyState.loaded) return;
 
@@ -890,11 +1007,14 @@
         var url = baseUrl + '/notice-comments/' + noticeId + '/replies/' + commentId;
         if (hwid) url += '?machine_id=' + encodeURIComponent(hwid);
 
-        _requestJsonWithTelemetryRetry(function () {
+        _requestTelemetryJson('/notice-comments/' + noticeId + '/replies/' + commentId, 'GET', '回复加载失败，请稍后重试', function () {
             return _buildTelemetryHeaders('/notice-comments/' + noticeId + '/replies/' + commentId, 'GET', hwid, false).then(function (headers) {
                 return fetch(url, { method: 'GET', headers: headers, cache: 'no-store' });
             });
-        }, '回复加载失败，请稍后重试').then(function (data) {
+        }, {
+            params: hwid ? { machine_id: hwid } : null
+        }).then(function (data) {
+            if (!_isActiveRender(noticeId, renderSequence)) return;
             replyState.items = Array.isArray(data.replies) ? data.replies : [];
             replyState.loaded = true;
             replyState.visibleCount = Math.min(REPLY_BATCH_SIZE, replyState.items.length || REPLY_BATCH_SIZE);
@@ -906,8 +1026,13 @@
                 state.commentCharLimit = normalizeCommentCharLimit(data.comment_limit_chars);
             }
         }).catch(function (err) {
+            if (!_isActiveRender(noticeId, renderSequence)) return;
             _showToast((err && err.message) || '回复加载失败，请稍后重试');
         }).finally(function () {
+            if (!_isActiveRender(noticeId, renderSequence)) {
+                replyState.loading = false;
+                return;
+            }
             replyState.loading = false;
             _renderComments(noticeId);
         });
@@ -1360,7 +1485,7 @@
         }
         state.pendingCommentLikes[commentId] = true;
 
-        _requestJsonWithTelemetryRetry(function () {
+        _requestTelemetryJson('/notice-comment-like', 'POST', '点赞失败，请重试', function () {
             return _buildTelemetryHeaders('/notice-comment-like', 'POST', hwid, true).then(function (headers) {
                 return fetch(baseUrl + '/notice-comment-like', {
                     method: 'POST',
@@ -1368,12 +1493,15 @@
                     body: JSON.stringify({ comment_id: commentId, machine_id: hwid })
                 });
             });
-        }, '点赞失败，请重试').then(function (data) {
+        }, {
+            payload: { comment_id: commentId, machine_id: hwid }
+        }).then(function (data) {
             // 用后端返回的精确数据同步权重
             if (target && data) {
                 if (typeof data.like_count === 'number') target.like_count = data.like_count;
                 if (typeof data.liked !== 'undefined') target.liked = !!data.liked;
                 if (typeof data.weight_score !== 'undefined') target.weight_score = data.weight_score;
+                _cacheCommentSnapshot(noticeId);
                 _renderComments(noticeId);
             } else {
                 _loadComments(noticeId, { reset: true });
@@ -1431,7 +1559,7 @@
 
         if (sendBtn) sendBtn.disabled = true;
 
-        _requestJsonWithTelemetryRetry(function () {
+        _requestTelemetryJson('/notice-comment', 'POST', '发送失败', function () {
             return _buildTelemetryHeaders('/notice-comment', 'POST', hwid, true).then(function (headers) {
                 return fetch(baseUrl + '/notice-comment', {
                     method: 'POST',
@@ -1445,7 +1573,15 @@
                     })
                 });
             });
-        }, '发送失败').then(function (data) {
+        }, {
+            payload: {
+                notice_id: Number(noticeId),
+                machine_id: hwid,
+                content: content,
+                parent_id: parentId,
+                reply_to_id: replyToId
+            }
+        }).then(function (data) {
             if (data.status === 'success') {
                 input.value = '';
                 if (sendBtn) sendBtn.disabled = true;
@@ -1466,6 +1602,7 @@
                 _cancelReply(noticeId);
                 _renderComments(noticeId);
                 _updateStats(noticeId);
+                _cacheCommentSnapshot(noticeId);
                 _showToast(parentId > 0 ? '回复已发送' : '评论已发送', 'success');
                 var scrollToCommentId = (data.comment && data.comment.id) ? data.comment.id : null;
                 _loadComments(noticeId, { reset: true });
@@ -1686,14 +1823,16 @@
             return;
         }
 
-        _requestJsonWithTelemetryRetry(function () {
+        _requestTelemetryJson('/notice-comments/' + commentId, 'DELETE', '删除失败', function () {
             return _buildTelemetryHeaders('/notice-comments/' + commentId, 'DELETE', hwid, false).then(function (headers) {
                 return fetch(baseUrl + '/notice-comments/' + commentId + '?machine_id=' + encodeURIComponent(hwid), {
                     method: 'DELETE',
                     headers: headers
                 });
             });
-        }, '删除失败').then(function (data) {
+        }, {
+            params: hwid ? { machine_id: hwid } : null
+        }).then(function (data) {
             if (data.status === 'success') {
                 _showToast('评论已删除', 'success');
                 var state = _getState(noticeId);
@@ -1701,6 +1840,7 @@
                 if (state.replyingTo && Number(state.replyingTo.targetId) === Number(commentId)) {
                     _cancelReply(noticeId);
                 }
+                _cacheCommentSnapshot(noticeId);
                 _loadComments(noticeId, { reset: true });
             } else {
                 _showToast(data.error || '删除失败');
@@ -1760,7 +1900,7 @@
             return;
         }
 
-        _requestJsonWithTelemetryRetry(function () {
+        _requestTelemetryJson('/notice-comments/' + commentId + '/weight', 'POST', '调整失败', function () {
             return _buildTelemetryHeaders('/notice-comments/' + commentId + '/weight', 'POST', hwid, true).then(function (headers) {
                 return fetch(baseUrl + '/notice-comments/' + commentId + '/weight', {
                     method: 'POST',
@@ -1772,7 +1912,13 @@
                     })
                 });
             });
-        }, '调整失败').then(function (data) {
+        }, {
+            payload: {
+                machine_id: hwid,
+                action: action,
+                amount: amount
+            }
+        }).then(function (data) {
             if (data.status === 'success') {
                 closeDialog();
                 _showToast('评论权重已更新', 'success');
@@ -1846,7 +1992,7 @@
             return;
         }
 
-        _requestJsonWithTelemetryRetry(function () {
+        _requestTelemetryJson('/notice-comments/' + commentId + '/ban', 'POST', '封禁失败', function () {
             return _buildTelemetryHeaders('/notice-comments/' + commentId + '/ban', 'POST', hwid, true).then(function (headers) {
                 return fetch(baseUrl + '/notice-comments/' + commentId + '/ban', {
                     method: 'POST',
@@ -1859,7 +2005,14 @@
                     })
                 });
             });
-        }, '封禁失败').then(function (data) {
+        }, {
+            payload: {
+                machine_id: hwid,
+                duration_value: durationValue,
+                duration_unit: durationUnit,
+                reason: reason
+            }
+        }).then(function (data) {
             if (data.status === 'success') {
                 closeDialog();
                 _showToast('评论权限已封禁', 'success');
@@ -1975,7 +2128,7 @@
         var submitBtn = document.getElementById('nc-report-submit');
         if (submitBtn) submitBtn.disabled = true;
 
-        _requestJsonWithTelemetryRetry(function () {
+        _requestTelemetryJson('/notice-comment-report', 'POST', '举报失败', function () {
             return _buildTelemetryHeaders('/notice-comment-report', 'POST', hwid, true).then(function (headers) {
                 return fetch(baseUrl + '/notice-comment-report', {
                     method: 'POST',
@@ -1988,7 +2141,14 @@
                     })
                 });
             });
-        }, '举报失败').then(function (data) {
+        }, {
+            payload: {
+                comment_id: commentId,
+                machine_id: hwid,
+                report_type: reportType,
+                reason: reason
+            }
+        }).then(function (data) {
             if (data.status === 'success') {
                 _showToast('举报已提交，感谢反馈');
                 closeDialog();

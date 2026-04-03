@@ -144,6 +144,22 @@
         });
     }
 
+    function requestTelemetryJson(path, method, fallbackMessage, requestFactory, options) {
+        options = options || {};
+        if (window.NoticeClientHelper && typeof window.NoticeClientHelper.requestTelemetryJsonViaBridge === 'function') {
+            var bridgePromise = window.NoticeClientHelper.requestTelemetryJsonViaBridge(path, {
+                method: method,
+                params: options.params,
+                payload: options.payload,
+                timeoutMs: options.timeoutMs,
+                ensureReady: options.ensureReady,
+                fallbackMessage: fallbackMessage
+            });
+            if (bridgePromise) return bridgePromise;
+        }
+        return requestJsonWithTelemetryRetry(requestFactory, fallbackMessage);
+    }
+
     function parseMarkdown(md) {
         if (window.MarkdownRenderer) return window.MarkdownRenderer.parseChangelog(md);
         const lines = String(md || '').split('\n');
@@ -397,11 +413,13 @@
             var url = baseUrl + routePath;
             if (hwid) url += '?machine_id=' + encodeURIComponent(hwid);
 
-            return requestJsonWithTelemetryRetry(function () {
+            return requestTelemetryJson(routePath, 'GET', '加载互动数据失败', function () {
                 return buildTelemetryHeaders(routePath, 'GET', hwid, false).then(function (headers) {
                     return fetch(url, { method: 'GET', headers: headers });
                 });
-            }, '加载互动数据失败');
+            }, {
+                params: hwid ? { machine_id: hwid } : null
+            });
         }).then(function (data) {
             if (!data) return;
             var reactions = Array.isArray(data && data.reactions) ? data.reactions : [];
@@ -410,7 +428,7 @@
             }
             _renderReactionPills(noticeId, reactions);
         }).catch(function() {
-            if (options.keepCurrentOnFailure && window.NoticeClientHelper && typeof window.NoticeClientHelper.getCachedReactions === 'function') {
+            if (window.NoticeClientHelper && typeof window.NoticeClientHelper.getCachedReactions === 'function') {
                 var cached = window.NoticeClientHelper.getCachedReactions(noticeId);
                 if (cached) {
                     _renderReactionPills(noticeId, cached);
@@ -541,13 +559,16 @@
             var optimisticReactions = window.NoticeClientHelper && typeof window.NoticeClientHelper.buildOptimisticReactions === 'function'
                 ? window.NoticeClientHelper.buildOptimisticReactions(previousReactions, emoji)
                 : previousReactions;
+            if (window.NoticeClientHelper && typeof window.NoticeClientHelper.cacheReactions === 'function') {
+                optimisticReactions = window.NoticeClientHelper.cacheReactions(noticeId, optimisticReactions);
+            }
 
             _renderReactionPills(noticeId, optimisticReactions);
             _reactionPendingMap[noticeId] = {
                 previous: previousReactions
             };
 
-            return requestJsonWithTelemetryRetry(function () {
+            return requestTelemetryJson('/notice-reaction', 'POST', '提交表情互动失败', function () {
                 return buildTelemetryHeaders('/notice-reaction', 'POST', hwid, true).then(function (headers) {
                     return fetch(baseUrl + '/notice-reaction', {
                         method: 'POST',
@@ -555,7 +576,9 @@
                         body: JSON.stringify({ notice_id: Number(noticeId), machine_id: hwid, emoji: emoji })
                     });
                 });
-            }, '提交表情互动失败');
+            }, {
+                payload: { notice_id: Number(noticeId), machine_id: hwid, emoji: emoji }
+            });
         }).then(function() {
             _loadAndRenderReactions(noticeId, { keepCurrentOnFailure: true });
         }).catch(function(err) {
